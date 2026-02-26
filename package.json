@@ -1,0 +1,30 @@
+{
+  "name": "soul",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "products/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "test:e2e": "turbo test:e2e",
+    "test:coverage": "turbo test -- --coverage",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "dev": "turbo watch build",
+    "clean": "turbo clean",
+    "probe": "node apps/cli/dist/main.js --probe",
+    "sync-upstream": "bash scripts/sync-upstream.sh"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.11",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.9.4"
+}
