@@ -1,0 +1,21 @@
+{
+  "name": "@soul/models",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.78.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "vitest": "4.0.18",
+    "typescript": "^5.7.3"
+  }
+}
