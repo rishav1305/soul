@@ -1,0 +1,16 @@
+{
+  "name": "@soul/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "soul": "dist/main.js" },
+  "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@soul/core": "0.1.0",
+    "@soul/models": "0.1.0",
+    "@soul/plugins": "0.1.0",
+    "@soul/ui": "0.1.0",
+    "@soul/context": "0.1.0",
+    "@soul/telemetry": "0.1.0"
+  },
+  "devDependencies": { "typescript": "^5.7.3" }
+}
