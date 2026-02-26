@@ -6,4 +6,6 @@ export function register(registry: PluginRegistry): void {
 }
 
 export { runScan, createScanTool } from './tools/scan.js';
+export { formatTerminal } from './reporters/terminal.js';
+export { formatJSON } from './reporters/json.js';
 export type { Finding, ScanResult, Severity, Framework, RuleDefinition, ScanOptions } from './types.js';
