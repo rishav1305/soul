@@ -1,0 +1,294 @@
+# GDPR — Rule Definitions
+# Covers Article 25 (Data Protection by Design and by Default)
+# and Article 32 (Security of Processing)
+
+# ── Security of Processing — Article 32 ──────────────────────────
+
+- id: SECRET-001
+  title: Hardcoded credentials detected
+  severity: critical
+  analyzer: secret-scanner
+  pattern: hardcoded-credential
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    Source code contains hardcoded credentials. Under GDPR Article 32,
+    controllers must implement appropriate technical measures including
+    secure credential management to protect personal data.
+  fixable: true
+
+- id: SECRET-002
+  title: Private key committed
+  severity: critical
+  analyzer: secret-scanner
+  pattern: private-key
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    A private key file has been committed to the repository. Private
+    keys used to encrypt personal data must be stored securely to
+    ensure the confidentiality required by Article 32.
+  fixable: true
+
+- id: SECRET-003
+  title: API token detected
+  severity: high
+  analyzer: secret-scanner
+  pattern: api-token
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    An API token or key was found in the source code. Exposed tokens
+    may grant access to systems processing personal data, violating
+    the security measures required by Article 32.
+  fixable: true
+
+- id: SECRET-004
+  title: High-entropy string detected
+  severity: medium
+  analyzer: secret-scanner
+  pattern: high-entropy
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    A high-entropy string that may be a secret was detected. Review
+    is needed to ensure it does not grant unauthorized access to
+    systems processing personal data.
+  fixable: true
+
+- id: CRYPTO-001
+  title: Weak hashing algorithm (MD5/SHA1)
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: weak-hash
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    Code uses MD5 or SHA-1 for hashing. Article 32 requires
+    appropriate encryption and pseudonymisation of personal data;
+    broken hash functions do not meet this standard.
+  fixable: true
+
+- id: CRYPTO-002
+  title: ECB encryption mode
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: ecb-mode
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    ECB block cipher mode is used for encryption. ECB fails to
+    provide semantic security and is not an appropriate technical
+    measure under Article 32 for encrypting personal data.
+  fixable: true
+
+- id: CRYPTO-003
+  title: Hardcoded encryption key/IV
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: hardcoded-crypto-key
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    Encryption keys or initialization vectors are hardcoded. Article
+    32 requires appropriate security measures; hardcoded keys
+    undermine the encryption of personal data.
+  fixable: true
+
+- id: CRYPTO-004
+  title: Missing TLS/HTTPS enforcement
+  severity: high
+  analyzer: config-checker
+  pattern: missing-tls
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    The application does not enforce TLS. Article 32 requires
+    encryption of personal data in transit to ensure ongoing
+    confidentiality and integrity.
+  fixable: true
+
+- id: CRYPTO-005
+  title: Weak TLS version
+  severity: high
+  analyzer: config-checker
+  pattern: weak-tls
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    The application allows TLS versions older than 1.2. Weak TLS
+    does not provide adequate protection for personal data in
+    transit as required by Article 32.
+  fixable: true
+
+- id: CRYPTO-006
+  title: Missing HSTS header
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-hsts
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    The Strict-Transport-Security header is not configured. HSTS
+    helps ensure browsers always use encrypted connections,
+    supporting Article 32 transmission security requirements.
+  fixable: true
+
+- id: CRYPTO-007
+  title: Missing Content-Security-Policy
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-csp
+  controls:
+    - Art.32(1)(a)
+  framework:
+    - gdpr
+  description: >-
+    No Content-Security-Policy header is configured. CSP helps
+    prevent XSS attacks that could lead to personal data breaches
+    violating Articles 32 and 33.
+  fixable: true
+
+- id: CRYPTO-008
+  title: Wildcard CORS origin
+  severity: high
+  analyzer: config-checker
+  pattern: wildcard-cors
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    CORS is configured with a wildcard origin. This may allow
+    unauthorized web applications to access personal data,
+    undermining Article 32 security measures.
+  fixable: true
+
+# ── Data Protection by Design — Article 25 ───────────────────────
+
+- id: AUTH-001
+  title: Missing authentication middleware
+  severity: high
+  analyzer: ast-analyzer
+  pattern: missing-auth-middleware
+  controls:
+    - Art.25(1)
+    - Art.25(2)
+  framework:
+    - gdpr
+  description: >-
+    HTTP route handlers lack authentication middleware. Article 25
+    requires data protection by design, including appropriate
+    access controls to ensure only authorized users reach personal
+    data.
+  fixable: false
+
+- id: AUTH-003
+  title: Missing RBAC/authorization checks
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: missing-rbac
+  controls:
+    - Art.25(1)
+    - Art.25(2)
+  framework:
+    - gdpr
+  description: >-
+    Route handlers do not perform authorization checks. Article 25
+    mandates data protection by default, meaning personal data
+    access must be limited to what is necessary for each purpose.
+  fixable: false
+
+- id: VALIDATE-001
+  title: Missing input validation
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: missing-input-validation
+  controls:
+    - Art.25(1)
+  framework:
+    - gdpr
+  description: >-
+    Request handlers do not validate or sanitize input data.
+    Article 25 requires data protection by design, and input
+    validation is a fundamental measure to prevent attacks that
+    compromise personal data.
+  fixable: false
+
+# ── Resilience — Article 32(1)(b) ────────────────────────────────
+
+- id: INJ-001
+  title: SQL injection vulnerability
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: sql-injection
+  controls:
+    - Art.32(1)(b)
+    - Art.32(1)(d)
+  framework:
+    - gdpr
+  description: >-
+    String concatenation is used to build SQL queries, creating a
+    SQL injection vulnerability. This threatens the resilience of
+    processing systems as required by Article 32(1)(b) and the
+    ability to restore data availability per Article 32(1)(d).
+  fixable: false
+
+# ── Security Monitoring — Article 32 ─────────────────────────────
+
+- id: LOG-002
+  title: Sensitive data in logs
+  severity: high
+  analyzer: ast-analyzer
+  pattern: sensitive-in-logs
+  controls:
+    - Art.32(1)(a)
+    - Art.5(1)(f)
+  framework:
+    - gdpr
+  description: >-
+    Log statements appear to include sensitive data such as personal
+    identifiers, email addresses, or authentication tokens. Under
+    GDPR Article 5(1)(f) and Article 32, personal data must be
+    processed with appropriate security, including log sanitization.
+  fixable: false
+
+- id: LOG-001
+  title: No logging framework detected
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-logging
+  controls:
+    - Art.32(1)(d)
+  framework:
+    - gdpr
+  description: >-
+    No structured logging framework was detected. Article 32
+    requires processes for regularly testing, assessing, and
+    evaluating security measures; logging is fundamental to this
+    requirement.
+  fixable: false
