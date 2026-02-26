@@ -10,7 +10,8 @@
     "@soul/plugins": "0.1.0",
     "@soul/ui": "0.1.0",
     "@soul/context": "0.1.0",
-    "@soul/telemetry": "0.1.0"
+    "@soul/telemetry": "0.1.0",
+    "@soul/compliance": "0.1.0"
   },
   "devDependencies": { "typescript": "^5.7.3" }
 }

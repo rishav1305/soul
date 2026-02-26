@@ -11,6 +11,12 @@ export function register(registry: PluginRegistry): void {
   registry.addTool(createReportTool());
   registry.addTool(createFixTool());
   registry.addTool(createMonitorTool());
+
+  registry.addCommand({ name: 'compliance scan', description: 'Run compliance scan', product: 'compliance' });
+  registry.addCommand({ name: 'compliance badge', description: 'Generate compliance badge', product: 'compliance' });
+  registry.addCommand({ name: 'compliance report', description: 'Generate compliance report', product: 'compliance' });
+  registry.addCommand({ name: 'compliance fix', description: 'Auto-remediate compliance issues', product: 'compliance' });
+  registry.addCommand({ name: 'compliance monitor', description: 'Watch mode for compliance changes', product: 'compliance' });
 }
 
 export { runScan, createScanTool } from './tools/scan.js';
