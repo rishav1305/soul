@@ -1,0 +1,9 @@
+{
+  "name": "compliant-app",
+  "version": "1.0.0",
+  "engines": { "node": ">=20.0.0" },
+  "dependencies": {
+    "express": "4.18.2",
+    "helmet": "7.1.0"
+  }
+}

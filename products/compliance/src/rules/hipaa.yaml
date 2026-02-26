@@ -272,6 +272,53 @@
     to unauthorized web applications.
   fixable: true
 
+- id: CONFIG-001
+  title: Docker container runs as root
+  severity: high
+  analyzer: config-checker
+  pattern: docker-root-user
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(i)"
+  framework:
+    - hipaa
+  description: >-
+    The Dockerfile runs the container as the root user. Containers
+    processing ePHI must run with minimal privileges to satisfy HIPAA
+    access control requirements.
+  fixable: true
+
+- id: CONFIG-002
+  title: Docker container missing health check
+  severity: medium
+  analyzer: config-checker
+  pattern: docker-no-healthcheck
+  controls:
+    - "164.312(a)(1)"
+  framework:
+    - hipaa
+  description: >-
+    The Dockerfile does not define a HEALTHCHECK instruction. Health
+    checks support the availability requirements of systems that
+    process ePHI.
+  fixable: true
+
+- id: CONFIG-003
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: config-checker
+  pattern: env-not-gitignored
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    The .env file is not listed in .gitignore. Environment files
+    often contain database credentials and API keys used to access
+    systems that store ePHI.
+  fixable: true
+
 # ── Audit Controls — 164.312(b) ──────────────────────────────────
 
 - id: LOG-001

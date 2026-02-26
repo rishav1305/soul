@@ -283,6 +283,54 @@
     make cross-origin requests. Origins should be explicitly whitelisted.
   fixable: true
 
+- id: CONFIG-001
+  title: Docker container runs as root
+  severity: high
+  analyzer: config-checker
+  pattern: docker-root-user
+  controls:
+    - CC6.1
+    - CC6.3
+  framework:
+    - soc2
+  description: >-
+    The Dockerfile runs the container as the root user. Containers should
+    run as a non-root user to limit the blast radius of a container escape
+    and follow the principle of least privilege.
+  fixable: true
+
+- id: CONFIG-002
+  title: Docker container missing health check
+  severity: medium
+  analyzer: config-checker
+  pattern: docker-no-healthcheck
+  controls:
+    - CC7.1
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    The Dockerfile does not define a HEALTHCHECK instruction. Health checks
+    enable orchestrators to detect and replace unhealthy containers,
+    supporting availability and change management controls.
+  fixable: true
+
+- id: CONFIG-003
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: config-checker
+  pattern: env-not-gitignored
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The .env file is not listed in .gitignore. Environment files typically
+    contain secrets and configuration that must not be committed to version
+    control.
+  fixable: true
+
 # ── Logging (CC7.1–CC7.4) ─────────────────────────────────────────
 
 - id: LOG-001

@@ -188,6 +188,53 @@
     undermining Article 32 security measures.
   fixable: true
 
+- id: CONFIG-001
+  title: Docker container runs as root
+  severity: high
+  analyzer: config-checker
+  pattern: docker-root-user
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    The Dockerfile runs the container as the root user. Article 32
+    requires appropriate technical measures, including least-privilege
+    execution, to protect personal data processing systems.
+  fixable: true
+
+- id: CONFIG-002
+  title: Docker container missing health check
+  severity: medium
+  analyzer: config-checker
+  pattern: docker-no-healthcheck
+  controls:
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    The Dockerfile does not define a HEALTHCHECK instruction. Article
+    32(1)(b) requires the ability to ensure the ongoing availability
+    and resilience of processing systems.
+  fixable: true
+
+- id: CONFIG-003
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: config-checker
+  pattern: env-not-gitignored
+  controls:
+    - Art.32(1)(a)
+    - Art.32(1)(b)
+  framework:
+    - gdpr
+  description: >-
+    The .env file is not listed in .gitignore. Environment files may
+    contain credentials granting access to systems processing personal
+    data, violating Article 32 security measures.
+  fixable: true
+
 # ── Data Protection by Design — Article 25 ───────────────────────
 
 - id: AUTH-001
