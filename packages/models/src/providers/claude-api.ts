@@ -29,22 +29,26 @@ export class ClaudeApiProvider implements Provider {
     if (!creds) return false;
     if (Date.now() > creds.expiresAt) return false;
     try {
-      this.client = new Anthropic({ apiKey: creds.accessToken });
-      const response = await this.client.messages.create({
+      const client = new Anthropic({ apiKey: creds.accessToken });
+      // Lightweight probe: count tokens on a tiny input instead of a full chat completion.
+      // This validates the token works without generating output tokens (much cheaper).
+      await client.messages.countTokens({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 10,
-        messages: [{ role: 'user', content: 'Reply with just "ok"' }],
+        messages: [{ role: 'user', content: 'ok' }],
       });
-      return response.content.length > 0;
+      this.client = client;
+      return true;
     } catch { this.client = null; return false; }
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    if (!this.client) {
-      const creds = readOAuthToken();
-      if (!creds) throw new Error('No OAuth credentials found');
-      this.client = new Anthropic({ apiKey: creds.accessToken });
+    const creds = readOAuthToken();
+    if (!creds) throw new Error('No OAuth credentials found');
+    if (Date.now() > creds.expiresAt) {
+      this.client = null;
+      throw new Error('OAuth token expired');
     }
+    this.client = new Anthropic({ apiKey: creds.accessToken });
     const response = await this.client.messages.create({
       model: request.model ?? 'claude-sonnet-4-6',
       max_tokens: request.maxTokens ?? 4096,
