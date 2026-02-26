@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package soul.v1;
+
+option go_package = "github.com/rishav1305/soul/proto/soul/v1;soulv1";
+
+service ProductService {
+  rpc GetManifest(Empty) returns (Manifest);
+  rpc ExecuteTool(ToolRequest) returns (ToolResponse);
+  rpc ExecuteToolStream(ToolRequest) returns (stream ToolEvent);
+  rpc Health(Empty) returns (HealthResponse);
+}
+
+message Empty {}
+
+message Manifest {
+  string name = 1;
+  string version = 2;
+  repeated Tool tools = 3;
+  repeated string tiers = 4;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  bool requires_approval = 3;
+  string input_schema_json = 4;
+  string tier = 5;
+}
+
+message ToolRequest {
+  string tool = 1;
+  string input_json = 2;
+  string session_id = 3;
+}
+
+message ToolResponse {
+  bool success = 1;
+  string output = 2;
+  string structured_json = 3;
+  repeated Artifact artifacts = 4;
+}
+
+message ToolEvent {
+  oneof event {
+    ProgressUpdate progress = 1;
+    FindingEvent finding = 2;
+    ToolResponse complete = 3;
+    ErrorEvent error = 4;
+  }
+}
+
+message ProgressUpdate {
+  string analyzer = 1;
+  double percent = 2;
+  string message = 3;
+}
+
+message FindingEvent {
+  string id = 1;
+  string title = 2;
+  string severity = 3;
+  string file = 4;
+  int32 line = 5;
+  string evidence = 6;
+}
+
+message Artifact {
+  string type = 1;
+  string path = 2;
+  bytes content = 3;
+}
+
+message ErrorEvent {
+  string code = 1;
+  string message = 2;
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;
+}
