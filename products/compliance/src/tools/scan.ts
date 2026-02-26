@@ -111,14 +111,20 @@ export async function runScan(options: ScanOptions): Promise<ScanResult> {
     active.map((a) => a.analyze(files, rules.filter((r) => r.analyzer === a.name))),
   );
 
-  // Collect findings, skip failed analyzers
+  // Collect findings from successful analyzers, track failures
   let findings: Finding[] = [];
   const analyzersRun: string[] = [];
+  const analyzerFailures: Array<{ analyzer: string; error: string }> = [];
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result.status === 'fulfilled') {
       findings.push(...result.value);
       analyzersRun.push(active[i].name);
+    } else {
+      analyzerFailures.push({
+        analyzer: active[i].name,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
     }
   }
 
@@ -130,7 +136,8 @@ export async function runScan(options: ScanOptions): Promise<ScanResult> {
     findings = findings.filter((f) => options.severity!.includes(f.severity));
   }
 
-  // Filter by framework if requested (only include findings that match at least one)
+  // Defensive post-filter: rules are pre-filtered by framework in loadRules(),
+  // but an analyzer could theoretically produce cross-framework findings.
   if (options.frameworks?.length) {
     findings = findings.filter((f) =>
       f.framework.some((fw) => options.frameworks!.includes(fw)),
@@ -153,6 +160,7 @@ export async function runScan(options: ScanOptions): Promise<ScanResult> {
       directory: options.directory,
       duration,
       analyzersRun,
+      analyzerFailures: analyzerFailures.length > 0 ? analyzerFailures : undefined,
       frameworks: options.frameworks ?? (['soc2', 'hipaa', 'gdpr'] as Framework[]),
       timestamp: new Date().toISOString(),
     },
@@ -179,12 +187,7 @@ const ScanInputSchema = z.object({
   exclude: z
     .array(z.string())
     .optional()
-    .describe('File path patterns to exclude from results'),
-  format: z
-    .enum(['terminal', 'json'])
-    .optional()
-    .describe('Output format (default: terminal)'),
-  output: z.string().optional().describe('Output file path'),
+    .describe('File path patterns to exclude from results (substring match)'),
 });
 
 /**
@@ -224,6 +227,9 @@ function formatScanOutput(result: ScanResult): string {
   lines.push(`Directory: ${result.metadata.directory}`);
   lines.push(`Duration: ${result.metadata.duration}ms`);
   lines.push(`Analyzers: ${result.metadata.analyzersRun.join(', ')}`);
+  if (result.metadata.analyzerFailures?.length) {
+    lines.push(`Failed: ${result.metadata.analyzerFailures.map((f) => `${f.analyzer} (${f.error})`).join(', ')}`);
+  }
   lines.push(`Frameworks: ${result.metadata.frameworks.join(', ')}`);
   lines.push('');
 

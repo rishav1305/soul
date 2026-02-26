@@ -35,6 +35,7 @@ export interface ScanResult {
     directory: string;
     duration: number;
     analyzersRun: string[];
+    analyzerFailures?: Array<{ analyzer: string; error: string }>;
     frameworks: Framework[];
     timestamp: string;
   };
