@@ -1,0 +1,448 @@
+# HIPAA Security Rule — Rule Definitions
+# Covers 164.312(a) Access Control, 164.312(b) Audit Controls,
+# 164.312(c) Integrity Controls, 164.312(e) Transmission Security
+
+# ── Access Control — 164.312(a) ───────────────────────────────────
+
+- id: AUTH-001
+  title: Missing authentication middleware
+  severity: high
+  analyzer: ast-analyzer
+  pattern: missing-auth-middleware
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(i)"
+  framework:
+    - hipaa
+  description: >-
+    HTTP route handlers lack authentication middleware. HIPAA requires
+    unique user identification and access controls for all systems that
+    create, receive, maintain, or transmit ePHI.
+  fixable: false
+
+- id: AUTH-002
+  title: No session timeout configured
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-session-timeout
+  controls:
+    - "164.312(a)(2)(iii)"
+  framework:
+    - hipaa
+  description: >-
+    Session configuration does not enforce an idle or absolute timeout.
+    HIPAA requires automatic logoff after a period of inactivity to
+    prevent unauthorized access to ePHI.
+  fixable: true
+
+- id: AUTH-003
+  title: Missing RBAC/authorization checks
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: missing-rbac
+  controls:
+    - "164.312(a)(1)"
+  framework:
+    - hipaa
+  description: >-
+    Route handlers do not perform role-based access control or
+    authorization checks. Access to ePHI must be restricted to
+    authorized users based on the minimum necessary standard.
+  fixable: false
+
+- id: ACCESS-002
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: git-analyzer
+  pattern: env-not-gitignored
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    The .env file is not listed in .gitignore. Environment files
+    often contain database credentials and API keys used to access
+    systems that store ePHI.
+  fixable: true
+
+- id: ACCESS-003
+  title: Sensitive files not in .gitignore
+  severity: high
+  analyzer: git-analyzer
+  pattern: sensitive-not-gitignored
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    Files that commonly contain sensitive data (e.g., *.pem, *.key,
+    credentials.json) are not excluded via .gitignore. These files
+    may contain credentials that grant access to ePHI systems.
+  fixable: true
+
+# ── Encryption and Decryption — 164.312(a)(2)(iv) ────────────────
+
+- id: SECRET-001
+  title: Hardcoded credentials detected
+  severity: critical
+  analyzer: secret-scanner
+  pattern: hardcoded-credential
+  controls:
+    - "164.312(a)(2)(iv)"
+    - "164.312(d)"
+  framework:
+    - hipaa
+  description: >-
+    Source code contains hardcoded credentials. HIPAA requires that
+    authentication mechanisms protect the identity of users accessing
+    electronic protected health information.
+  fixable: true
+
+- id: SECRET-002
+  title: Private key committed
+  severity: critical
+  analyzer: secret-scanner
+  pattern: private-key
+  controls:
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    A private key file has been committed to the repository. Private
+    keys used to encrypt ePHI must be securely stored and never
+    exposed in version control.
+  fixable: true
+
+- id: SECRET-003
+  title: API token detected
+  severity: high
+  analyzer: secret-scanner
+  pattern: api-token
+  controls:
+    - "164.312(a)(2)(iv)"
+    - "164.312(d)"
+  framework:
+    - hipaa
+  description: >-
+    An API token or key was found in the source code. Tokens that
+    provide access to ePHI must be stored securely and rotated
+    regularly.
+  fixable: true
+
+- id: SECRET-004
+  title: High-entropy string detected
+  severity: medium
+  analyzer: secret-scanner
+  pattern: high-entropy
+  controls:
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    A high-entropy string that may be a secret was detected. Manual
+    review is required to determine if this string grants access to
+    systems containing ePHI.
+  fixable: true
+
+# ── Transmission Security — 164.312(e)(2)(ii) ────────────────────
+
+- id: CRYPTO-001
+  title: Weak hashing algorithm (MD5/SHA1)
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: weak-hash
+  controls:
+    - "164.312(a)(2)(iv)"
+    - "164.312(e)(2)(ii)"
+  framework:
+    - hipaa
+  description: >-
+    Code uses MD5 or SHA-1 for hashing. HIPAA requires the use of
+    strong cryptographic protections for ePHI; MD5 and SHA-1 are
+    considered cryptographically broken.
+  fixable: true
+
+- id: CRYPTO-002
+  title: ECB encryption mode
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: ecb-mode
+  controls:
+    - "164.312(a)(2)(iv)"
+    - "164.312(e)(2)(ii)"
+  framework:
+    - hipaa
+  description: >-
+    ECB block cipher mode is used for encryption. ECB does not provide
+    semantic security and is unsuitable for protecting ePHI. Use
+    authenticated encryption such as AES-GCM.
+  fixable: true
+
+- id: CRYPTO-003
+  title: Hardcoded encryption key/IV
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: hardcoded-crypto-key
+  controls:
+    - "164.312(a)(2)(iv)"
+    - "164.312(e)(2)(ii)"
+  framework:
+    - hipaa
+  description: >-
+    Encryption keys or initialization vectors are hardcoded in source
+    code. Keys protecting ePHI must be managed through a proper key
+    management system.
+  fixable: true
+
+- id: CRYPTO-004
+  title: Missing TLS/HTTPS enforcement
+  severity: high
+  analyzer: config-checker
+  pattern: missing-tls
+  controls:
+    - "164.312(e)(1)"
+    - "164.312(e)(2)(ii)"
+  framework:
+    - hipaa
+  description: >-
+    The application does not enforce TLS for all network communications.
+    HIPAA requires encryption of ePHI in transit using appropriate
+    mechanisms.
+  fixable: true
+
+- id: CRYPTO-005
+  title: Weak TLS version
+  severity: high
+  analyzer: config-checker
+  pattern: weak-tls
+  controls:
+    - "164.312(e)(2)(ii)"
+  framework:
+    - hipaa
+  description: >-
+    The application allows TLS versions older than 1.2. Weak TLS
+    versions have known vulnerabilities and do not adequately protect
+    ePHI in transit.
+  fixable: true
+
+- id: CRYPTO-006
+  title: Missing HSTS header
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-hsts
+  controls:
+    - "164.312(e)(1)"
+  framework:
+    - hipaa
+  description: >-
+    The Strict-Transport-Security header is not configured. HSTS
+    ensures browsers always connect over HTTPS, preventing downgrade
+    attacks that could expose ePHI.
+  fixable: true
+
+- id: CRYPTO-007
+  title: Missing Content-Security-Policy
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-csp
+  controls:
+    - "164.312(e)(1)"
+  framework:
+    - hipaa
+  description: >-
+    No Content-Security-Policy header is configured. CSP helps prevent
+    cross-site scripting attacks that could lead to unauthorized access
+    to ePHI displayed in the browser.
+  fixable: true
+
+- id: CRYPTO-008
+  title: Wildcard CORS origin
+  severity: high
+  analyzer: config-checker
+  pattern: wildcard-cors
+  controls:
+    - "164.312(e)(1)"
+  framework:
+    - hipaa
+  description: >-
+    CORS is configured with a wildcard origin (*). This allows any
+    domain to make cross-origin requests, potentially exposing ePHI
+    to unauthorized web applications.
+  fixable: true
+
+- id: CONFIG-001
+  title: Docker container runs as root
+  severity: high
+  analyzer: config-checker
+  pattern: docker-root-user
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(i)"
+  framework:
+    - hipaa
+  description: >-
+    The Dockerfile runs the container as the root user. Containers
+    processing ePHI must run with minimal privileges to satisfy HIPAA
+    access control requirements.
+  fixable: true
+
+- id: CONFIG-002
+  title: Docker container missing health check
+  severity: medium
+  analyzer: config-checker
+  pattern: docker-no-healthcheck
+  controls:
+    - "164.312(a)(1)"
+  framework:
+    - hipaa
+  description: >-
+    The Dockerfile does not define a HEALTHCHECK instruction. Health
+    checks support the availability requirements of systems that
+    process ePHI.
+  fixable: true
+
+- id: CONFIG-003
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: config-checker
+  pattern: env-not-gitignored
+  controls:
+    - "164.312(a)(1)"
+    - "164.312(a)(2)(iv)"
+  framework:
+    - hipaa
+  description: >-
+    The .env file is not listed in .gitignore. Environment files
+    often contain database credentials and API keys used to access
+    systems that store ePHI.
+  fixable: true
+
+# ── Audit Controls — 164.312(b) ──────────────────────────────────
+
+- id: LOG-001
+  title: No logging framework detected
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-logging
+  controls:
+    - "164.312(b)"
+  framework:
+    - hipaa
+  description: >-
+    No structured logging framework was detected. HIPAA requires
+    audit controls that record and examine activity in information
+    systems containing ePHI.
+  fixable: false
+
+- id: LOG-002
+  title: Sensitive data in logs
+  severity: high
+  analyzer: ast-analyzer
+  pattern: sensitive-in-logs
+  controls:
+    - "164.312(b)"
+    - "164.312(a)(1)"
+  framework:
+    - hipaa
+  description: >-
+    Log statements appear to include sensitive data. Logging ePHI
+    without proper safeguards violates the minimum necessary standard
+    and creates additional exposure points.
+  fixable: false
+
+- id: LOG-003
+  title: Stack trace exposed to client
+  severity: high
+  analyzer: ast-analyzer
+  pattern: exposed-stack-trace
+  controls:
+    - "164.312(b)"
+  framework:
+    - hipaa
+  description: >-
+    Error responses sent to clients include stack traces. Internal
+    error details can reveal system architecture information useful
+    for attacking systems that process ePHI.
+  fixable: true
+
+- id: LOG-004
+  title: Empty catch block
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: empty-catch
+  controls:
+    - "164.312(b)"
+  framework:
+    - hipaa
+  description: >-
+    A try/catch block has an empty catch handler. Silently swallowing
+    errors undermines audit controls by hiding failures in ePHI
+    processing systems.
+  fixable: true
+
+- id: LOG-005
+  title: Console.log in production code
+  severity: low
+  analyzer: ast-analyzer
+  pattern: console-in-production
+  controls:
+    - "164.312(b)"
+  framework:
+    - hipaa
+  description: >-
+    Production source files contain console.log statements. Unstructured
+    console output bypasses audit logging controls and may inadvertently
+    expose ePHI to system logs without proper access controls.
+  fixable: true
+
+# ── Integrity Controls — 164.312(c) ──────────────────────────────
+
+- id: CHANGE-002
+  title: No lockfile present
+  severity: high
+  analyzer: dep-auditor
+  pattern: missing-lockfile
+  controls:
+    - "164.312(c)(2)"
+  framework:
+    - hipaa
+  description: >-
+    No dependency lockfile was found. HIPAA integrity controls require
+    mechanisms to corroborate that ePHI has not been altered or
+    destroyed improperly. Lockfiles ensure build integrity.
+  fixable: true
+
+- id: CHANGE-003
+  title: Unpinned production dependencies
+  severity: medium
+  analyzer: dep-auditor
+  pattern: unpinned-deps
+  controls:
+    - "164.312(c)(2)"
+  framework:
+    - hipaa
+  description: >-
+    Production dependencies use loose version ranges. Unpinned
+    dependencies can change between builds, threatening the integrity
+    of systems that process ePHI.
+  fixable: true
+
+# ── Integrity Mechanisms — 164.312(c)(1) ──────────────────────────
+
+- id: INJ-001
+  title: SQL injection vulnerability
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: sql-injection
+  controls:
+    - "164.312(c)(1)"
+    - "164.312(a)(1)"
+  framework:
+    - hipaa
+  description: >-
+    String concatenation is used to build SQL queries, creating a SQL
+    injection vulnerability. SQL injection can compromise the integrity
+    and confidentiality of ePHI stored in databases.
+  fixable: false

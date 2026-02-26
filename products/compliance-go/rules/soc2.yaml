@@ -1,0 +1,669 @@
+# SOC 2 Trust Services Criteria — Rule Definitions
+# Covers CC6 (Access Control), CC6/CC7 (Encryption), CC7 (Logging),
+# CC8 (Change Management), CC9 (Vendor Risk)
+
+# ── Access Control (CC6.1–CC6.8) ──────────────────────────────────
+
+- id: SECRET-001
+  title: Hardcoded credentials detected
+  severity: critical
+  analyzer: secret-scanner
+  pattern: hardcoded-credential
+  controls:
+    - CC6.1
+    - CC6.6
+  framework:
+    - soc2
+  description: >-
+    Source code contains hardcoded credentials such as passwords, connection
+    strings, or authentication tokens. Credentials must be stored in a secrets
+    manager or environment variables, never committed to version control.
+  fixable: true
+
+- id: SECRET-002
+  title: Private key committed
+  severity: critical
+  analyzer: secret-scanner
+  pattern: private-key
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    A private key file (PEM, PPK, RSA, ECDSA, etc.) has been committed to the
+    repository. Private keys must be stored securely outside version control
+    and rotated if exposure is suspected.
+  fixable: true
+
+- id: SECRET-003
+  title: API token detected
+  severity: high
+  analyzer: secret-scanner
+  pattern: api-token
+  controls:
+    - CC6.1
+    - CC6.6
+  framework:
+    - soc2
+  description: >-
+    An API token or key from a cloud provider or third-party service was found
+    in the source code. Tokens should be injected at runtime through secure
+    environment variables or secret management tools.
+  fixable: true
+
+- id: SECRET-004
+  title: High-entropy string detected
+  severity: medium
+  analyzer: secret-scanner
+  pattern: high-entropy
+  controls:
+    - CC6.1
+  framework:
+    - soc2
+  description: >-
+    A high-entropy string that may be a secret was detected. While not all
+    high-entropy strings are secrets, this warrants manual review to confirm
+    whether sensitive data is exposed.
+  fixable: true
+
+- id: AUTH-001
+  title: Missing authentication middleware
+  severity: high
+  analyzer: ast-analyzer
+  pattern: missing-auth-middleware
+  controls:
+    - CC6.1
+    - CC6.2
+  framework:
+    - soc2
+  description: >-
+    HTTP route handlers lack authentication middleware. All endpoints that
+    access protected resources must verify caller identity before proceeding.
+  fixable: false
+
+- id: AUTH-002
+  title: No session timeout configured
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-session-timeout
+  controls:
+    - CC6.1
+    - CC6.3
+  framework:
+    - soc2
+  description: >-
+    Session configuration does not enforce an idle or absolute timeout.
+    Sessions should expire after a reasonable period of inactivity to limit
+    the window for session hijacking.
+  fixable: true
+
+- id: AUTH-003
+  title: Missing RBAC/authorization checks
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: missing-rbac
+  controls:
+    - CC6.1
+    - CC6.3
+  framework:
+    - soc2
+  description: >-
+    Route handlers do not perform role-based access control or authorization
+    checks. Beyond authentication, the application must verify the caller has
+    the required permissions for each action.
+  fixable: false
+
+- id: ACCESS-001
+  title: Missing CODEOWNERS file
+  severity: medium
+  analyzer: git-analyzer
+  pattern: missing-codeowners
+  controls:
+    - CC6.1
+    - CC6.2
+  framework:
+    - soc2
+  description: >-
+    The repository does not have a CODEOWNERS file. CODEOWNERS enforces
+    mandatory review by designated owners, ensuring changes to sensitive
+    areas are approved by the right people.
+  fixable: true
+
+- id: ACCESS-002
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: git-analyzer
+  pattern: env-not-gitignored
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The .env file is not listed in .gitignore. Environment files typically
+    contain secrets and configuration that must not be committed to version
+    control.
+  fixable: true
+
+- id: ACCESS-003
+  title: Sensitive files not in .gitignore
+  severity: high
+  analyzer: git-analyzer
+  pattern: sensitive-not-gitignored
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    Files that commonly contain sensitive data (e.g., *.pem, *.key,
+    credentials.json) are not excluded via .gitignore. These files risk
+    accidental exposure if committed.
+  fixable: true
+
+# ── Encryption (CC6.1, CC6.7) ─────────────────────────────────────
+
+- id: CRYPTO-001
+  title: Weak hashing algorithm (MD5/SHA1)
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: weak-hash
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    Code uses MD5 or SHA-1 for hashing. Both algorithms are cryptographically
+    broken and must be replaced with SHA-256 or stronger alternatives.
+  fixable: true
+
+- id: CRYPTO-002
+  title: ECB encryption mode
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: ecb-mode
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The Electronic Codebook (ECB) block cipher mode is used for encryption.
+    ECB does not provide semantic security and must be replaced with
+    authenticated encryption modes such as AES-GCM.
+  fixable: true
+
+- id: CRYPTO-003
+  title: Hardcoded encryption key/IV
+  severity: critical
+  analyzer: ast-analyzer
+  pattern: hardcoded-crypto-key
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    Encryption keys or initialization vectors are hardcoded in source code.
+    Cryptographic keys must be generated securely and stored in a key
+    management system.
+  fixable: true
+
+- id: CRYPTO-004
+  title: Missing TLS/HTTPS enforcement
+  severity: high
+  analyzer: config-checker
+  pattern: missing-tls
+  controls:
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The application does not enforce TLS for all network communications.
+    All data in transit must be protected with TLS 1.2 or higher.
+  fixable: true
+
+- id: CRYPTO-005
+  title: Weak TLS version
+  severity: high
+  analyzer: config-checker
+  pattern: weak-tls
+  controls:
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The application allows TLS versions older than 1.2. TLS 1.0 and 1.1
+    have known vulnerabilities and must be disabled.
+  fixable: true
+
+- id: CRYPTO-006
+  title: Missing HSTS header
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-hsts
+  controls:
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The Strict-Transport-Security header is not configured. HSTS prevents
+    protocol downgrade attacks and ensures browsers always use HTTPS.
+  fixable: true
+
+- id: CRYPTO-007
+  title: Missing Content-Security-Policy
+  severity: medium
+  analyzer: config-checker
+  pattern: missing-csp
+  controls:
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    No Content-Security-Policy header is configured. CSP mitigates
+    cross-site scripting (XSS) and data injection attacks by restricting
+    the sources from which content may be loaded.
+  fixable: true
+
+- id: CRYPTO-008
+  title: Wildcard CORS origin
+  severity: high
+  analyzer: config-checker
+  pattern: wildcard-cors
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    CORS is configured with a wildcard origin (*), allowing any domain to
+    make cross-origin requests. Origins should be explicitly whitelisted.
+  fixable: true
+
+- id: CONFIG-001
+  title: Docker container runs as root
+  severity: high
+  analyzer: config-checker
+  pattern: docker-root-user
+  controls:
+    - CC6.1
+    - CC6.3
+  framework:
+    - soc2
+  description: >-
+    The Dockerfile runs the container as the root user. Containers should
+    run as a non-root user to limit the blast radius of a container escape
+    and follow the principle of least privilege.
+  fixable: true
+
+- id: CONFIG-002
+  title: Docker container missing health check
+  severity: medium
+  analyzer: config-checker
+  pattern: docker-no-healthcheck
+  controls:
+    - CC7.1
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    The Dockerfile does not define a HEALTHCHECK instruction. Health checks
+    enable orchestrators to detect and replace unhealthy containers,
+    supporting availability and change management controls.
+  fixable: true
+
+- id: CONFIG-003
+  title: .env file not in .gitignore
+  severity: high
+  analyzer: config-checker
+  pattern: env-not-gitignored
+  controls:
+    - CC6.1
+    - CC6.7
+  framework:
+    - soc2
+  description: >-
+    The .env file is not listed in .gitignore. Environment files typically
+    contain secrets and configuration that must not be committed to version
+    control.
+  fixable: true
+
+# ── Logging (CC7.1–CC7.4) ─────────────────────────────────────────
+
+- id: LOG-001
+  title: No logging framework detected
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-logging
+  controls:
+    - CC7.1
+    - CC7.2
+  framework:
+    - soc2
+  description: >-
+    No structured logging framework (e.g., winston, pino, bunyan) was
+    detected. Structured logging is essential for audit trails and
+    security monitoring.
+  fixable: false
+
+- id: LOG-002
+  title: Sensitive data in logs
+  severity: high
+  analyzer: ast-analyzer
+  pattern: sensitive-in-logs
+  controls:
+    - CC7.2
+    - CC7.4
+  framework:
+    - soc2
+  description: >-
+    Log statements appear to include sensitive data such as passwords,
+    tokens, or personally identifiable information. Logs must be
+    sanitized to prevent data leakage.
+  fixable: false
+
+- id: LOG-003
+  title: Stack trace exposed to client
+  severity: high
+  analyzer: ast-analyzer
+  pattern: exposed-stack-trace
+  controls:
+    - CC7.2
+    - CC7.4
+  framework:
+    - soc2
+  description: >-
+    Error responses sent to clients include stack traces or internal
+    error details. Stack traces reveal application internals and must
+    be suppressed in production.
+  fixable: true
+
+- id: LOG-004
+  title: Empty catch block
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: empty-catch
+  controls:
+    - CC7.2
+    - CC7.3
+  framework:
+    - soc2
+  description: >-
+    A try/catch block has an empty catch handler, silently swallowing
+    errors. All exceptions should be logged and handled appropriately.
+  fixable: true
+
+- id: LOG-005
+  title: Console.log in production code
+  severity: low
+  analyzer: ast-analyzer
+  pattern: console-in-production
+  controls:
+    - CC7.2
+  framework:
+    - soc2
+  description: >-
+    Production source files contain console.log statements. Use a
+    structured logging library with appropriate log levels instead.
+  fixable: true
+
+- id: LOG-006
+  title: Missing error handling middleware
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: no-error-middleware
+  controls:
+    - CC7.2
+    - CC7.3
+  framework:
+    - soc2
+  description: >-
+    No global error-handling middleware is registered in the application.
+    A centralized error handler ensures consistent logging and prevents
+    unhandled errors from leaking to clients.
+  fixable: false
+
+- id: LOG-007
+  title: Unhandled promise rejection
+  severity: medium
+  analyzer: ast-analyzer
+  pattern: unhandled-rejection
+  controls:
+    - CC7.2
+    - CC7.3
+  framework:
+    - soc2
+  description: >-
+    Async code may produce unhandled promise rejections. These can crash
+    the process and bypass error-handling logic. Always attach .catch()
+    handlers or use try/catch with await.
+  fixable: false
+
+# ── Change Management (CC8.1) ─────────────────────────────────────
+
+- id: CHANGE-001
+  title: No CI/CD configuration detected
+  severity: medium
+  analyzer: config-checker
+  pattern: no-ci-config
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    No CI/CD pipeline configuration was found (e.g., .github/workflows,
+    .gitlab-ci.yml, Jenkinsfile). Automated build and test pipelines are
+    critical for reliable, auditable deployments.
+  fixable: false
+
+- id: CHANGE-002
+  title: No lockfile present
+  severity: high
+  analyzer: dep-auditor
+  pattern: missing-lockfile
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    No dependency lockfile (package-lock.json, yarn.lock, pnpm-lock.yaml)
+    was found. Lockfiles ensure deterministic builds and prevent unexpected
+    dependency changes.
+  fixable: true
+
+- id: CHANGE-003
+  title: Unpinned production dependencies
+  severity: medium
+  analyzer: dep-auditor
+  pattern: unpinned-deps
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    Production dependencies use loose version ranges (^, ~, *). Pin
+    dependencies to exact versions or use a lockfile to ensure
+    reproducible builds.
+  fixable: true
+
+- id: CHANGE-004
+  title: No branch protection
+  severity: medium
+  analyzer: git-analyzer
+  pattern: no-branch-protection
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    The default branch does not appear to have branch protection rules.
+    Protection rules (required reviews, status checks) prevent
+    unauthorized changes from being merged.
+  fixable: false
+
+- id: CHANGE-005
+  title: Force pushes in reflog
+  severity: low
+  analyzer: git-analyzer
+  pattern: force-push-detected
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    Force pushes were detected in the git reflog. Force pushes rewrite
+    history and can destroy audit trails. Consider disabling force
+    pushes via branch protection.
+  fixable: false
+
+- id: CHANGE-006
+  title: No code review enforcement
+  severity: medium
+  analyzer: git-analyzer
+  pattern: no-code-review
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    Commits are being pushed directly without pull-request-based code
+    review. All production changes should go through peer review.
+  fixable: false
+
+- id: CHANGE-007
+  title: Missing .gitignore entries
+  severity: low
+  analyzer: git-analyzer
+  pattern: incomplete-gitignore
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    The .gitignore file is missing common entries for build artifacts,
+    IDE configuration, or OS-specific files. An incomplete .gitignore
+    increases the risk of committing unnecessary or sensitive files.
+  fixable: true
+
+- id: CHANGE-008
+  title: Large binary files in git
+  severity: low
+  analyzer: git-analyzer
+  pattern: large-binary-in-git
+  controls:
+    - CC8.1
+  framework:
+    - soc2
+  description: >-
+    Large binary files are tracked in the git repository. Binary files
+    inflate repository size and should be managed with Git LFS or
+    external storage.
+  fixable: false
+
+# ── Vendor Risk (CC9.1) ───────────────────────────────────────────
+
+- id: VENDOR-001
+  title: Known CVE in dependency
+  severity: critical
+  analyzer: dep-auditor
+  pattern: known-cve
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    One or more dependencies have known Common Vulnerabilities and
+    Exposures (CVE) entries. Update to patched versions immediately
+    or evaluate mitigations.
+  fixable: false
+
+- id: VENDOR-002
+  title: Copyleft license (GPL/AGPL)
+  severity: high
+  analyzer: dep-auditor
+  pattern: copyleft-license
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    A dependency uses a copyleft license (GPL, AGPL, etc.) which may
+    impose distribution obligations on your software. Review license
+    compatibility with your project's licensing terms.
+  fixable: false
+
+- id: VENDOR-003
+  title: Deprecated package in use
+  severity: medium
+  analyzer: dep-auditor
+  pattern: deprecated-package
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    A dependency has been deprecated by its maintainer. Deprecated
+    packages no longer receive security updates and should be replaced
+    with actively maintained alternatives.
+  fixable: false
+
+- id: VENDOR-004
+  title: Missing package engines field
+  severity: low
+  analyzer: dep-auditor
+  pattern: missing-engines
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    The package.json does not specify an engines field. Declaring
+    supported Node.js versions prevents running on untested runtimes.
+  fixable: true
+
+- id: VENDOR-005
+  title: Outdated major version
+  severity: low
+  analyzer: dep-auditor
+  pattern: outdated-major
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    One or more dependencies are behind by a major version. Major
+    version updates may include important security fixes and should
+    be evaluated for upgrade.
+  fixable: false
+
+- id: VENDOR-006
+  title: No security policy (SECURITY.md)
+  severity: low
+  analyzer: git-analyzer
+  pattern: no-security-policy
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    The repository does not contain a SECURITY.md file. A security
+    policy tells security researchers how to responsibly report
+    vulnerabilities.
+  fixable: true
+
+- id: VENDOR-007
+  title: Missing license file
+  severity: low
+  analyzer: git-analyzer
+  pattern: missing-license
+  controls:
+    - CC9.1
+  framework:
+    - soc2
+  description: >-
+    The repository does not contain a LICENSE file. A license file
+    clarifies usage terms and is required for open-source compliance.
+  fixable: true
