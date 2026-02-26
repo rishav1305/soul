@@ -3,6 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
+
+	"github.com/rishav1305/soul/internal/config"
+	"github.com/rishav1305/soul/internal/server"
 )
 
 var version = "0.2.0-alpha"
@@ -21,11 +25,33 @@ func main() {
 	}
 
 	if len(args) > 0 && args[0] == "serve" {
-		fmt.Println("◆ Soul serve: coming soon")
+		runServe(args[1:])
 		return
 	}
 
 	printHelp()
+}
+
+func runServe(args []string) {
+	cfg := config.FromEnv()
+
+	// Parse --port flag from args.
+	if v := getFlagValue(args, "--port"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			cfg.Port = p
+		}
+	}
+
+	// Parse --dev flag.
+	if hasFlag(args, "--dev") {
+		cfg.DevMode = true
+	}
+
+	srv := server.New(cfg)
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func printHelp() {
@@ -45,4 +71,13 @@ func hasFlag(args []string, flags ...string) bool {
 		}
 	}
 	return false
+}
+
+func getFlagValue(args []string, flag string) string {
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
