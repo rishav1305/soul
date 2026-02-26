@@ -1,0 +1,14 @@
+{
+  "name": "@soul/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": { "build": "tsc", "test": "vitest run", "typecheck": "tsc --noEmit", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@soul/models": "0.1.0",
+    "@soul/plugins": "0.1.0",
+    "@soul/context": "0.1.0"
+  },
+  "devDependencies": { "vitest": "4.0.18", "typescript": "^5.7.3", "zod": "4.3.6" }
+}
