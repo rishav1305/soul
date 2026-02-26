@@ -7,22 +7,25 @@ import (
 	"strconv"
 
 	"github.com/rishav1305/soul/internal/config"
+	"github.com/rishav1305/soul/internal/session"
 )
 
 // Server is the core HTTP server for the Soul platform.
 type Server struct {
-	cfg config.Config
-	mux *http.ServeMux
+	cfg      config.Config
+	mux      *http.ServeMux
+	sessions *session.Store
 }
 
 // New creates a Server with all routes registered.
 func New(cfg config.Config) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
-		cfg: cfg,
-		mux: mux,
+		cfg:      cfg,
+		mux:      mux,
+		sessions: session.NewStore(),
 	}
-	registerRoutes(mux)
+	s.registerRoutes()
 	return s
 }
 

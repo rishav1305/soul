@@ -6,16 +6,19 @@ import (
 	"net/http"
 )
 
-// registerRoutes sets up all HTTP routes on the given mux.
-func registerRoutes(mux *http.ServeMux) {
+// registerRoutes sets up all HTTP routes on the server mux.
+func (s *Server) registerRoutes() {
 	// Health check endpoint.
-	mux.HandleFunc("GET /api/health", handleHealth)
+	s.mux.HandleFunc("GET /api/health", handleHealth)
 
 	// Catch-all for unknown API routes — returns 404 JSON.
-	mux.HandleFunc("/api/", handleAPINotFound)
+	s.mux.HandleFunc("/api/", handleAPINotFound)
+
+	// WebSocket endpoint for chat streaming.
+	s.mux.HandleFunc("GET /ws", s.handleWebSocket)
 
 	// SPA catch-all — serves embedded files, falls back to index.html.
-	mux.Handle("/", spaHandler())
+	s.mux.Handle("/", spaHandler())
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
