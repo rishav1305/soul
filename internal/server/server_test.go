@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rishav1305/soul/internal/config"
@@ -52,16 +53,11 @@ func TestSPAFallback(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if len(body) == 0 {
-		t.Fatal("expected non-empty body for SPA fallback")
-	}
-
-	// Should contain our placeholder index.html content
-	if !containsString(body, "Soul") {
+	if !strings.Contains(body, "Soul") {
 		t.Fatalf("expected body to contain 'Soul', got %q", body)
 	}
 
-	if !containsString(body, "id=\"root\"") {
+	if !strings.Contains(body, `id="root"`) {
 		t.Fatalf("expected body to contain div#root, got %q", body)
 	}
 }
@@ -92,17 +88,4 @@ func TestAPINotFoundReturns404(t *testing.T) {
 	if body["error"] == "" {
 		t.Fatal("expected error field in JSON response")
 	}
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

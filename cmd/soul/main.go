@@ -37,7 +37,7 @@ func runServe(args []string) {
 
 	// Parse --port flag from args.
 	if v := getFlagValue(args, "--port"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 && p <= 65535 {
 			cfg.Port = p
 		}
 	}

@@ -19,12 +19,16 @@ type Config struct {
 
 // Default returns a Config with sensible defaults.
 func Default() Config {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		home = "/tmp"
+	}
 	return Config{
-		Port:    3000,
-		Host:    "0.0.0.0",
-		Model:   "claude-sonnet-4-20250514",
-		DataDir: filepath.Join(home, ".soul"),
+		Port:      3000,
+		Host:      "127.0.0.1",
+		DevUIAddr: "http://localhost:5173",
+		Model:     "claude-sonnet-4-20250514",
+		DataDir:   filepath.Join(home, ".soul"),
 	}
 }
 
@@ -33,7 +37,7 @@ func FromEnv() Config {
 	cfg := Default()
 
 	if v := os.Getenv("SOUL_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 && p <= 65535 {
 			cfg.Port = p
 		}
 	}
