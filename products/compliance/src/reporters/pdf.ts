@@ -25,8 +25,11 @@ export async function generatePdf(html: string, outputPath: string): Promise<voi
   const puppeteer = await loadPuppeteer();
   const launch = puppeteer.default?.launch ?? puppeteer.launch;
   const browser = await launch({ headless: true });
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.pdf({ path: outputPath, format: 'A4', printBackground: true });
-  await browser.close();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.pdf({ path: outputPath, format: 'A4', printBackground: true });
+  } finally {
+    await browser.close();
+  }
 }
