@@ -1,7 +1,9 @@
 package server
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -19,6 +21,7 @@ type Server struct {
 	sessions *session.Store
 	products *products.Manager
 	ai       *ai.Client
+	webFS    fs.FS // embedded SPA files (nil = use placeholder)
 }
 
 // New creates a Server with all routes registered.
@@ -31,6 +34,32 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client) *Server {
 		sessions: session.NewStore(),
 		products: pm,
 		ai:       aiClient,
+	}
+	s.registerRoutes()
+	return s
+}
+
+// NewWithWebFS creates a Server that serves the SPA from the given embedded FS.
+// webDist should be the top-level embed.FS containing "web/dist/".
+func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, webDist embed.FS) *Server {
+	mux := http.NewServeMux()
+	// Extract web/dist/ subtree from the embed.FS
+	var webFS fs.FS
+	sub, err := fs.Sub(webDist, "web/dist")
+	if err == nil {
+		// Check if index.html exists in the subtree
+		if f, err2 := sub.Open("index.html"); err2 == nil {
+			f.Close()
+			webFS = sub
+		}
+	}
+	s := &Server{
+		cfg:      cfg,
+		mux:      mux,
+		sessions: session.NewStore(),
+		products: pm,
+		ai:       aiClient,
+		webFS:    webFS,
 	}
 	s.registerRoutes()
 	return s

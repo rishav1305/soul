@@ -12,17 +12,35 @@ var staticFiles embed.FS
 
 // spaHandler serves embedded static files and falls back to index.html
 // for any route that does not match a real file (SPA client-side routing).
+// If the server has a webFS set (from the Vite build), it uses that instead
+// of the placeholder static files.
+func (s *Server) spaHandlerFromFS() http.Handler {
+	var sub fs.FS
+	if s.webFS != nil {
+		sub = s.webFS
+	} else {
+		var err error
+		sub, err = fs.Sub(staticFiles, "static")
+		if err != nil {
+			panic("failed to create sub filesystem for static files: " + err.Error())
+		}
+	}
+	return newSPAFileServer(sub)
+}
+
+// spaHandler serves from the placeholder static/ embed (used when no webFS is set).
 func spaHandler() http.Handler {
-	// Strip the "static" prefix so files are served from root.
 	sub, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		panic("failed to create sub filesystem for static files: " + err.Error())
 	}
+	return newSPAFileServer(sub)
+}
 
+func newSPAFileServer(sub fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Clean path: remove leading slash for fs lookup.
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" {
 			path = "index.html"

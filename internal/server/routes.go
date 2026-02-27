@@ -28,7 +28,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /ws", s.handleWebSocket)
 
 	// SPA catch-all — serves embedded files, falls back to index.html.
-	s.mux.Handle("/", spaHandler())
+	if s.webFS != nil {
+		s.mux.Handle("/", s.spaHandlerFromFS())
+	} else {
+		s.mux.Handle("/", spaHandler())
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

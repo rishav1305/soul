@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 
+	soul "github.com/rishav1305/soul"
 	"github.com/rishav1305/soul/internal/ai"
 	"github.com/rishav1305/soul/internal/config"
 	"github.com/rishav1305/soul/internal/products"
@@ -87,7 +88,8 @@ func runServe(args []string) {
 		}
 	}
 
-	srv := server.New(cfg, manager, aiClient)
+	// Create server with embedded SPA (falls back to placeholder if web/dist not built).
+	srv := server.NewWithWebFS(cfg, manager, aiClient, soul.WebDist)
 
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
