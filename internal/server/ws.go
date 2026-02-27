@@ -45,7 +45,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
-		case "chat.send":
+		case "chat.send", "chat.message":
 			s.handleChatSend(ctx, conn, &msg)
 		default:
 			s.sendWSError(ctx, conn, fmt.Sprintf("unknown message type: %q", msg.Type))
