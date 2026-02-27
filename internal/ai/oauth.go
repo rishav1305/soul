@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,8 +14,10 @@ import (
 )
 
 const (
-	oauthRefreshURL = "https://console.anthropic.com/api/oauth/token"
-	oauthClientID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	oauthTokenURL    = "https://platform.claude.com/v1/oauth/token"
+	oauthCreateKeyURL = "https://api.anthropic.com/api/oauth/claude_cli/create_api_key"
+	oauthClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	oauthBetaHeader  = "oauth-2025-04-20"
 )
 
 // OAuthCredentials holds Claude Max/Pro OAuth token data.
@@ -29,12 +32,14 @@ type credentialsFile struct {
 	ClaudeAIOAuth *OAuthCredentials `json:"claudeAiOauth"`
 }
 
-// OAuthTokenSource manages OAuth tokens with automatic refresh.
+// OAuthTokenSource manages OAuth tokens and exchanges them for ephemeral API keys.
 type OAuthTokenSource struct {
-	mu          sync.Mutex
-	creds       OAuthCredentials
-	credsPath   string
-	httpClient  *http.Client
+	mu         sync.Mutex
+	creds      OAuthCredentials
+	credsPath  string
+	apiKey     string // ephemeral API key obtained from OAuth token
+	apiKeyExp  int64  // when the ephemeral key expires (Unix ms)
+	httpClient *http.Client
 }
 
 // LoadOAuthCredentials reads OAuth credentials from ~/.claude/.credentials.json.
@@ -81,11 +86,38 @@ func NewOAuthTokenSource(creds *OAuthCredentials) *OAuthTokenSource {
 	}
 }
 
-// Token returns a valid access token, refreshing if expired.
-func (s *OAuthTokenSource) Token() (string, error) {
+// APIKey returns a valid ephemeral API key, refreshing the OAuth token
+// and/or creating a new key as needed.
+func (s *OAuthTokenSource) APIKey() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Return cached API key if still valid (with 5 minute buffer).
+	if s.apiKey != "" && s.apiKeyExp > time.Now().UnixMilli()+5*60*1000 {
+		return s.apiKey, nil
+	}
+
+	// Ensure we have a valid OAuth access token.
+	accessToken, err := s.validAccessToken()
+	if err != nil {
+		return "", fmt.Errorf("ai: failed to get OAuth access token: %w", err)
+	}
+
+	// Exchange the access token for an ephemeral API key.
+	apiKey, err := createEphemeralAPIKey(s.httpClient, accessToken)
+	if err != nil {
+		return "", fmt.Errorf("ai: failed to create ephemeral API key: %w", err)
+	}
+
+	s.apiKey = apiKey
+	// Ephemeral keys typically last ~1 hour; re-create after 50 minutes.
+	s.apiKeyExp = time.Now().UnixMilli() + 50*60*1000
+
+	return s.apiKey, nil
+}
+
+// validAccessToken returns a valid OAuth access token, refreshing if expired.
+func (s *OAuthTokenSource) validAccessToken() (string, error) {
 	// Check if current token is still valid (with 5 minute buffer).
 	if s.creds.ExpiresAt > time.Now().UnixMilli()+5*60*1000 {
 		return s.creds.AccessToken, nil
@@ -93,12 +125,14 @@ func (s *OAuthTokenSource) Token() (string, error) {
 
 	// Token expired or about to expire — refresh it.
 	if s.creds.RefreshToken == "" {
-		return "", fmt.Errorf("ai: OAuth token expired and no refresh token available")
+		return "", fmt.Errorf("OAuth token expired and no refresh token available")
 	}
+
+	log.Println("  Refreshing OAuth token...")
 
 	newCreds, err := refreshOAuthToken(s.httpClient, s.creds.RefreshToken)
 	if err != nil {
-		return "", fmt.Errorf("ai: failed to refresh OAuth token: %w", err)
+		return "", fmt.Errorf("failed to refresh OAuth token: %w", err)
 	}
 
 	s.creds = *newCreds
@@ -134,7 +168,7 @@ func refreshOAuthToken(httpClient *http.Client, refreshToken string) (*OAuthCred
 		return nil, err
 	}
 
-	resp, err := httpClient.Post(oauthRefreshURL, "application/json", bytes.NewReader(reqBody))
+	resp, err := httpClient.Post(oauthTokenURL, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +189,44 @@ func refreshOAuthToken(httpClient *http.Client, refreshToken string) (*OAuthCred
 		RefreshToken: tokenResp.RefreshToken,
 		ExpiresAt:    time.Now().UnixMilli() + tokenResp.ExpiresIn*1000,
 	}, nil
+}
+
+type createAPIKeyResponse struct {
+	APIKey    string `json:"api_key"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+func createEphemeralAPIKey(httpClient *http.Client, accessToken string) (string, error) {
+	req, err := http.NewRequest(http.MethodPost, oauthCreateKeyURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("anthropic-beta", oauthBetaHeader)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("create_api_key returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var keyResp createAPIKeyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&keyResp); err != nil {
+		return "", fmt.Errorf("failed to decode API key response: %w", err)
+	}
+
+	if keyResp.APIKey == "" {
+		return "", fmt.Errorf("create_api_key returned empty API key")
+	}
+
+	return keyResp.APIKey, nil
 }
 
 // persistCredentials writes updated credentials back to the credentials file.
