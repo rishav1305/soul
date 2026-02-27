@@ -1,12 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
-import type { ChatMessage, ToolCallMessage, FindingMessage, WSMessage } from '../lib/types.ts';
+import type { ChatMessage, ToolCallMessage, WSMessage } from '../lib/types.ts';
+
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for non-secure contexts (HTTP, non-localhost)
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export function useChat() {
   const { send, onMessage, connected } = useWebSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const sessionIdRef = useRef<string>(crypto.randomUUID());
+  const sessionIdRef = useRef<string>(uuid());
 
   useEffect(() => {
     const unsubscribe = onMessage((msg: WSMessage) => {
@@ -25,7 +38,7 @@ export function useChat() {
             return [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id: uuid(),
                 role: 'assistant',
                 content: token,
                 toolCalls: [],
@@ -68,7 +81,7 @@ export function useChat() {
             return [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id: uuid(),
                 role: 'assistant',
                 content: '',
                 toolCalls: [toolCall],
@@ -91,16 +104,7 @@ export function useChat() {
         }
 
         case 'tool.finding': {
-          const data = msg.data as {
-            tool_call_id: string;
-            finding: FindingMessage;
-          };
-          setMessages((prev) =>
-            updateLastAssistantToolCall(prev, data.tool_call_id, (tc) => ({
-              ...tc,
-              findings: [...(tc.findings ?? []), data.finding],
-            })),
-          );
+          // Findings are handled by useScanResult and shown in the side panel.
           break;
         }
 
@@ -122,7 +126,7 @@ export function useChat() {
           setMessages((prev) => [
             ...prev,
             {
-              id: crypto.randomUUID(),
+              id: uuid(),
               role: 'assistant',
               content: `Error: ${errorContent}`,
               timestamp: new Date(),
@@ -140,7 +144,7 @@ export function useChat() {
   const sendMessage = useCallback(
     (content: string) => {
       const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: uuid(),
         role: 'user',
         content,
         timestamp: new Date(),

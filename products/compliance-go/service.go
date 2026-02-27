@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/rishav1305/soul/products/compliance-go/analyzers"
 	"github.com/rishav1305/soul/products/compliance-go/fix"
@@ -12,6 +15,21 @@ import (
 	soulv1 "github.com/rishav1305/soul/proto/soul/v1"
 	"google.golang.org/grpc"
 )
+
+// expandPath expands ~ to the user's home directory.
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+	}
+	return path
+}
 
 // ComplianceService implements the soulv1.ProductServiceServer interface,
 // exposing the compliance scanner, fixer, badge generator, and reporter
@@ -148,6 +166,7 @@ func (s *ComplianceService) executeScan(inputJSON string) (*soulv1.ToolResponse,
 			Output:  fmt.Sprintf("invalid input: %v", err),
 		}, nil
 	}
+	input.Directory = expandPath(input.Directory)
 
 	result, err := scan.RunScan(scan.ScanOptions{
 		Directory:  input.Directory,
@@ -359,6 +378,7 @@ func (s *ComplianceService) streamScan(inputJSON string, stream grpc.ServerStrea
 			},
 		})
 	}
+	input.Directory = expandPath(input.Directory)
 
 	// Send progress for scan start.
 	analyzerNames := []string{"secret-scanner", "config-checker", "git-analyzer", "dep-auditor", "ast-analyzer"}

@@ -3,11 +3,11 @@ interface ScanProgressProps {
 }
 
 const ANALYZERS = [
-  'license',
-  'secrets',
-  'sast',
-  'dependency',
-  'iac',
+  'secret-scanner',
+  'config-checker',
+  'git-analyzer',
+  'dep-auditor',
+  'ast-analyzer',
 ];
 
 export default function ScanProgress({ progress }: ScanProgressProps) {

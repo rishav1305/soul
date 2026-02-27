@@ -14,14 +14,34 @@ import (
 	soulv1 "github.com/rishav1305/soul/proto/soul/v1"
 )
 
-const systemPrompt = `You are Soul, an AI infrastructure assistant. Use tools to help users with compliance scanning, fixing, and monitoring.
+const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rishav. You help users with compliance scanning, security analysis, fixing, and monitoring.
 
-When a user asks about compliance, security, or code quality:
-1. Use the available tools to scan, analyze, or fix issues
-2. Report findings clearly with file paths and severity
-3. Suggest fixes when possible
+# Integrity
+- NEVER fabricate, invent, or hallucinate tool results, file paths, findings, or scan data.
+- ONLY report information that comes directly from tool execution results. Do not guess what a tool would return.
+- If no tools are available, say so clearly. Do not pretend to run a scan or produce fake output.
+- If a tool call fails or returns an error, report the error honestly. Do not replace it with made-up results.
+- If you are unsure, say so. Do not guess.
+- Do not make claims about files, code, or infrastructure you have not observed through tool output.
 
-Always be concise and actionable.`
+# Using tools
+- Use the available tools to scan, analyze, or fix issues when the user asks.
+- Report findings from actual tool output only. Do not add findings that are not in the data.
+- Suggest fixes only when the tool data supports it.
+- If the user asks for something outside your tool capabilities, say so.
+- After a scan completes, individual findings are already shown in the user's compliance side panel. Do NOT list individual findings, tables, or details in chat. Instead, give a brief summary (total count, severity breakdown) and suggest next steps.
+
+# Tone and style
+- Be concise and direct. Short responses are better than padded ones.
+- Do not use emojis unless the user uses them first.
+- Do not be a chatbot. No filler phrases like "Great question!", "Let's get started!", "What would you like to do today?", or "How can I help?". Just answer.
+- Use markdown tables and lists for structured data.
+- When reporting scan results, lead with a summary (total findings, severity breakdown), then details.
+
+# Self-awareness
+- Answer questions about yourself honestly. You know your model, version, and capabilities.
+- If asked what you are, say you are Soul, powered by the model specified below. Do not say "I don't have information about my model."
+- Soul version: 0.2.0-alpha.`
 
 const maxToolIterations = 10
 
@@ -31,14 +51,16 @@ type AgentLoop struct {
 	ai       *ai.Client
 	products *products.Manager
 	sessions *session.Store
+	model    string
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
-func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store) *AgentLoop {
+func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, model string) *AgentLoop {
 	return &AgentLoop{
 		ai:       aiClient,
 		products: pm,
 		sessions: sessions,
+		model:    model,
 	}
 }
 
@@ -59,6 +81,8 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 		return
 	}
 
+	log.Printf("[agent] run session=%s msg=%q", sessionID, userMessage)
+
 	// Get or create session.
 	sess := a.sessions.GetOrCreate(sessionID)
 	sess.AddMessage("user", userMessage)
@@ -73,8 +97,8 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 		}
 	}
 
-	// Build the system prompt with available tool names.
-	sysPrompt := systemPrompt
+	// Build the system prompt with model identity and available tool names.
+	sysPrompt := systemPrompt + fmt.Sprintf("\n\nYou are powered by %s.", a.model)
 	if len(claudeTools) > 0 {
 		var toolNames []string
 		for _, t := range claudeTools {
@@ -86,9 +110,12 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 	// Convert session messages to AI messages for the request.
 	messages := buildAIMessages(sess)
 
+	log.Printf("[agent] tools available: %d", len(claudeTools))
+
 	// Run the agent loop — Claude may call multiple tools iteratively.
 	var fullResponse strings.Builder
 	for iteration := 0; iteration < maxToolIterations; iteration++ {
+		log.Printf("[agent] iteration %d/%d", iteration+1, maxToolIterations)
 		req := ai.Request{
 			MaxTokens: 4096,
 			System:    sysPrompt,
@@ -114,6 +141,7 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 		stopReason, toolCalls, textContent := a.processStream(ctx, sessionID, body, sendEvent)
 		body.Close()
 
+		log.Printf("[agent] stream done stop_reason=%s tool_calls=%d text_len=%d", stopReason, len(toolCalls), len(textContent))
 		fullResponse.WriteString(textContent)
 
 		// If no tool calls, we're done.
@@ -266,11 +294,13 @@ func (a *AgentLoop) executeTool(
 	tc toolCall,
 	sendEvent func(WSMessage),
 ) string {
+	log.Printf("[agent] tool.call id=%s name=%s input=%s", tc.ID, tc.Name, tc.Input)
+
 	// Send tool.call event to the browser.
 	callData, _ := json.Marshal(map[string]string{
-		"tool_id": tc.ID,
-		"name":    tc.Name,
-		"input":   tc.Input,
+		"id":    tc.ID,
+		"name":  tc.Name,
+		"input": tc.Input,
 	})
 	sendEvent(WSMessage{
 		Type:      "tool.call",
@@ -304,28 +334,33 @@ func (a *AgentLoop) executeTool(
 
 	stream, err := client.ExecuteToolStream(ctx, toolReq)
 	if err != nil {
-		log.Printf("agent: ExecuteToolStream error: %v", err)
+		log.Printf("[agent] ExecuteToolStream error: %v", err)
 		return fmt.Sprintf("Error executing tool: %v", err)
 	}
 
-	var result string
+	var (
+		result       string
+		findingCount int
+		sevCounts    = make(map[string]int)
+	)
 	for {
 		event, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			log.Printf("agent: stream recv error: %v", err)
+			log.Printf("[agent] stream recv error: %v", err)
 			return fmt.Sprintf("Error reading tool stream: %v", err)
 		}
 
 		// Forward events to the browser.
 		switch ev := event.GetEvent().(type) {
 		case *soulv1.ToolEvent_Progress:
+			log.Printf("[agent] tool.progress analyzer=%s percent=%.0f", ev.Progress.GetAnalyzer(), ev.Progress.GetPercent())
 			progressData, _ := json.Marshal(map[string]any{
-				"tool_id":  tc.ID,
+				"id":       tc.ID,
 				"analyzer": ev.Progress.GetAnalyzer(),
-				"percent":  ev.Progress.GetPercent(),
+				"progress": ev.Progress.GetPercent(),
 				"message":  ev.Progress.GetMessage(),
 			})
 			sendEvent(WSMessage{
@@ -335,14 +370,20 @@ func (a *AgentLoop) executeTool(
 			})
 
 		case *soulv1.ToolEvent_Finding:
+			findingCount++
+			sev := strings.ToLower(ev.Finding.GetSeverity())
+			sevCounts[sev]++
+			log.Printf("[agent] tool.finding #%d id=%s sev=%s title=%s", findingCount, ev.Finding.GetId(), sev, ev.Finding.GetTitle())
 			findingData, _ := json.Marshal(map[string]any{
-				"tool_id":  tc.ID,
-				"id":       ev.Finding.GetId(),
-				"title":    ev.Finding.GetTitle(),
-				"severity": ev.Finding.GetSeverity(),
-				"file":     ev.Finding.GetFile(),
-				"line":     ev.Finding.GetLine(),
-				"evidence": ev.Finding.GetEvidence(),
+				"tool_call_id": tc.ID,
+				"finding": map[string]any{
+					"id":       ev.Finding.GetId(),
+					"title":    ev.Finding.GetTitle(),
+					"severity": ev.Finding.GetSeverity(),
+					"file":     ev.Finding.GetFile(),
+					"line":     ev.Finding.GetLine(),
+					"evidence": ev.Finding.GetEvidence(),
+				},
 			})
 			sendEvent(WSMessage{
 				Type:      "tool.finding",
@@ -355,21 +396,23 @@ func (a *AgentLoop) executeTool(
 			if ev.Complete.GetStructuredJson() != "" {
 				result = ev.Complete.GetStructuredJson()
 			}
+			log.Printf("[agent] tool.complete success=%v output_len=%d", ev.Complete.GetSuccess(), len(result))
 			completeData, _ := json.Marshal(map[string]any{
-				"tool_id": tc.ID,
+				"id":      tc.ID,
 				"success": ev.Complete.GetSuccess(),
 				"output":  ev.Complete.GetOutput(),
 			})
 			sendEvent(WSMessage{
-				Type:      "tool.done",
+				Type:      "tool.complete",
 				SessionID: sessionID,
 				Data:      completeData,
 			})
 
 		case *soulv1.ToolEvent_Error:
 			result = fmt.Sprintf("Error: %s", ev.Error.GetMessage())
+			log.Printf("[agent] tool.error code=%s msg=%s", ev.Error.GetCode(), ev.Error.GetMessage())
 			errorData, _ := json.Marshal(map[string]any{
-				"tool_id": tc.ID,
+				"id":      tc.ID,
 				"code":    ev.Error.GetCode(),
 				"message": ev.Error.GetMessage(),
 			})
@@ -379,6 +422,17 @@ func (a *AgentLoop) executeTool(
 				Data:      errorData,
 			})
 		}
+	}
+
+	// If findings were streamed to the browser side panel, return only a
+	// compact summary to the AI so it doesn't repeat individual findings.
+	if findingCount > 0 {
+		var parts []string
+		for sev, n := range sevCounts {
+			parts = append(parts, fmt.Sprintf("%d %s", n, sev))
+		}
+		result = fmt.Sprintf("Scan complete: %d findings (%s). Individual findings are already displayed in the user's compliance side panel — do NOT list them again in chat.", findingCount, strings.Join(parts, ", "))
+		log.Printf("[agent] tool result summarized: %s", result)
 	}
 
 	if result == "" {

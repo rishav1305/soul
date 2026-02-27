@@ -18,17 +18,21 @@ export function useScanResult() {
   useEffect(() => {
     const unsubscribe = onMessage((msg: WSMessage) => {
       switch (msg.type) {
-        case 'scan.start': {
-          setIsScanning(true);
-          setFindings([]);
-          setProgress({});
-          setScanResult(null);
+        case 'tool.call': {
+          const data = msg.data as { name?: string };
+          if (data.name?.includes('scan')) {
+            setIsScanning(true);
+            setFindings([]);
+            setProgress({});
+            setScanResult(null);
+          }
           break;
         }
 
         case 'tool.progress': {
           const data = msg.data as { analyzer?: string; progress: number };
           if (data.analyzer) {
+            setIsScanning(true);
             setProgress((prev) => ({
               ...prev,
               [data.analyzer as string]: data.progress,
@@ -39,20 +43,13 @@ export function useScanResult() {
 
         case 'tool.finding': {
           const data = msg.data as { finding: FindingMessage };
-          setFindings((prev) => [...prev, data.finding]);
+          if (data.finding) {
+            setFindings((prev) => [...prev, data.finding]);
+          }
           break;
         }
 
         case 'tool.complete': {
-          const data = msg.data as { output?: string };
-          if (data.output) {
-            try {
-              const parsed = JSON.parse(data.output) as ScanResult;
-              setScanResult(parsed);
-            } catch {
-              // Not a scan result
-            }
-          }
           setIsScanning(false);
           break;
         }

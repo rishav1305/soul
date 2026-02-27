@@ -1,8 +1,12 @@
 import ChatView from './components/chat/ChatView.tsx';
 import PanelContainer from './components/panels/PanelContainer.tsx';
 import CompliancePanel from './components/panels/CompliancePanel.tsx';
+import { WebSocketContext, useWebSocketProvider } from './hooks/useWebSocket.ts';
+import { useScanResult } from './hooks/useScanResult.ts';
 
-export default function App() {
+function AppContent() {
+  const { findings, progress, scanResult, isScanning } = useScanResult();
+
   return (
     <div className="h-screen bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="h-12 border-b border-zinc-800 flex items-center px-4 shrink-0">
@@ -13,9 +17,24 @@ export default function App() {
           <ChatView />
         </div>
         <PanelContainer>
-          <CompliancePanel />
+          <CompliancePanel
+            findings={findings}
+            progress={progress}
+            scanResult={scanResult}
+            isScanning={isScanning}
+          />
         </PanelContainer>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  const ws = useWebSocketProvider();
+
+  return (
+    <WebSocketContext.Provider value={ws}>
+      <AppContent />
+    </WebSocketContext.Provider>
   );
 }

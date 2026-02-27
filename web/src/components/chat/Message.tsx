@@ -1,3 +1,5 @@
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage } from '../../lib/types.ts';
 import ToolCall from './ToolCall.tsx';
 
@@ -17,9 +19,15 @@ export default function Message({ message }: MessageProps) {
             : 'bg-zinc-900 text-zinc-200'
         }`}
       >
-        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-          {message.content}
-        </div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+            {message.content}
+          </div>
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+        )}
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mt-2">
             {message.toolCalls.map((tc) => (

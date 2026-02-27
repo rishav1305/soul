@@ -25,11 +25,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		OriginPatterns: []string{"*"},
 	})
 	if err != nil {
-		log.Printf("websocket accept: %v", err)
+		log.Printf("[ws] accept error: %v", err)
 		return
 	}
 	defer conn.Close(websocket.StatusInternalError, "unexpected close")
 
+	log.Printf("[ws] client connected from %s", r.RemoteAddr)
 	ctx := r.Context()
 
 	for {
@@ -38,16 +39,20 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			// Client disconnected or read error — exit cleanly.
 			if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
 				websocket.CloseStatus(err) == websocket.StatusGoingAway {
+				log.Printf("[ws] client disconnected (clean)")
 				return
 			}
-			log.Printf("websocket read: %v", err)
+			log.Printf("[ws] read error: %v", err)
 			return
 		}
+
+		log.Printf("[ws] recv type=%s session=%s content_len=%d", msg.Type, msg.SessionID, len(msg.Content))
 
 		switch msg.Type {
 		case "chat.send", "chat.message":
 			s.handleChatSend(ctx, conn, &msg)
 		default:
+			log.Printf("[ws] unknown message type: %q", msg.Type)
 			s.sendWSError(ctx, conn, fmt.Sprintf("unknown message type: %q", msg.Type))
 		}
 	}
@@ -61,16 +66,19 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		sessionID = "default"
 	}
 
+	log.Printf("[ws] chat.send session=%s content=%q", sessionID, msg.Content)
+
 	// Create a sendEvent callback that writes to the WebSocket.
 	sendEvent := func(wsMsg WSMessage) {
 		if err := wsjson.Write(ctx, conn, wsMsg); err != nil {
-			log.Printf("websocket write %s: %v", wsMsg.Type, err)
+			log.Printf("[ws] write error type=%s: %v", wsMsg.Type, err)
 		}
 	}
 
 	// Run the AI agent loop.
-	agent := NewAgentLoop(s.ai, s.products, s.sessions)
+	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.cfg.Model)
 	agent.Run(ctx, sessionID, msg.Content, sendEvent)
+	log.Printf("[ws] chat.send complete session=%s", sessionID)
 }
 
 // sendWSError sends an error message back to the client.
