@@ -115,18 +115,16 @@ func (c *Client) SendStream(ctx context.Context, req Request) (io.ReadCloser, er
 }
 
 func (c *Client) setAuthHeader(req *http.Request) error {
-	var key string
 	switch c.authMode {
 	case AuthOAuth:
-		// OAuth flow: exchange token for ephemeral API key.
-		k, err := c.oauth.APIKey()
+		token, err := c.oauth.AccessToken()
 		if err != nil {
-			return fmt.Errorf("ai: failed to get API key from OAuth: %w", err)
+			return fmt.Errorf("ai: failed to get OAuth token: %w", err)
 		}
-		key = k
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("anthropic-beta", oauthBetaHeader)
 	default:
-		key = c.apiKey
+		req.Header.Set("X-API-Key", c.apiKey)
 	}
-	req.Header.Set("X-API-Key", key)
 	return nil
 }
