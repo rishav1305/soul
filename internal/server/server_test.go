@@ -13,7 +13,7 @@ import (
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := config.Default()
-	srv := server.New(cfg, nil, nil)
+	srv := server.New(cfg, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	w := httptest.NewRecorder()
@@ -41,7 +41,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestSPAFallback(t *testing.T) {
 	cfg := config.Default()
-	srv := server.New(cfg, nil, nil)
+	srv := server.New(cfg, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/some/spa/route", nil)
 	w := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestSPAFallback(t *testing.T) {
 
 func TestAPINotFoundReturns404(t *testing.T) {
 	cfg := config.Default()
-	srv := server.New(cfg, nil, nil)
+	srv := server.New(cfg, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/nonexistent", nil)
 	w := httptest.NewRecorder()

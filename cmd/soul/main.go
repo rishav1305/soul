@@ -6,12 +6,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
 	soul "github.com/rishav1305/soul"
 	"github.com/rishav1305/soul/internal/ai"
 	"github.com/rishav1305/soul/internal/config"
+	"github.com/rishav1305/soul/internal/planner"
 	"github.com/rishav1305/soul/internal/products"
 	"github.com/rishav1305/soul/internal/server"
 )
@@ -71,6 +73,16 @@ func runServe(args []string) {
 		fmt.Println("  AI client not configured (set ANTHROPIC_API_KEY or log in with Claude CLI)")
 	}
 
+	// Open planner store.
+	var plannerStore *planner.Store
+	plannerDB := filepath.Join(cfg.DataDir, "planner.db")
+	plannerStore, err := planner.OpenStore(plannerDB)
+	if err != nil {
+		log.Printf("WARNING: failed to open planner store: %v", err)
+	} else {
+		fmt.Println("  Planner store opened")
+	}
+
 	// Determine compliance binary path.
 	complianceBin := getFlagValue(args, "--compliance-bin")
 	if complianceBin == "" {
@@ -93,7 +105,7 @@ func runServe(args []string) {
 	}
 
 	// Create server with embedded SPA (falls back to placeholder if web/dist not built).
-	srv := server.NewWithWebFS(cfg, manager, aiClient, soul.WebDist)
+	srv := server.NewWithWebFS(cfg, manager, aiClient, plannerStore, soul.WebDist)
 
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)

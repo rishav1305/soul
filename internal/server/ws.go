@@ -33,6 +33,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[ws] client connected from %s", r.RemoteAddr)
 	ctx := r.Context()
 
+	// Register this client for broadcast messages.
+	s.registerWSClient(conn, ctx)
+	defer s.unregisterWSClient(conn)
+
 	for {
 		var msg WSMessage
 		if err := wsjson.Read(ctx, conn, &msg); err != nil {

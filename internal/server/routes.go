@@ -21,6 +21,14 @@ func (s *Server) registerRoutes() {
 	// Direct tool execution endpoint (bypasses AI).
 	s.mux.HandleFunc("POST /api/tools/{tool}/execute", s.handleToolExecute)
 
+	// Planner task endpoints.
+	s.mux.HandleFunc("POST /api/tasks", s.handleTaskCreate)
+	s.mux.HandleFunc("GET /api/tasks", s.handleTaskList)
+	s.mux.HandleFunc("GET /api/tasks/{id}", s.handleTaskGet)
+	s.mux.HandleFunc("PATCH /api/tasks/{id}", s.handleTaskUpdate)
+	s.mux.HandleFunc("DELETE /api/tasks/{id}", s.handleTaskDelete)
+	s.mux.HandleFunc("POST /api/tasks/{id}/move", s.handleTaskMove)
+
 	// Catch-all for unknown API routes — returns 404 JSON.
 	s.mux.HandleFunc("/api/", handleAPINotFound)
 
