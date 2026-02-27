@@ -53,43 +53,24 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleChatSend processes a chat.send message: stores the user message,
-// then sends back a placeholder chat.token and chat.done response.
+// handleChatSend processes a chat.send message by running the AI agent loop.
+// It streams tokens, tool calls, and progress events back to the browser.
 func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *WSMessage) {
 	sessionID := msg.SessionID
 	if sessionID == "" {
 		sessionID = "default"
 	}
 
-	sess := s.sessions.GetOrCreate(sessionID)
-	sess.AddMessage("user", msg.Content)
-
-	// Placeholder response — real AI streaming comes in Task 8.
-	placeholder := fmt.Sprintf("Echo: %s", msg.Content)
-
-	// Send a chat.token with the content.
-	tokenMsg := WSMessage{
-		Type:      "chat.token",
-		SessionID: sessionID,
-		Content:   placeholder,
-	}
-	if err := wsjson.Write(ctx, conn, tokenMsg); err != nil {
-		log.Printf("websocket write chat.token: %v", err)
-		return
+	// Create a sendEvent callback that writes to the WebSocket.
+	sendEvent := func(wsMsg WSMessage) {
+		if err := wsjson.Write(ctx, conn, wsMsg); err != nil {
+			log.Printf("websocket write %s: %v", wsMsg.Type, err)
+		}
 	}
 
-	// Send chat.done to signal completion.
-	doneMsg := WSMessage{
-		Type:      "chat.done",
-		SessionID: sessionID,
-	}
-	if err := wsjson.Write(ctx, conn, doneMsg); err != nil {
-		log.Printf("websocket write chat.done: %v", err)
-		return
-	}
-
-	// Store the assistant response in the session.
-	sess.AddMessage("assistant", placeholder)
+	// Run the AI agent loop.
+	agent := NewAgentLoop(s.ai, s.products, s.sessions)
+	agent.Run(ctx, sessionID, msg.Content, sendEvent)
 }
 
 // sendWSError sends an error message back to the client.

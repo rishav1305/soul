@@ -23,7 +23,7 @@ type wsMessage struct {
 
 func TestWebSocketConnect(t *testing.T) {
 	cfg := config.Default()
-	srv := server.New(cfg)
+	srv := server.New(cfg, nil, nil)
 
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -76,7 +76,7 @@ func TestWebSocketConnect(t *testing.T) {
 
 func TestWebSocketInvalidMessage(t *testing.T) {
 	cfg := config.Default()
-	srv := server.New(cfg)
+	srv := server.New(cfg, nil, nil)
 
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()

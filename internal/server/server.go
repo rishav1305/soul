@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/rishav1305/soul/internal/ai"
 	"github.com/rishav1305/soul/internal/config"
+	"github.com/rishav1305/soul/internal/products"
 	"github.com/rishav1305/soul/internal/session"
 )
 
@@ -15,15 +17,20 @@ type Server struct {
 	cfg      config.Config
 	mux      *http.ServeMux
 	sessions *session.Store
+	products *products.Manager
+	ai       *ai.Client
 }
 
 // New creates a Server with all routes registered.
-func New(cfg config.Config) *Server {
+// The products manager and AI client may be nil if not configured.
+func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		cfg:      cfg,
 		mux:      mux,
 		sessions: session.NewStore(),
+		products: pm,
+		ai:       aiClient,
 	}
 	s.registerRoutes()
 	return s
