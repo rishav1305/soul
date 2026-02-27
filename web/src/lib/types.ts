@@ -31,3 +31,30 @@ export interface FindingMessage {
   line?: number;
   evidence?: string;
 }
+
+export type TaskStage = 'backlog' | 'brainstorm' | 'active' | 'blocked' | 'validation' | 'done';
+export type TaskSubstep = 'tdd' | 'implementing' | 'reviewing' | 'qa_test' | 'e2e_test' | 'security_review';
+
+export interface PlannerTask {
+  id: number;
+  title: string;
+  description: string;
+  acceptance: string;
+  stage: TaskStage;
+  substep: TaskSubstep | '';
+  priority: number;
+  source: string;
+  blocker: string;
+  plan: string;
+  output: string;
+  error: string;
+  agent_id: string;
+  product: string;
+  parent_id: number | null;
+  metadata: string;
+  retry_count: number;
+  max_retries: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
