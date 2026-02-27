@@ -58,13 +58,17 @@ func runServe(args []string) {
 	registry := products.NewRegistry()
 	manager := products.NewManager(registry, cfg.DataDir)
 
-	// Create AI client (may be nil if API key is not set).
+	// Create AI client: try API key first, then Claude Max OAuth credentials.
 	var aiClient *ai.Client
 	if cfg.APIKey != "" {
 		aiClient = ai.NewClient(cfg.APIKey, cfg.Model)
-		fmt.Println("  AI client configured")
+		fmt.Println("  AI client configured (API key)")
+	} else if oauthCreds := ai.LoadOAuthCredentials(); oauthCreds != nil {
+		tokenSource := ai.NewOAuthTokenSource(oauthCreds)
+		aiClient = ai.NewOAuthClient(tokenSource, cfg.Model)
+		fmt.Println("  AI client configured (Claude Max OAuth)")
 	} else {
-		fmt.Println("  AI client not configured (set ANTHROPIC_API_KEY)")
+		fmt.Println("  AI client not configured (set ANTHROPIC_API_KEY or log in with Claude CLI)")
 	}
 
 	// Determine compliance binary path.
@@ -115,13 +119,16 @@ func printHelp() {
 	fmt.Println("  soul --version                                              Show version")
 	fmt.Println("  soul --help                                                 Show this help")
 	fmt.Println()
+	fmt.Println("Authentication (in priority order):")
+	fmt.Println("  ANTHROPIC_API_KEY      Claude API key")
+	fmt.Println("  ~/.claude/.credentials.json   Claude Max/Pro OAuth (auto-detected)")
+	fmt.Println()
 	fmt.Println("Environment:")
-	fmt.Println("  ANTHROPIC_API_KEY      Claude API key for AI features")
 	fmt.Println("  SOUL_COMPLIANCE_BIN    Path to compliance product binary")
 	fmt.Println("  SOUL_PORT              Server port (default: 3000)")
 	fmt.Println("  SOUL_HOST              Server host (default: 127.0.0.1)")
 	fmt.Println("  SOUL_DATA_DIR          Data directory (default: ~/.soul)")
-	fmt.Println("  SOUL_MODEL             Claude model (default: claude-sonnet-4-20250514)")
+	fmt.Println("  SOUL_MODEL             Claude model (default: claude-sonnet-4-6)")
 }
 
 func hasFlag(args []string, flags ...string) bool {

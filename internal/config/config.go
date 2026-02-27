@@ -27,7 +27,7 @@ func Default() Config {
 		Port:      3000,
 		Host:      "127.0.0.1",
 		DevUIAddr: "http://localhost:5173",
-		Model:     "claude-sonnet-4-20250514",
+		Model:     "claude-sonnet-4-6",
 		DataDir:   filepath.Join(home, ".soul"),
 	}
 }

@@ -14,17 +14,39 @@ const (
 	claudeAPIVersion = "2023-06-01"
 )
 
+// AuthMode indicates how the client authenticates with the API.
+type AuthMode int
+
+const (
+	AuthAPIKey AuthMode = iota
+	AuthOAuth
+)
+
 // Client wraps the Claude Messages API with streaming support.
 type Client struct {
-	apiKey     string
+	authMode   AuthMode
+	apiKey     string       // used when AuthMode == AuthAPIKey
+	oauth      *OAuthTokenSource // used when AuthMode == AuthOAuth
 	model      string
 	httpClient *http.Client
 }
 
-// NewClient creates a new Claude API client.
+// NewClient creates a new Claude API client using an API key.
 func NewClient(apiKey, model string) *Client {
 	return &Client{
+		authMode:   AuthAPIKey,
 		apiKey:     apiKey,
+		model:      model,
+		httpClient: &http.Client{},
+	}
+}
+
+// NewOAuthClient creates a new Claude API client using OAuth credentials.
+// Tokens are automatically refreshed when they expire.
+func NewOAuthClient(tokenSource *OAuthTokenSource, model string) *Client {
+	return &Client{
+		authMode:   AuthOAuth,
+		oauth:      tokenSource,
 		model:      model,
 		httpClient: &http.Client{},
 	}
@@ -71,8 +93,12 @@ func (c *Client) SendStream(ctx context.Context, req Request) (io.ReadCloser, er
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-API-Key", c.apiKey)
 	httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+
+	// Set auth header based on mode.
+	if err := c.setAuthHeader(httpReq); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -86,4 +112,18 @@ func (c *Client) SendStream(ctx context.Context, req Request) (io.ReadCloser, er
 	}
 
 	return resp.Body, nil
+}
+
+func (c *Client) setAuthHeader(req *http.Request) error {
+	switch c.authMode {
+	case AuthOAuth:
+		token, err := c.oauth.Token()
+		if err != nil {
+			return fmt.Errorf("ai: failed to get OAuth token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	default:
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+	return nil
 }
