@@ -4,6 +4,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 )
 
@@ -35,6 +37,16 @@ func spaHandler() http.Handler {
 		panic("failed to create sub filesystem for static files: " + err.Error())
 	}
 	return newSPAFileServer(sub)
+}
+
+// devProxyHandler returns a reverse proxy to the Vite dev server.
+// In dev mode, all non-API requests are proxied to Vite for hot reload.
+func devProxyHandler(viteAddr string) http.Handler {
+	target, err := url.Parse(viteAddr)
+	if err != nil {
+		panic("invalid Vite dev server address: " + err.Error())
+	}
+	return httputil.NewSingleHostReverseProxy(target)
 }
 
 func newSPAFileServer(sub fs.FS) http.Handler {

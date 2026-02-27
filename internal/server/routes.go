@@ -28,7 +28,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /ws", s.handleWebSocket)
 
 	// SPA catch-all — serves embedded files, falls back to index.html.
-	if s.webFS != nil {
+	// In dev mode, proxy to Vite dev server for hot reload.
+	if s.cfg.DevMode {
+		s.mux.Handle("/", devProxyHandler(s.cfg.DevUIAddr))
+	} else if s.webFS != nil {
 		s.mux.Handle("/", s.spaHandlerFromFS())
 	} else {
 		s.mux.Handle("/", spaHandler())
