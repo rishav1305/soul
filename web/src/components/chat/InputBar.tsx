@@ -40,10 +40,14 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set());
   const [showToolPopover, setShowToolPopover] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [interimText, setInterimText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const toolPopoverRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const speechSupported = typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
   // Fetch models on mount
   useEffect(() => {
@@ -97,16 +101,6 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   }, [value, disabled, model, chatType, disabledTools, thinking, onSend]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    },
-    [handleSend],
-  );
-
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
     const el = e.target;
@@ -136,9 +130,93 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) pastedFiles.push(file);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      setFiles((prev) => [...prev, ...pastedFiles]);
+    }
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (!speechSupported) return;
+    const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      if (final) {
+        setValue((prev) => prev + final);
+        setInterimText('');
+      } else {
+        setInterimText(interim);
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      setInterimText('');
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setInterimText('');
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [speechSupported]);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    setInterimText('');
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape' && isListening) {
+        e.preventDefault();
+        stopListening();
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (isListening) stopListening();
+        handleSend();
+      }
+    },
+    [handleSend, isListening, stopListening],
+  );
+
   return (
     <div className="px-5 py-4">
-      <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20">
+      <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
         {/* File attachments */}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">
@@ -176,6 +254,11 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           rows={1}
           className="w-full bg-transparent px-4 pt-3 pb-2 text-fg placeholder:text-fg-muted font-body resize-none overflow-y-hidden focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
         />
+
+        {/* Interim speech text */}
+        {isListening && interimText && (
+          <div className="px-4 pb-1 text-fg-muted text-sm italic truncate">{interimText}</div>
+        )}
 
         {/* Toolbar */}
         <div className="flex items-center gap-1.5 px-3 py-2 border-t border-border-subtle">
@@ -324,17 +407,36 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Send button */}
-          <button
-            onClick={handleSend}
-            disabled={disabled || !value.trim()}
-            className="w-8 h-8 bg-soul text-deep rounded-full flex items-center justify-center hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
-            title="Send"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 3l-1 1 3.3 3.3H3v1.4h7.3L7 12l1 1 5-5-5-5z" />
-            </svg>
-          </button>
+          {/* Send or Mic button */}
+          {!value.trim() && !disabled && speechSupported ? (
+            <button
+              type="button"
+              onClick={isListening ? stopListening : startListening}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                isListening
+                  ? 'bg-stage-blocked text-white animate-soul-pulse'
+                  : 'bg-elevated text-fg-muted hover:text-fg hover:bg-overlay'
+              }`}
+              title={isListening ? 'Stop listening' : 'Voice input'}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="1" width="6" height="8" rx="3" />
+                <path d="M3 7v1a5 5 0 0 0 10 0V7" />
+                <path d="M8 13v2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={disabled || !value.trim()}
+              className="w-8 h-8 bg-soul text-deep rounded-full flex items-center justify-center hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
+              title="Send"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 3l-1 1 3.3 3.3H3v1.4h7.3L7 12l1 1 5-5-5-5z" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>
