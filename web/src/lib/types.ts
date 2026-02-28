@@ -100,4 +100,5 @@ export interface SendOptions {
   model?: string;
   chatType?: string;
   disabledTools?: string[];
+  thinking?: boolean;
 }

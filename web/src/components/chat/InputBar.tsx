@@ -20,13 +20,22 @@ interface InputBarProps {
   disabled: boolean;
 }
 
-const CHAT_TYPES = ['Chat', 'Code', 'Planner'] as const;
+const CHAT_TYPES = [
+  { value: 'Chat', label: 'Chat', group: 'mode' },
+  { value: 'Code', label: 'Code', group: 'mode' },
+  { value: 'Architect', label: 'Architect', group: 'mode' },
+  { value: 'Debug', label: 'Debug', group: 'skill' },
+  { value: 'Review', label: 'Review', group: 'skill' },
+  { value: 'TDD', label: 'TDD', group: 'skill' },
+  { value: 'Brainstorm', label: 'Brainstorm', group: 'skill' },
+] as const;
 
 export default function InputBar({ onSend, disabled }: InputBarProps) {
   const [value, setValue] = useState('');
   const [model, setModel] = useState<string>('');
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [chatType, setChatType] = useState<string>('Chat');
+  const [thinking, setThinking] = useState(false);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set());
   const [showToolPopover, setShowToolPopover] = useState(false);
@@ -81,11 +90,12 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
     if (model) options.model = model;
     if (chatType !== 'Chat') options.chatType = chatType.toLowerCase();
     if (disabledTools.size > 0) options.disabledTools = Array.from(disabledTools);
+    if (thinking) options.thinking = true;
     onSend(trimmed, Object.keys(options).length > 0 ? options : undefined);
     setValue('');
     setFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [value, disabled, model, chatType, disabledTools, onSend]);
+  }, [value, disabled, model, chatType, disabledTools, thinking, onSend]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -128,7 +138,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
 
   return (
     <div className="px-5 py-4">
-      <div className="glass rounded-2xl overflow-hidden">
+      <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20">
         {/* File attachments */}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">
@@ -192,10 +202,34 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
             onChange={(e) => setChatType(e.target.value)}
             className="soul-select pr-6 text-[11px]"
           >
-            {CHAT_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
+            <optgroup label="Modes">
+              {CHAT_TYPES.filter(t => t.group === 'mode').map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Workflows">
+              {CHAT_TYPES.filter(t => t.group === 'skill').map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </optgroup>
           </select>
+
+          {/* Extended thinking toggle */}
+          {model.includes('opus') && (
+            <button
+              type="button"
+              onClick={() => setThinking(!thinking)}
+              className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
+                thinking ? 'bg-soul/20 text-soul' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+              }`}
+              title={thinking ? 'Extended thinking ON' : 'Extended thinking OFF'}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 2a5 5 0 0 1 3 9v1.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 5 12.5V11a5 5 0 0 1 3-9z" />
+                <path d="M6 14.5h4" />
+              </svg>
+            </button>
+          )}
 
           {/* Tool permissions */}
           <div className="relative" ref={toolPopoverRef}>
