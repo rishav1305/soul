@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -152,20 +153,23 @@ func (s *Server) StartDevServer(devPort int) {
 		return
 	}
 
-	// Serve dev frontend from disk.
+	// Serve dev frontend from disk, but delegate API/WS to the prod mux.
 	devDist := filepath.Join(devRoot, "web", "dist")
-	devMux := http.NewServeMux()
-	devMux.Handle("/", newSPAFileServer(os.DirFS(devDist)))
-
-	// Share API and WS routes with prod.
-	devMux.HandleFunc("GET /api/health", handleHealth)
-	devMux.HandleFunc("GET /api/tasks", s.handleTaskList)
-	devMux.HandleFunc("GET /api/tasks/{id}", s.handleTaskGet)
+	devSPA := newSPAFileServer(os.DirFS(devDist))
+	devHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// API and WebSocket requests go to the prod server's handlers.
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/ws" {
+			s.mux.ServeHTTP(w, r)
+			return
+		}
+		// Everything else served from the dev frontend build.
+		devSPA.ServeHTTP(w, r)
+	})
 
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(devPort))
 	fmt.Printf("◆ Soul dev server listening on %s\n", addr)
 	go func() {
-		if err := http.ListenAndServe(addr, devMux); err != nil {
+		if err := http.ListenAndServe(addr, devHandler); err != nil {
 			log.Printf("[dev-server] error: %v", err)
 		}
 	}()
