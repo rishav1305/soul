@@ -104,6 +104,34 @@ func runServe(args []string) {
 		}
 	}
 
+	// Determine scout binary path.
+	scoutBin := getFlagValue(args, "--scout-bin")
+	if scoutBin == "" {
+		scoutBin = os.Getenv("SOUL_SCOUT_BIN")
+	}
+	if scoutBin == "" {
+		cwd, _ := os.Getwd()
+		candidate := filepath.Join(cwd, "products", "scout", "scout")
+		if _, err := os.Stat(candidate); err == nil {
+			scoutBin = candidate
+		}
+	}
+
+	// Start scout product if binary is available.
+	if scoutBin != "" {
+		if _, err := os.Stat(scoutBin); err == nil {
+			ctx := context.Background()
+			fmt.Printf("  Starting scout product: %s\n", scoutBin)
+			if err := manager.StartProduct(ctx, "scout", scoutBin); err != nil {
+				log.Printf("WARNING: failed to start scout product: %v", err)
+			} else {
+				fmt.Println("  Scout product started")
+			}
+		} else {
+			log.Printf("WARNING: scout binary not found at %s", scoutBin)
+		}
+	}
+
 	// Create server with embedded SPA (falls back to placeholder if web/dist not built).
 	srv := server.NewWithWebFS(cfg, manager, aiClient, plannerStore, soul.WebDist)
 
@@ -130,7 +158,7 @@ func runServe(args []string) {
 func printHelp() {
 	fmt.Printf("◆ Soul v%s\n\n", version)
 	fmt.Println("Usage:")
-	fmt.Println("  soul serve [--port PORT] [--dev] [--compliance-bin PATH]   Start web UI")
+	fmt.Println("  soul serve [--port PORT] [--dev] [--compliance-bin PATH] [--scout-bin PATH]   Start web UI")
 	fmt.Println("  soul --version                                              Show version")
 	fmt.Println("  soul --help                                                 Show this help")
 	fmt.Println()
@@ -140,6 +168,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Environment:")
 	fmt.Println("  SOUL_COMPLIANCE_BIN    Path to compliance product binary")
+	fmt.Println("  SOUL_SCOUT_BIN         Path to scout product binary")
 	fmt.Println("  SOUL_PORT              Server port (default: 3000)")
 	fmt.Println("  SOUL_HOST              Server host (default: 127.0.0.1)")
 	fmt.Println("  SOUL_DATA_DIR          Data directory (default: ~/.soul)")
