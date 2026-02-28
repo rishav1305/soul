@@ -15,8 +15,8 @@ export default function Message({ message }: MessageProps) {
       <div
         className={`max-w-[80%] px-4 py-3 ${
           isUser
-            ? 'bg-elevated text-fg rounded-2xl rounded-br-md'
-            : 'bg-surface border border-border-subtle text-fg rounded-2xl rounded-bl-md'
+            ? 'bg-elevated border-l-2 border-soul/40 text-fg rounded-2xl rounded-br-md'
+            : 'text-fg rounded-2xl rounded-bl-md'
         }`}
       >
         {isUser ? (
