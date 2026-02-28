@@ -24,10 +24,14 @@ func LaunchVisible(platform string) (*rod.Browser, *rod.Page, error) {
 		return nil, nil, fmt.Errorf("profile dir: %w", err)
 	}
 
-	u, err := launcher.New().
+	l := launcher.New().
 		UserDataDir(profileDir).
 		Headless(false).
-		Launch()
+		NoSandbox(true)
+	if path, found := launcher.LookPath(); found {
+		l = l.Bin(path)
+	}
+	u, err := l.Launch()
 	if err != nil {
 		return nil, nil, fmt.Errorf("launch chrome: %w", err)
 	}
@@ -65,10 +69,14 @@ func LaunchHeadless(platform string) (*rod.Browser, error) {
 		return nil, fmt.Errorf("profile dir: %w", err)
 	}
 
-	u, err := launcher.New().
+	l := launcher.New().
 		UserDataDir(profileDir).
 		Headless(true).
-		Launch()
+		NoSandbox(true)
+	if path, found := launcher.LookPath(); found {
+		l = l.Bin(path)
+	}
+	u, err := l.Launch()
 	if err != nil {
 		return nil, fmt.Errorf("launch chrome: %w", err)
 	}
