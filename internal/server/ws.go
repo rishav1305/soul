@@ -105,7 +105,7 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	}
 
 	// Run the AI agent loop.
-	agent := NewAgentLoop(s.ai, s.products, s.sessions, model)
+	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model)
 	agent.Run(ctx, sessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, sendEvent)
 	log.Printf("[ws] chat.send complete session=%s", sessionID)
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/rishav1305/soul/internal/ai"
+	"github.com/rishav1305/soul/internal/planner"
 	"github.com/rishav1305/soul/internal/products"
 	"github.com/rishav1305/soul/internal/session"
 	soulv1 "github.com/rishav1305/soul/proto/soul/v1"
@@ -31,6 +32,14 @@ const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rish
 - If the user asks for something outside your tool capabilities, say so.
 - After a scan completes, individual findings are already shown in the user's compliance side panel. Do NOT list individual findings, tables, or details in chat. Instead, give a brief summary (total count, severity breakdown) and suggest next steps.
 
+# Task management
+- You have built-in tools to manage the task board: task_create, task_list, task_update.
+- When the user asks to create, add, or track tasks — use the task_create tool. Do not say you cannot manage tasks.
+- When the user asks to see or list tasks — use the task_list tool.
+- When the user asks to update, move, or change a task — use the task_update tool.
+- Tasks are created in the "backlog" stage by default. The user can ask to move them to other stages.
+- Always confirm what you did after creating or updating tasks.
+
 # Tone and style
 - Be concise and direct. Short responses are better than padded ones.
 - Do not use emojis unless the user uses them first.
@@ -48,19 +57,23 @@ const maxToolIterations = 10
 // AgentLoop drives the Claude AI conversation with tool routing through the
 // product manager. It streams responses back to the browser via WebSocket events.
 type AgentLoop struct {
-	ai       *ai.Client
-	products *products.Manager
-	sessions *session.Store
-	model    string
+	ai        *ai.Client
+	products  *products.Manager
+	sessions  *session.Store
+	planner   *planner.Store
+	broadcast func(WSMessage)
+	model     string
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
-func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, model string) *AgentLoop {
+func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model string) *AgentLoop {
 	return &AgentLoop{
-		ai:       aiClient,
-		products: pm,
-		sessions: sessions,
-		model:    model,
+		ai:        aiClient,
+		products:  pm,
+		sessions:  sessions,
+		planner:   plannerStore,
+		broadcast: broadcast,
+		model:     model,
 	}
 }
 
@@ -109,6 +122,11 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 			tools := ai.BuildClaudeTools(entry.ProductName, []*soulv1.Tool{entry.Tool})
 			claudeTools = append(claudeTools, tools...)
 		}
+	}
+
+	// Add built-in task management tools.
+	if a.planner != nil {
+		claudeTools = append(claudeTools, builtinTaskTools()...)
 	}
 
 	// Build the system prompt with model identity and available tool names.
@@ -358,6 +376,11 @@ func (a *AgentLoop) executeTool(
 		Data:      callData,
 	})
 
+	// Handle built-in task tools.
+	if strings.HasPrefix(tc.Name, "task_") {
+		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
 	if a.products == nil {
 		return "Error: no product manager configured"
 	}
@@ -534,4 +557,191 @@ func buildAssistantContent(text string, calls []toolCall) []any {
 	}
 
 	return content
+}
+
+// builtinTaskTools returns the Claude tool definitions for built-in task management.
+func builtinTaskTools() []ai.ClaudeTool {
+	return []ai.ClaudeTool{
+		{
+			Name:        "task_create",
+			Description: "Create a new task on the task board. Use this when the user asks to add, create, or track a task.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"title":       {"type": "string", "description": "Short task title"},
+					"description": {"type": "string", "description": "Detailed description of what needs to be done"},
+					"priority":    {"type": "integer", "description": "Priority (1=highest, 5=lowest). Default 3.", "default": 3},
+					"product":     {"type": "string", "description": "Product name this task belongs to (optional)"}
+				},
+				"required": ["title"]
+			}`),
+		},
+		{
+			Name:        "task_list",
+			Description: "List tasks on the task board. Use this when the user asks to see, list, or check tasks.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"stage":   {"type": "string", "description": "Filter by stage: backlog, brainstorm, active, blocked, validation, done"},
+					"product": {"type": "string", "description": "Filter by product name"}
+				}
+			}`),
+		},
+		{
+			Name:        "task_update",
+			Description: "Update an existing task. Use this when the user asks to change, move, or edit a task.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"id":          {"type": "integer", "description": "Task ID to update"},
+					"title":       {"type": "string", "description": "New title"},
+					"description": {"type": "string", "description": "New description"},
+					"stage":       {"type": "string", "description": "Move to stage: backlog, brainstorm, active, blocked, validation, done"},
+					"priority":    {"type": "integer", "description": "New priority (1=highest, 5=lowest)"}
+				},
+				"required": ["id"]
+			}`),
+		},
+	}
+}
+
+// executeBuiltinTool handles built-in task_* tools directly using the planner store.
+func (a *AgentLoop) executeBuiltinTool(
+	ctx context.Context,
+	sessionID string,
+	tc toolCall,
+	sendEvent func(WSMessage),
+) string {
+	if a.planner == nil {
+		return "Error: task store not available"
+	}
+
+	var input map[string]any
+	if tc.Input != "" {
+		if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+			return fmt.Sprintf("Error parsing input: %v", err)
+		}
+	}
+
+	var result string
+	switch tc.Name {
+	case "task_create":
+		result = a.toolTaskCreate(input, sendEvent)
+	case "task_list":
+		result = a.toolTaskList(input)
+	case "task_update":
+		result = a.toolTaskUpdate(input, sendEvent)
+	default:
+		result = fmt.Sprintf("Error: unknown built-in tool %q", tc.Name)
+	}
+
+	// Send tool.complete event so the frontend updates the status badge.
+	completeData, _ := json.Marshal(map[string]any{
+		"id":      tc.ID,
+		"success": !strings.HasPrefix(result, "Error"),
+		"output":  result,
+	})
+	sendEvent(WSMessage{
+		Type:      "tool.complete",
+		SessionID: sessionID,
+		Data:      completeData,
+	})
+
+	return result
+}
+
+func (a *AgentLoop) toolTaskCreate(input map[string]any, sendEvent func(WSMessage)) string {
+	title, _ := input["title"].(string)
+	if title == "" {
+		return "Error: title is required"
+	}
+	description, _ := input["description"].(string)
+
+	task := planner.NewTask(title, description)
+	task.Source = "ai"
+
+	if p, ok := input["priority"].(float64); ok {
+		task.Priority = int(p)
+	}
+	if product, ok := input["product"].(string); ok {
+		task.Product = product
+	}
+
+	id, err := a.planner.Create(task)
+	if err != nil {
+		return fmt.Sprintf("Error creating task: %v", err)
+	}
+	task.ID = id
+
+	// Broadcast to all connected clients so the UI updates.
+	if a.broadcast != nil {
+		raw, _ := json.Marshal(task)
+		a.broadcast(WSMessage{Type: "task.created", Data: raw})
+	}
+
+	result, _ := json.Marshal(map[string]any{
+		"id":    id,
+		"title": title,
+		"stage": "backlog",
+	})
+	return string(result)
+}
+
+func (a *AgentLoop) toolTaskList(input map[string]any) string {
+	filter := planner.TaskFilter{}
+	if stage, ok := input["stage"].(string); ok && stage != "" {
+		filter.Stage = planner.Stage(stage)
+	}
+	if product, ok := input["product"].(string); ok {
+		filter.Product = product
+	}
+
+	tasks, err := a.planner.List(filter)
+	if err != nil {
+		return fmt.Sprintf("Error listing tasks: %v", err)
+	}
+
+	if len(tasks) == 0 {
+		return "No tasks found."
+	}
+
+	result, _ := json.Marshal(tasks)
+	return string(result)
+}
+
+func (a *AgentLoop) toolTaskUpdate(input map[string]any, sendEvent func(WSMessage)) string {
+	idFloat, ok := input["id"].(float64)
+	if !ok {
+		return "Error: id is required"
+	}
+	id := int64(idFloat)
+
+	update := planner.TaskUpdate{}
+	if title, ok := input["title"].(string); ok {
+		update.Title = &title
+	}
+	if desc, ok := input["description"].(string); ok {
+		update.Description = &desc
+	}
+	if stage, ok := input["stage"].(string); ok {
+		s := planner.Stage(stage)
+		update.Stage = &s
+	}
+	if p, ok := input["priority"].(float64); ok {
+		pri := int(p)
+		update.Priority = &pri
+	}
+
+	if err := a.planner.Update(id, update); err != nil {
+		return fmt.Sprintf("Error updating task: %v", err)
+	}
+
+	// Fetch updated task for broadcast.
+	task, err := a.planner.Get(id)
+	if err == nil && a.broadcast != nil {
+		raw, _ := json.Marshal(task)
+		a.broadcast(WSMessage{Type: "task.updated", Data: raw})
+	}
+
+	return fmt.Sprintf(`{"id":%d,"status":"updated"}`, id)
 }
