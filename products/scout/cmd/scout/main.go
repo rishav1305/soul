@@ -34,7 +34,7 @@ func main() {
 	defer lis.Close()
 
 	srv := grpc.NewServer()
-	soulv1.RegisterProductServiceServer(srv, &internal.ScoutService{})
+	soulv1.RegisterProductServiceServer(srv, internal.NewScoutService())
 
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
