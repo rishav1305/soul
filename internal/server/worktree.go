@@ -1,0 +1,142 @@
+package server
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+// WorktreeManager manages git worktrees for isolated task execution.
+type WorktreeManager struct {
+	repoRoot string // main repo root (e.g., /home/rishav/soul)
+}
+
+// NewWorktreeManager creates a new WorktreeManager.
+func NewWorktreeManager(repoRoot string) *WorktreeManager {
+	return &WorktreeManager{repoRoot: repoRoot}
+}
+
+// slugify converts a task title to a URL-safe slug.
+func slugify(title string) string {
+	re := regexp.MustCompile(`[^a-z0-9]+`)
+	slug := re.ReplaceAllString(strings.ToLower(title), "-")
+	slug = strings.Trim(slug, "-")
+	if len(slug) > 40 {
+		slug = slug[:40]
+	}
+	return slug
+}
+
+// branchName returns the git branch name for a task.
+func (wm *WorktreeManager) branchName(taskID int64, title string) string {
+	return fmt.Sprintf("task/%d-%s", taskID, slugify(title))
+}
+
+// worktreePath returns the filesystem path for a task's worktree.
+func (wm *WorktreeManager) worktreePath(taskID int64) string {
+	return filepath.Join(wm.repoRoot, ".worktrees", fmt.Sprintf("task-%d", taskID))
+}
+
+// EnsureSetup creates .worktrees/ dir and ensures dev branch exists.
+func (wm *WorktreeManager) EnsureSetup() error {
+	// Create .worktrees directory.
+	wtDir := filepath.Join(wm.repoRoot, ".worktrees")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		return fmt.Errorf("create .worktrees: %w", err)
+	}
+
+	// Add to .gitignore if not already there.
+	gitignorePath := filepath.Join(wm.repoRoot, ".gitignore")
+	data, _ := os.ReadFile(gitignorePath)
+	if !strings.Contains(string(data), ".worktrees") {
+		f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("open .gitignore: %w", err)
+		}
+		defer f.Close()
+		f.WriteString("\n.worktrees/\n")
+		log.Printf("[worktree] added .worktrees/ to .gitignore")
+	}
+
+	// Ensure dev branch exists (create from master if not).
+	cmd := exec.Command("git", "rev-parse", "--verify", "dev")
+	cmd.Dir = wm.repoRoot
+	if err := cmd.Run(); err != nil {
+		// dev branch doesn't exist — create it from master.
+		cmd = exec.Command("git", "branch", "dev", "master")
+		cmd.Dir = wm.repoRoot
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("create dev branch: %s — %w", out, err)
+		}
+		log.Printf("[worktree] created dev branch from master")
+	}
+
+	return nil
+}
+
+// Create creates a worktree + branch for a task. Returns the worktree path.
+func (wm *WorktreeManager) Create(taskID int64, title string) (string, error) {
+	branch := wm.branchName(taskID, title)
+	wtPath := wm.worktreePath(taskID)
+
+	// Remove stale worktree if it exists.
+	if _, err := os.Stat(wtPath); err == nil {
+		log.Printf("[worktree] removing stale worktree at %s", wtPath)
+		cmd := exec.Command("git", "worktree", "remove", "--force", wtPath)
+		cmd.Dir = wm.repoRoot
+		cmd.CombinedOutput()
+	}
+
+	// Delete stale branch if it exists.
+	cmd := exec.Command("git", "branch", "-D", branch)
+	cmd.Dir = wm.repoRoot
+	cmd.CombinedOutput() // ignore error if branch doesn't exist
+
+	// Create worktree from dev branch.
+	cmd = exec.Command("git", "worktree", "add", wtPath, "-b", branch, "dev")
+	cmd.Dir = wm.repoRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git worktree add: %s — %w", out, err)
+	}
+
+	log.Printf("[worktree] created %s (branch: %s)", wtPath, branch)
+	return wtPath, nil
+}
+
+// ProjectRoot returns the worktree path for a task (may not exist yet).
+func (wm *WorktreeManager) ProjectRoot(taskID int64) string {
+	return wm.worktreePath(taskID)
+}
+
+// Cleanup removes a task's worktree and deletes its branch.
+func (wm *WorktreeManager) Cleanup(taskID int64, title string) error {
+	wtPath := wm.worktreePath(taskID)
+	branch := wm.branchName(taskID, title)
+
+	// Remove worktree.
+	cmd := exec.Command("git", "worktree", "remove", "--force", wtPath)
+	cmd.Dir = wm.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[worktree] remove warning: %s — %v", out, err)
+	}
+
+	// Delete branch.
+	cmd = exec.Command("git", "branch", "-D", branch)
+	cmd.Dir = wm.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[worktree] branch delete warning: %s — %v", out, err)
+	}
+
+	// Prune stale worktree entries.
+	cmd = exec.Command("git", "worktree", "prune")
+	cmd.Dir = wm.repoRoot
+	cmd.CombinedOutput()
+
+	log.Printf("[worktree] cleaned up task %d", taskID)
+	return nil
+}
