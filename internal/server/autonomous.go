@@ -224,6 +224,17 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 }
 
 func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) string {
+	// Parse workflow mode from metadata (default: "quick").
+	workflow := "quick"
+	var meta map[string]any
+	if task.Metadata != "" {
+		if err := json.Unmarshal([]byte(task.Metadata), &meta); err == nil {
+			if w, ok := meta["workflow"].(string); ok && (w == "quick" || w == "full") {
+				workflow = w
+			}
+		}
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are autonomously working on task #%d.\n\n", task.ID)
 	fmt.Fprintf(&b, "**Title:** %s\n", task.Title)
@@ -237,7 +248,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		fmt.Fprintf(&b, "**Product:** %s\n", task.Product)
 	}
 
-	// Add project context.
+	// Project context.
 	b.WriteString("\n## Project Context\n")
 	fmt.Fprintf(&b, "Project root: `%s`\n", taskRoot)
 	b.WriteString("This is a Go + React/TypeScript monorepo:\n")
@@ -252,19 +263,44 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 	b.WriteString("- `web/src/lib/` — Types, WebSocket client, utilities\n")
 	b.WriteString("- `products/` — Product plugins (compliance-go, etc.)\n")
 
-	b.WriteString("\n## Instructions\n")
-	b.WriteString("You have code tools to read, write, search, and execute commands.\n")
-	b.WriteString("1. Use `code_search` and `code_grep` to find relevant files.\n")
-	b.WriteString("2. Use `code_read` to understand the code.\n")
-	b.WriteString("3. Use `code_write` to make changes.\n")
-	b.WriteString("4. Use `code_exec` to build and verify (e.g., `cd web && npx vite build`).\n")
-	b.WriteString("5. Update the task with your results using `task_update`.\n")
-	b.WriteString("6. If you cannot complete the task, move it to `blocked` with a description of why.\n")
-	b.WriteString("7. If you complete it, move it to `validation`.\n")
+	// Workflow-specific instructions.
+	if workflow == "full" {
+		b.WriteString("\n## Workflow: Full (7-step)\n")
+		b.WriteString("Follow these steps in order:\n\n")
+		b.WriteString("### Step 1: Plan\n")
+		b.WriteString("Analyze the task. Search the codebase to understand the affected areas. Document your approach.\n\n")
+		b.WriteString("### Step 2: Write Tests\n")
+		b.WriteString("If test files exist for the affected area, write failing tests first (TDD). Use `code_exec` to run them and confirm they fail.\n\n")
+		b.WriteString("### Step 3: Implement\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for surgical changes, `code_write` only for new files.\n\n")
+		b.WriteString("### Step 4: Build & Verify\n")
+		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes. Run tests with `code_exec`.\n\n")
+		b.WriteString("### Step 5: Security Review\n")
+		b.WriteString("Check your changes for: SQL injection (use parameterized queries), hardcoded secrets (use env vars), unsafe patterns.\n\n")
+		b.WriteString("### Step 6: Summary\n")
+		b.WriteString("Write a clear summary of what you changed and why in the task output.\n\n")
+		b.WriteString("### Step 7: Update Task\n")
+		b.WriteString("Use `task_update` to move the task to `validation` with your summary. If blocked, move to `blocked` with the reason.\n")
+	} else {
+		b.WriteString("\n## Workflow: Quick (5-step)\n")
+		b.WriteString("Follow these steps in order:\n\n")
+		b.WriteString("### Step 1: Search & Understand\n")
+		b.WriteString("Use `code_search` and `code_grep` to find relevant files. Use `code_read` to understand the code.\n\n")
+		b.WriteString("### Step 2: Implement\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for modifications, `code_write` for new files.\n\n")
+		b.WriteString("### Step 3: Build & Verify\n")
+		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes.\n\n")
+		b.WriteString("### Step 4: Summary\n")
+		b.WriteString("Write a clear summary of what you changed and why.\n\n")
+		b.WriteString("### Step 5: Update Task\n")
+		b.WriteString("Use `task_update` to move the task to `validation` with your summary. If blocked, move to `blocked` with the reason.\n")
+	}
+
 	b.WriteString("\n## Rules\n")
 	b.WriteString("- Be precise. Make minimal changes. Do not refactor unrelated code.\n")
 	b.WriteString("- Do NOT run git commands — the system handles commits and merges automatically.\n")
 	b.WriteString("- All file paths are relative to the project root shown above.\n")
+
 	return b.String()
 }
 
