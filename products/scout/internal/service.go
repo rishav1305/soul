@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,12 +27,38 @@ type ScoutService struct {
 	store *data.Store
 }
 
+// scoutConfig mirrors the JSON structure of ~/.soul/scout/config.json.
+type scoutConfig struct {
+	RemoteBrowser *struct {
+		Enabled     bool   `json:"enabled"`
+		ManagerURL  string `json:"manager_url"`
+		ProfileBase string `json:"profile_base"`
+	} `json:"remote_browser,omitempty"`
+}
+
 // NewScoutService creates a ScoutService with an initialised data store.
 func NewScoutService() *ScoutService {
 	store, err := data.NewStore()
 	if err != nil {
 		log.Printf("[scout] WARNING: data store init failed: %v", err)
 	}
+
+	// Load remote browser config if present.
+	if store != nil {
+		cfgPath := filepath.Join(store.DataDir(), "config.json")
+		if raw, err := os.ReadFile(cfgPath); err == nil {
+			var cfg scoutConfig
+			if err := json.Unmarshal(raw, &cfg); err == nil && cfg.RemoteBrowser != nil && cfg.RemoteBrowser.Enabled {
+				browser.SetRemoteConfig(browser.RemoteConfig{
+					Enabled:     true,
+					ManagerURL:  cfg.RemoteBrowser.ManagerURL,
+					ProfileBase: cfg.RemoteBrowser.ProfileBase,
+				})
+				log.Printf("[scout] remote browser enabled: %s", cfg.RemoteBrowser.ManagerURL)
+			}
+		}
+	}
+
 	return &ScoutService{store: store}
 }
 

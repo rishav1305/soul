@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 
 	"github.com/rishav1305/soul/products/scout/internal/browser"
@@ -40,22 +39,9 @@ func SweepPlatform(platform string) SweepResult {
 		}
 	}
 
-	profileDir, err := browser.ProfileDir(platform)
-	if err != nil {
-		return SweepResult{Error: fmt.Errorf("profile dir: %w", err)}
-	}
-
-	u, err := launcher.New().
-		UserDataDir(profileDir).
-		Headless(true).
-		Launch()
+	b, err := browser.LaunchHeadless(platform)
 	if err != nil {
 		return SweepResult{Error: fmt.Errorf("launch chrome: %w", err)}
-	}
-
-	b := rod.New().ControlURL(u)
-	if err := b.Connect(); err != nil {
-		return SweepResult{Error: fmt.Errorf("connect chrome: %w", err)}
 	}
 	defer b.MustClose()
 

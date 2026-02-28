@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 
 	"github.com/rishav1305/soul/products/scout/internal/browser"
@@ -100,43 +98,14 @@ func checkBrowserPlatform(platform string, profile *supabase.ProfileData) CheckR
 		title = profile.SiteConfig[0].Title
 	}
 
-	// Launch headless browser with existing profile.
-	profileDir, err := browser.ProfileDir(platform)
-	if err != nil {
-		return CheckResult{
-			Platform: data.PlatformSync{
-				Platform:  platform,
-				Status:    "error",
-				Issues:    []string{fmt.Sprintf("profile dir error: %v", err)},
-				CheckedAt: now,
-			},
-			Error: err,
-		}
-	}
-
-	u, err := launcher.New().
-		UserDataDir(profileDir).
-		Headless(true).
-		Launch()
+	// Launch headless browser with existing profile (remote-first).
+	b, err := browser.LaunchHeadless(platform)
 	if err != nil {
 		return CheckResult{
 			Platform: data.PlatformSync{
 				Platform:  platform,
 				Status:    "error",
 				Issues:    []string{fmt.Sprintf("chrome launch error: %v", err)},
-				CheckedAt: now,
-			},
-			Error: err,
-		}
-	}
-
-	b := rod.New().ControlURL(u)
-	if err := b.Connect(); err != nil {
-		return CheckResult{
-			Platform: data.PlatformSync{
-				Platform:  platform,
-				Status:    "error",
-				Issues:    []string{fmt.Sprintf("chrome connect error: %v", err)},
 				CheckedAt: now,
 			},
 			Error: err,

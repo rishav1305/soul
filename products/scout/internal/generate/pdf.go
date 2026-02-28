@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/rishav1305/soul/products/scout/internal/browser"
 )
 
 // float64Ptr returns a pointer to a float64 value.
@@ -24,24 +23,15 @@ func HTMLToPDF(html string, outputPath string) error {
 		return fmt.Errorf("create output dir %s: %w", dir, err)
 	}
 
-	// Launch headless Chrome. Try system chromium first, fall back to default.
-	l := launcher.New().Headless(true).NoSandbox(true)
-	if path, found := launcher.LookPath(); found {
-		l = l.Bin(path)
-	}
-	u, err := l.Launch()
+	// Launch headless Chrome (remote-first, local fallback).
+	b, err := browser.LaunchHeadlessNoPlatform()
 	if err != nil {
 		return fmt.Errorf("launch headless chrome: %w", err)
 	}
-
-	browser := rod.New().ControlURL(u)
-	if err := browser.Connect(); err != nil {
-		return fmt.Errorf("connect to chrome: %w", err)
-	}
-	defer browser.MustClose()
+	defer b.MustClose()
 
 	// Create a new page.
-	page, err := browser.Page(proto.TargetCreateTarget{})
+	page, err := b.Page(proto.TargetCreateTarget{})
 	if err != nil {
 		return fmt.Errorf("create page: %w", err)
 	}
