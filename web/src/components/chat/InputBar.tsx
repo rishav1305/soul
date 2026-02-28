@@ -174,7 +174,8 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: any) => {
+      console.error('[Soul] Speech recognition error:', event.error, event.message);
       setIsListening(false);
       setInterimText('');
     };

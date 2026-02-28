@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PlannerTask, TaskStage } from '../../lib/types.ts';
@@ -61,12 +61,29 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
   const transitions = ValidTransitions[task.stage];
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
+  const [editingProduct, setEditingProduct] = useState(false);
+  const [productValue, setProductValue] = useState(task.product || '');
+  const productInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingProduct && productInputRef.current) {
+      productInputRef.current.focus();
+    }
+  }, [editingProduct]);
 
   const toggleAutonomous = async () => {
     const next = !autonomous;
     setAutonomous(next);
     const newMeta = { ...meta, autonomous: next };
     await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
+  };
+
+  const saveProduct = async () => {
+    const trimmed = productValue.trim();
+    if (trimmed !== task.product) {
+      await onUpdate(task.id, { product: trimmed });
+    }
+    setEditingProduct(false);
   };
 
   return (
@@ -85,10 +102,26 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
                 <span className={`text-xs font-medium ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}>
                   {PRIORITY_LABELS[task.priority] ?? 'Unknown'} priority
                 </span>
-                {task.product && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-overlay text-fg-secondary">
-                    {task.product}
-                  </span>
+                {/* Editable product badge */}
+                {editingProduct ? (
+                  <input
+                    ref={productInputRef}
+                    type="text"
+                    value={productValue}
+                    onChange={(e) => setProductValue(e.target.value)}
+                    onBlur={saveProduct}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveProduct(); if (e.key === 'Escape') setEditingProduct(false); }}
+                    placeholder="product"
+                    className="px-2 py-0.5 rounded text-xs bg-elevated border border-soul/50 text-fg outline-none w-24"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingProduct(true)}
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${task.product ? 'bg-overlay text-fg-secondary hover:bg-elevated' : 'border border-dashed border-border-default text-fg-muted hover:border-fg-muted'}`}
+                  >
+                    {task.product || '+ Product'}
+                  </button>
                 )}
               </div>
 
@@ -97,9 +130,9 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
                 <button
                   type="button"
                   onClick={toggleAutonomous}
-                  className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${autonomous ? 'bg-soul' : 'bg-elevated border border-border-default'}`}
+                  className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${autonomous ? 'bg-soul' : 'bg-elevated border border-border-default'}`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-transform ${autonomous ? 'translate-x-4.5 bg-deep' : 'translate-x-0.5 bg-fg-muted'}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${autonomous ? 'translate-x-5 bg-deep' : 'translate-x-0 bg-fg-muted'}`} />
                 </button>
                 <span className="text-xs text-fg-secondary">Autonomous</span>
                 {autonomous && (

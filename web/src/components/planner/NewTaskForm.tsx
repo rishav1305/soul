@@ -21,7 +21,7 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !product.trim()) return;
 
     setSubmitting(true);
     try {
@@ -91,7 +91,7 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
 
             <div className="flex-1">
               <label htmlFor="task-product" className="block font-display text-xs font-medium text-fg-secondary uppercase tracking-wide mb-1">
-                Product
+                Product <span className="text-stage-blocked">*</span>
               </label>
               <input
                 id="task-product"
@@ -99,6 +99,7 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
                 value={product}
                 onChange={(e) => setProduct(e.target.value)}
                 placeholder="e.g. compliance"
+                required
                 className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20"
               />
             </div>
@@ -114,7 +115,7 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || submitting}
+              disabled={!title.trim() || !product.trim() || submitting}
               className="px-4 py-2 text-sm rounded-md bg-soul hover:bg-soul/80 text-deep font-display font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               {submitting ? 'Creating...' : 'Create'}
