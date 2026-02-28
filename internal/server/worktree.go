@@ -184,30 +184,41 @@ func (wm *WorktreeManager) CommitInWorktree(taskID int64, title string) error {
 }
 
 // MergeToDev merges a task branch into the dev branch.
+// Uses the dev-server worktree (which has dev checked out) to avoid
+// conflicts with the main repo's checked-out branch.
 func (wm *WorktreeManager) MergeToDev(taskID int64, title string) error {
 	branch := wm.branchName(taskID, title)
+	devWT := filepath.Join(wm.repoRoot, ".worktrees", "dev-server")
 
-	cmd := exec.Command("git", "checkout", "dev")
-	cmd.Dir = wm.repoRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("checkout dev: %s — %w", out, err)
+	// Check if dev-server worktree exists; if not, merge from main repo.
+	if _, err := os.Stat(devWT); os.IsNotExist(err) {
+		// No dev-server worktree — fall back to checkout in main repo.
+		cmd := exec.Command("git", "checkout", "dev")
+		cmd.Dir = wm.repoRoot
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("checkout dev: %s — %w", out, err)
+		}
+		cmd = exec.Command("git", "merge", branch, "--no-ff",
+			"-m", fmt.Sprintf("merge: task #%d — %s", taskID, title))
+		cmd.Dir = wm.repoRoot
+		if out, err := cmd.CombinedOutput(); err != nil {
+			back := exec.Command("git", "checkout", "master")
+			back.Dir = wm.repoRoot
+			back.Run()
+			return fmt.Errorf("merge to dev: %s — %w", out, err)
+		}
+		cmd = exec.Command("git", "checkout", "master")
+		cmd.Dir = wm.repoRoot
+		cmd.CombinedOutput()
+	} else {
+		// Merge inside the dev-server worktree (which already has dev checked out).
+		cmd := exec.Command("git", "merge", branch, "--no-ff",
+			"-m", fmt.Sprintf("merge: task #%d — %s", taskID, title))
+		cmd.Dir = devWT
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("merge to dev: %s — %w", out, err)
+		}
 	}
-
-	cmd = exec.Command("git", "merge", branch, "--no-ff",
-		"-m", fmt.Sprintf("merge: task #%d — %s", taskID, title))
-	cmd.Dir = wm.repoRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		// Switch back to master before returning error.
-		back := exec.Command("git", "checkout", "master")
-		back.Dir = wm.repoRoot
-		back.Run()
-		return fmt.Errorf("merge to dev: %s — %w", out, err)
-	}
-
-	// Switch back to master.
-	cmd = exec.Command("git", "checkout", "master")
-	cmd.Dir = wm.repoRoot
-	cmd.CombinedOutput()
 
 	log.Printf("[worktree] merged task %d to dev", taskID)
 	return nil
