@@ -23,21 +23,23 @@ type TaskProcessor struct {
 	planner   *planner.Store
 	broadcast func(WSMessage)
 	model     string
+	projectRoot string
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model string) *TaskProcessor {
+func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string) *TaskProcessor {
 	return &TaskProcessor{
-		ai:        aiClient,
-		products:  pm,
-		sessions:  sessions,
-		planner:   plannerStore,
-		broadcast: broadcast,
-		model:     model,
-		running:   make(map[int64]context.CancelFunc),
+		ai:          aiClient,
+		products:    pm,
+		sessions:    sessions,
+		planner:     plannerStore,
+		broadcast:   broadcast,
+		model:       model,
+		projectRoot: projectRoot,
+		running:     make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -110,7 +112,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	// Create a dedicated session for this task.
 	sessionID := fmt.Sprintf("auto-task-%d", taskID)
 
-	// Accumulate the plan/output from the agent's responses.
+	// Accumulate the output from the agent's responses.
 	var outputBuf strings.Builder
 
 	// sendEvent wraps agent events as task.activity broadcasts.
@@ -138,9 +140,9 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		}
 	}
 
-	// Run the agent loop.
-	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model)
-	agent.Run(ctx, sessionID, prompt, "brainstorm", nil, false, sendEvent)
+	// Run the agent loop with code tools enabled.
+	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, tp.projectRoot)
+	agent.Run(ctx, sessionID, prompt, "code", nil, false, sendEvent)
 
 	// Check if cancelled.
 	if ctx.Err() != nil {
@@ -149,23 +151,40 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		return
 	}
 
-	// Finalize — save the full output and move to validation.
+	// Save the full output.
 	finalOutput := outputBuf.String()
-	validation := planner.StageValidation
+	tp.planner.Update(taskID, planner.TaskUpdate{Output: &finalOutput})
+
+	// Re-read the task to see what stage the agent left it in.
+	// The agent may have moved it to blocked, done, etc. via task_update.
+	// Only advance to validation if the agent left it in active.
+	updated, err := tp.planner.Get(taskID)
+	if err != nil {
+		log.Printf("[autonomous] failed to re-read task %d: %v", taskID, err)
+		return
+	}
+
 	completedAt := time.Now().UTC().Format(time.RFC3339)
 
-	tp.planner.Update(taskID, planner.TaskUpdate{
-		Output:      &finalOutput,
-		Stage:       &validation,
-		CompletedAt: &completedAt,
-	})
-	tp.broadcastTaskUpdate(taskID)
+	if updated.Stage == planner.StageActive {
+		// Agent didn't move the task — advance to validation.
+		validation := planner.StageValidation
+		tp.planner.Update(taskID, planner.TaskUpdate{
+			Stage:       &validation,
+			CompletedAt: &completedAt,
+		})
+		tp.broadcastTaskUpdate(taskID)
+		tp.sendActivity(taskID, "stage", "validation")
+		tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
+	} else {
+		// Agent already moved the task (e.g., to blocked or done). Respect it.
+		tp.planner.Update(taskID, planner.TaskUpdate{CompletedAt: &completedAt})
+		tp.broadcastTaskUpdate(taskID)
+		tp.sendActivity(taskID, "status", fmt.Sprintf("Processing complete — task is in %s", updated.Stage))
+	}
 
-	tp.sendActivity(taskID, "stage", "validation")
-	tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
 	tp.sendActivity(taskID, "done", "")
-
-	log.Printf("[autonomous] === completed task %d ===", taskID)
+	log.Printf("[autonomous] === completed task %d (stage=%s) ===", taskID, updated.Stage)
 }
 
 func (tp *TaskProcessor) buildTaskPrompt(task planner.Task) string {
@@ -181,12 +200,32 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task) string {
 	if task.Product != "" {
 		fmt.Fprintf(&b, "**Product:** %s\n", task.Product)
 	}
+
+	// Add project context based on product.
+	b.WriteString("\n## Project Context\n")
+	fmt.Fprintf(&b, "Project root: `%s`\n", tp.projectRoot)
+	b.WriteString("This is a Go + React/TypeScript monorepo:\n")
+	b.WriteString("- `cmd/soul/` — Go entrypoint\n")
+	b.WriteString("- `internal/server/` — Go HTTP server, WebSocket, agent loop, task APIs\n")
+	b.WriteString("- `internal/planner/` — Task store (SQLite)\n")
+	b.WriteString("- `internal/ai/` — Claude API client\n")
+	b.WriteString("- `internal/session/` — Chat session memory\n")
+	b.WriteString("- `web/src/` — React frontend (Vite + TypeScript + Tailwind)\n")
+	b.WriteString("- `web/src/components/` — React components (chat/, layout/, planner/, panels/)\n")
+	b.WriteString("- `web/src/hooks/` — Custom hooks (useChat, usePlanner, useWebSocket, etc.)\n")
+	b.WriteString("- `web/src/lib/` — Types, WebSocket client, utilities\n")
+	b.WriteString("- `products/` — Product plugins (compliance-go, etc.)\n")
+
 	b.WriteString("\n## Instructions\n")
-	b.WriteString("1. Analyze this task and think through what needs to be done.\n")
-	b.WriteString("2. Create a step-by-step plan.\n")
-	b.WriteString("3. Use available tools to execute the plan.\n")
-	b.WriteString("4. Update the task with your findings using task_update.\n")
-	b.WriteString("5. Provide a summary of what was accomplished.\n")
+	b.WriteString("You have code tools to read, write, search, and execute commands.\n")
+	b.WriteString("1. Use `code_search` and `code_grep` to find relevant files.\n")
+	b.WriteString("2. Use `code_read` to understand the code.\n")
+	b.WriteString("3. Use `code_write` to make changes.\n")
+	b.WriteString("4. Use `code_exec` to build and verify (e.g., `cd web && npx vite build`).\n")
+	b.WriteString("5. Update the task with your results using `task_update`.\n")
+	b.WriteString("6. If you cannot complete the task, move it to `blocked` with a description of why.\n")
+	b.WriteString("7. If you complete it, move it to `validation`.\n")
+	b.WriteString("\nBe precise. Make minimal changes. Do not refactor unrelated code.\n")
 	return b.String()
 }
 

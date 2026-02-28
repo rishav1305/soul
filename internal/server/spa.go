@@ -3,9 +3,12 @@ package server
 import (
 	"embed"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -14,9 +17,19 @@ var staticFiles embed.FS
 
 // spaHandler serves embedded static files and falls back to index.html
 // for any route that does not match a real file (SPA client-side routing).
-// If the server has a webFS set (from the Vite build), it uses that instead
-// of the placeholder static files.
+// Prefers on-disk web/dist/ when available (so autonomous agent builds take
+// effect immediately without a Go recompile). Falls back to embedded webFS,
+// then to the placeholder static files.
 func (s *Server) spaHandlerFromFS() http.Handler {
+	// Prefer on-disk web/dist/ so vite build changes are picked up live.
+	if s.projectRoot != "" {
+		diskDist := filepath.Join(s.projectRoot, "web", "dist")
+		if info, err := os.Stat(filepath.Join(diskDist, "index.html")); err == nil && !info.IsDir() {
+			log.Printf("[spa] serving frontend from disk: %s", diskDist)
+			return newSPAFileServer(os.DirFS(diskDist))
+		}
+	}
+
 	var sub fs.FS
 	if s.webFS != nil {
 		sub = s.webFS

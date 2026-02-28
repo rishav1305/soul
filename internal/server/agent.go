@@ -57,23 +57,25 @@ const maxToolIterations = 10
 // AgentLoop drives the Claude AI conversation with tool routing through the
 // product manager. It streams responses back to the browser via WebSocket events.
 type AgentLoop struct {
-	ai        *ai.Client
-	products  *products.Manager
-	sessions  *session.Store
-	planner   *planner.Store
-	broadcast func(WSMessage)
-	model     string
+	ai          *ai.Client
+	products    *products.Manager
+	sessions    *session.Store
+	planner     *planner.Store
+	broadcast   func(WSMessage)
+	model       string
+	projectRoot string // when set, enables code_* tools for file operations
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
-func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model string) *AgentLoop {
+func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string) *AgentLoop {
 	return &AgentLoop{
-		ai:        aiClient,
-		products:  pm,
-		sessions:  sessions,
-		planner:   plannerStore,
-		broadcast: broadcast,
-		model:     model,
+		ai:          aiClient,
+		products:    pm,
+		sessions:    sessions,
+		planner:     plannerStore,
+		broadcast:   broadcast,
+		model:       model,
+		projectRoot: projectRoot,
 	}
 }
 
@@ -127,6 +129,11 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 	// Add built-in task management tools.
 	if a.planner != nil {
 		claudeTools = append(claudeTools, builtinTaskTools()...)
+	}
+
+	// Add code tools when project root is configured.
+	if a.projectRoot != "" {
+		claudeTools = append(claudeTools, builtinCodeTools()...)
 	}
 
 	// Build the system prompt with model identity and available tool names.
@@ -379,6 +386,22 @@ func (a *AgentLoop) executeTool(
 	// Handle built-in task tools.
 	if strings.HasPrefix(tc.Name, "task_") {
 		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
+	// Handle built-in code tools.
+	if strings.HasPrefix(tc.Name, "code_") && a.projectRoot != "" {
+		result := executeCodeTool(a.projectRoot, tc)
+		completeData, _ := json.Marshal(map[string]any{
+			"id":      tc.ID,
+			"success": !strings.HasPrefix(result, "Error"),
+			"output":  result,
+		})
+		sendEvent(WSMessage{
+			Type:      "tool.complete",
+			SessionID: sessionID,
+			Data:      completeData,
+		})
+		return result
 	}
 
 	if a.products == nil {

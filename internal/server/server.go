@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 
@@ -24,14 +25,15 @@ import (
 
 // Server is the core HTTP server for the Soul platform.
 type Server struct {
-	cfg       config.Config
-	mux       *http.ServeMux
-	sessions  *session.Store
-	products  *products.Manager
-	ai        *ai.Client
-	planner   *planner.Store
-	processor *TaskProcessor
-	webFS     fs.FS // embedded SPA files (nil = use placeholder)
+	cfg         config.Config
+	mux         *http.ServeMux
+	sessions    *session.Store
+	products    *products.Manager
+	ai          *ai.Client
+	planner     *planner.Store
+	processor   *TaskProcessor
+	projectRoot string // working directory for code tools
+	webFS       fs.FS  // embedded SPA files (nil = use placeholder)
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -43,16 +45,18 @@ type Server struct {
 func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerStore *planner.Store) *Server {
 	mux := http.NewServeMux()
 	sessions := session.NewStore()
+	projectRoot, _ := os.Getwd()
 	s := &Server{
-		cfg:       cfg,
-		mux:       mux,
-		sessions:  sessions,
-		products:  pm,
-		ai:        aiClient,
-		planner:   plannerStore,
-		wsClients: make(map[*websocket.Conn]context.Context),
+		cfg:         cfg,
+		mux:         mux,
+		sessions:    sessions,
+		products:    pm,
+		ai:          aiClient,
+		planner:     plannerStore,
+		projectRoot: projectRoot,
+		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model)
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot)
 	s.registerRoutes()
 	return s
 }
@@ -72,17 +76,19 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		}
 	}
 	sessions := session.NewStore()
+	projectRoot, _ := os.Getwd()
 	s := &Server{
-		cfg:       cfg,
-		mux:       mux,
-		sessions:  sessions,
-		products:  pm,
-		ai:        aiClient,
-		planner:   plannerStore,
-		webFS:     webFS,
-		wsClients: make(map[*websocket.Conn]context.Context),
+		cfg:         cfg,
+		mux:         mux,
+		sessions:    sessions,
+		products:    pm,
+		ai:          aiClient,
+		planner:     plannerStore,
+		projectRoot: projectRoot,
+		webFS:       webFS,
+		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model)
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot)
 	s.registerRoutes()
 	return s
 }

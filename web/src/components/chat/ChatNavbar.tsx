@@ -11,7 +11,7 @@ export default function ChatNavbar({ onCollapse, canCollapse }: ChatNavbarProps)
           <span className="absolute inset-0 -m-1 bg-soul/15 rounded-full blur-md animate-soul-pulse" />
           <span className="relative text-xl text-soul">&#9670;</span>
         </span>
-        Soul
+        Chat
       </span>
 
       <div className="flex-1" />
