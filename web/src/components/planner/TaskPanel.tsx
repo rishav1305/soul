@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters, TaskActivity } from '../../lib/types.ts';
 import FilterBar from './FilterBar.tsx';
 import TaskContent from './TaskContent.tsx';
 import TaskDetail from './TaskDetail.tsx';
@@ -28,6 +28,9 @@ interface TaskPanelProps {
   updateTask: (id: number, updates: Partial<PlannerTask>) => Promise<PlannerTask>;
   moveTask: (id: number, stage: TaskStage, comment: string) => Promise<PlannerTask>;
   deleteTask: (id: number) => Promise<void>;
+  // Autonomous activity
+  taskActivities: Record<number, TaskActivity[]>;
+  taskStreams: Record<number, string>;
 }
 
 const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
@@ -84,6 +87,8 @@ export default function TaskPanel({
   updateTask,
   moveTask,
   deleteTask,
+  taskActivities,
+  taskStreams,
 }: TaskPanelProps) {
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -258,7 +263,7 @@ export default function TaskPanel({
       {/* Modals */}
       {selectedTask && (
         <TaskDetail
-          task={selectedTask}
+          task={filteredTasks.find((t) => t.id === selectedTask.id) ?? selectedTask}
           onClose={() => setSelectedTask(null)}
           onMove={handleMove}
           onUpdate={async (id, updates) => {
@@ -267,6 +272,8 @@ export default function TaskPanel({
             return updated;
           }}
           onDelete={handleDelete}
+          activities={taskActivities[selectedTask.id] || []}
+          streamContent={taskStreams[selectedTask.id] || ''}
         />
       )}
 

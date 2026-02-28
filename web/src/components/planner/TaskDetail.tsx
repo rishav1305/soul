@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
 import { ValidTransitions } from './transitions.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
@@ -55,21 +55,37 @@ interface TaskDetailProps {
   onMove: (id: number, stage: TaskStage, comment: string) => Promise<void>;
   onUpdate: (id: number, updates: Partial<PlannerTask>) => Promise<PlannerTask>;
   onDelete: (id: number) => Promise<void>;
+  activities?: TaskActivity[];
+  streamContent?: string;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }: TaskDetailProps) {
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '' }: TaskDetailProps) {
   const transitions = ValidTransitions[task.stage];
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
   const [editingProduct, setEditingProduct] = useState(false);
   const [productValue, setProductValue] = useState(task.product || '');
   const productInputRef = useRef<HTMLInputElement>(null);
+  const streamEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync autonomous state when task prop changes (e.g., from WebSocket update).
+  useEffect(() => {
+    const m = parseMetadata(task.metadata);
+    setAutonomous(!!m.autonomous);
+  }, [task.metadata]);
 
   useEffect(() => {
     if (editingProduct && productInputRef.current) {
       productInputRef.current.focus();
     }
   }, [editingProduct]);
+
+  // Auto-scroll the stream output as new content arrives.
+  useEffect(() => {
+    if (streamContent && streamEndRef.current) {
+      streamEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [streamContent]);
 
   const toggleAutonomous = async () => {
     const next = !autonomous;
@@ -85,6 +101,9 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
     }
     setEditingProduct(false);
   };
+
+  const isProcessing = autonomous && streamContent.length > 0;
+  const hasActivities = activities.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -136,7 +155,12 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
                 </button>
                 <span className="text-xs text-fg-secondary">Autonomous</span>
                 {autonomous && (
-                  <span className="text-[10px] text-soul font-medium">Soul will work on this task</span>
+                  <span className="text-[10px] text-soul font-medium">
+                    {isProcessing ? 'Soul is working...' : 'Soul will work on this task'}
+                  </span>
+                )}
+                {isProcessing && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-soul animate-pulse" />
                 )}
               </div>
             </div>
@@ -153,6 +177,33 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Live streaming output — shown when agent is actively processing */}
+          {streamContent && (
+            <Section title="Live Output">
+              <div className="bg-deep/60 rounded-lg p-3 border border-soul/20">
+                <div className="prose prose-invert prose-sm prose-soul max-w-none">
+                  <Markdown remarkPlugins={[remarkGfm]}>{streamContent}</Markdown>
+                </div>
+                <div ref={streamEndRef} />
+                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-subtle">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-soul animate-pulse" />
+                  <span className="text-[10px] text-soul font-medium">Processing...</span>
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {/* Activity log — tool calls, stage changes, status updates */}
+          {hasActivities && (
+            <Section title="Activity">
+              <div className="space-y-1">
+                {activities.map((a, i) => (
+                  <ActivityEntry key={i} activity={a} />
+                ))}
+              </div>
+            </Section>
+          )}
+
           {task.description && (
             <Section title="Description">
               <p className="text-fg-secondary text-sm whitespace-pre-wrap">{task.description}</p>
@@ -173,7 +224,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
             </Section>
           )}
 
-          {task.output && (
+          {task.output && !streamContent && (
             <Section title="Output">
               <div className="prose prose-invert prose-sm prose-soul max-w-none">
                 <Markdown remarkPlugins={[remarkGfm]}>{task.output}</Markdown>
@@ -218,6 +269,67 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ActivityEntry({ activity }: { activity: TaskActivity }) {
+  const time = new Date(activity.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  let icon: string;
+  let color: string;
+  let label: string;
+
+  switch (activity.type) {
+    case 'status':
+      icon = '\u25C6'; // diamond
+      color = 'text-soul';
+      label = activity.content;
+      break;
+    case 'stage':
+      icon = '\u2192'; // arrow
+      color = 'text-stage-active';
+      label = `Stage: ${activity.content}`;
+      break;
+    case 'tool_call': {
+      let toolName = 'tool';
+      try {
+        const d = JSON.parse(activity.content);
+        toolName = d.name || 'tool';
+      } catch { /* */ }
+      icon = '\u2699'; // gear
+      color = 'text-fg-secondary';
+      label = `Calling ${toolName}...`;
+      break;
+    }
+    case 'tool_complete': {
+      icon = '\u2713'; // check
+      color = 'text-stage-done';
+      label = 'Tool completed';
+      break;
+    }
+    case 'tool_error': {
+      icon = '\u2717'; // x
+      color = 'text-stage-blocked';
+      label = 'Tool error';
+      break;
+    }
+    case 'done':
+      icon = '\u2714'; // heavy check
+      color = 'text-stage-done';
+      label = 'Processing complete';
+      break;
+    default:
+      icon = '\u2022'; // bullet
+      color = 'text-fg-muted';
+      label = activity.content;
+  }
+
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <span className="text-fg-muted font-mono shrink-0">{time}</span>
+      <span className={`${color} shrink-0`}>{icon}</span>
+      <span className="text-fg-secondary">{label}</span>
     </div>
   );
 }

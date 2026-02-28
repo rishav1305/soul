@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -151,6 +152,26 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.broadcastTaskEvent("task.updated", updated)
+
+	// Check if autonomous was just toggled on — start processing.
+	if update.Metadata != nil && s.processor != nil {
+		var meta map[string]any
+		if err := json.Unmarshal([]byte(*update.Metadata), &meta); err == nil {
+			if auto, ok := meta["autonomous"].(bool); ok && auto {
+				if !s.processor.IsRunning(id) {
+					log.Printf("[tasks] autonomous toggled on for task %d — starting processor", id)
+					s.processor.StartTask(id)
+				}
+			} else {
+				// Autonomous toggled off — stop if running.
+				if s.processor.IsRunning(id) {
+					log.Printf("[tasks] autonomous toggled off for task %d — stopping processor", id)
+					s.processor.StopTask(id)
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, updated)
 }
 

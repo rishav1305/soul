@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
-import type { PlannerTask, TaskStage, WSMessage } from '../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, WSMessage } from '../lib/types.ts';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
@@ -19,6 +19,10 @@ export function usePlanner() {
   const { onMessage } = useWebSocket();
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
   const [loading, setLoading] = useState(true);
+  // Track live activity streams per task. Key = taskID.
+  const [taskActivities, setTaskActivities] = useState<Record<number, TaskActivity[]>>({});
+  // Track streaming output per task (accumulated tokens).
+  const [taskStreams, setTaskStreams] = useState<Record<number, string>>({});
 
   // Fetch all tasks on mount
   useEffect(() => {
@@ -64,6 +68,34 @@ export function usePlanner() {
         case 'task.deleted': {
           const data = msg.data as { id: number };
           setTasks((prev) => prev.filter((t) => t.id !== data.id));
+          break;
+        }
+        case 'task.activity': {
+          const activity = msg.data as TaskActivity;
+          if (!activity?.task_id) break;
+
+          if (activity.type === 'token') {
+            // Accumulate streaming tokens.
+            setTaskStreams((prev) => ({
+              ...prev,
+              [activity.task_id]: (prev[activity.task_id] || '') + activity.content,
+            }));
+          } else if (activity.type === 'done') {
+            // Clear stream on completion.
+            setTaskStreams((prev) => {
+              const next = { ...prev };
+              delete next[activity.task_id];
+              return next;
+            });
+          }
+
+          // Store non-token activities in the log (status, stage, tool events).
+          if (activity.type !== 'token') {
+            setTaskActivities((prev) => ({
+              ...prev,
+              [activity.task_id]: [...(prev[activity.task_id] || []), activity].slice(-50),
+            }));
+          }
           break;
         }
       }
@@ -126,5 +158,15 @@ export function usePlanner() {
     [],
   );
 
-  return { tasks, tasksByStage, loading, createTask, updateTask, deleteTask, moveTask };
+  return {
+    tasks,
+    tasksByStage,
+    loading,
+    taskActivities,
+    taskStreams,
+    createTask,
+    updateTask,
+    deleteTask,
+    moveTask,
+  };
 }

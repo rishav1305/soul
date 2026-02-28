@@ -103,3 +103,10 @@ export interface SendOptions {
   disabledTools?: string[];
   thinking?: boolean;
 }
+
+export interface TaskActivity {
+  task_id: number;
+  type: 'status' | 'stage' | 'token' | 'tool_call' | 'tool_complete' | 'tool_progress' | 'tool_error' | 'done';
+  content: string;
+  time: string;
+}

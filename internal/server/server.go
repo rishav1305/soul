@@ -24,13 +24,14 @@ import (
 
 // Server is the core HTTP server for the Soul platform.
 type Server struct {
-	cfg      config.Config
-	mux      *http.ServeMux
-	sessions *session.Store
-	products *products.Manager
-	ai       *ai.Client
-	planner  *planner.Store
-	webFS    fs.FS // embedded SPA files (nil = use placeholder)
+	cfg       config.Config
+	mux       *http.ServeMux
+	sessions  *session.Store
+	products  *products.Manager
+	ai        *ai.Client
+	planner   *planner.Store
+	processor *TaskProcessor
+	webFS     fs.FS // embedded SPA files (nil = use placeholder)
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -41,15 +42,17 @@ type Server struct {
 // The products manager and AI client may be nil if not configured.
 func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerStore *planner.Store) *Server {
 	mux := http.NewServeMux()
+	sessions := session.NewStore()
 	s := &Server{
 		cfg:       cfg,
 		mux:       mux,
-		sessions:  session.NewStore(),
+		sessions:  sessions,
 		products:  pm,
 		ai:        aiClient,
 		planner:   plannerStore,
 		wsClients: make(map[*websocket.Conn]context.Context),
 	}
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model)
 	s.registerRoutes()
 	return s
 }
@@ -68,16 +71,18 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 			webFS = sub
 		}
 	}
+	sessions := session.NewStore()
 	s := &Server{
 		cfg:       cfg,
 		mux:       mux,
-		sessions:  session.NewStore(),
+		sessions:  sessions,
 		products:  pm,
 		ai:        aiClient,
 		planner:   plannerStore,
 		webFS:     webFS,
 		wsClients: make(map[*websocket.Conn]context.Context),
 	}
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model)
 	s.registerRoutes()
 	return s
 }
