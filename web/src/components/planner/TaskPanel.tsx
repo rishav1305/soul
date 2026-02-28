@@ -25,6 +25,7 @@ interface TaskPanelProps {
   loading: boolean;
   // Actions
   createTask: (title: string, description: string, priority: number, product: string) => Promise<PlannerTask>;
+  updateTask: (id: number, updates: Partial<PlannerTask>) => Promise<PlannerTask>;
   moveTask: (id: number, stage: TaskStage, comment: string) => Promise<PlannerTask>;
   deleteTask: (id: number) => Promise<void>;
 }
@@ -80,6 +81,7 @@ export default function TaskPanel({
   products,
   loading,
   createTask,
+  updateTask,
   moveTask,
   deleteTask,
 }: TaskPanelProps) {
@@ -259,6 +261,11 @@ export default function TaskPanel({
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           onMove={handleMove}
+          onUpdate={async (id, updates) => {
+            const updated = await updateTask(id, updates);
+            setSelectedTask(updated);
+            return updated;
+          }}
           onDelete={handleDelete}
         />
       )}

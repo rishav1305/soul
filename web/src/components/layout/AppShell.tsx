@@ -174,6 +174,7 @@ export default function AppShell() {
             products={products}
             loading={planner.loading}
             createTask={planner.createTask}
+            updateTask={planner.updateTask}
             moveTask={planner.moveTask}
             deleteTask={planner.deleteTask}
           />

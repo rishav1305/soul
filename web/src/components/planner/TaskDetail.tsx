@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PlannerTask, TaskStage } from '../../lib/types.ts';
 import { ValidTransitions } from './transitions.ts';
+
+function parseMetadata(meta: string): Record<string, unknown> {
+  try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
+}
 
 const STAGE_LABELS: Record<TaskStage, string> = {
   backlog: 'Backlog',
@@ -48,11 +53,21 @@ interface TaskDetailProps {
   task: PlannerTask;
   onClose: () => void;
   onMove: (id: number, stage: TaskStage, comment: string) => Promise<void>;
+  onUpdate: (id: number, updates: Partial<PlannerTask>) => Promise<PlannerTask>;
   onDelete: (id: number) => Promise<void>;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onDelete }: TaskDetailProps) {
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete }: TaskDetailProps) {
   const transitions = ValidTransitions[task.stage];
+  const meta = parseMetadata(task.metadata);
+  const [autonomous, setAutonomous] = useState(!!meta.autonomous);
+
+  const toggleAutonomous = async () => {
+    const next = !autonomous;
+    setAutonomous(next);
+    const newMeta = { ...meta, autonomous: next };
+    await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -70,6 +85,26 @@ export default function TaskDetail({ task, onClose, onMove, onDelete }: TaskDeta
                 <span className={`text-xs font-medium ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}>
                   {PRIORITY_LABELS[task.priority] ?? 'Unknown'} priority
                 </span>
+                {task.product && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-overlay text-fg-secondary">
+                    {task.product}
+                  </span>
+                )}
+              </div>
+
+              {/* Autonomous toggle */}
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={toggleAutonomous}
+                  className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${autonomous ? 'bg-soul' : 'bg-elevated border border-border-default'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-transform ${autonomous ? 'translate-x-4.5 bg-deep' : 'translate-x-0.5 bg-fg-muted'}`} />
+                </button>
+                <span className="text-xs text-fg-secondary">Autonomous</span>
+                {autonomous && (
+                  <span className="text-[10px] text-soul font-medium">Soul will work on this task</span>
+                )}
               </div>
             </div>
             <button

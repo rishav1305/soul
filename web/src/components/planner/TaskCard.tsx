@@ -1,5 +1,9 @@
 import type { PlannerTask, TaskSubstep } from '../../lib/types.ts';
 
+function parseMetadata(meta: string): Record<string, unknown> {
+  try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
+}
+
 const PRIORITY_BORDER: Record<number, string> = {
   0: 'border-l-priority-low',
   1: 'border-l-priority-normal',
@@ -34,6 +38,8 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
   const borderClass = PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low';
   const substepIndex = task.substep ? SUBSTEP_ORDER.indexOf(task.substep) + 1 : 0;
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
+  const meta = parseMetadata(task.metadata);
+  const isAutonomous = !!meta.autonomous;
 
   return (
     <button
@@ -55,6 +61,12 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
       )}
 
       <div className="flex flex-wrap gap-1.5">
+        {isAutonomous && (
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-soul/15 text-soul">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2.5 5 5.5.8-4 3.9.9 5.3L8 13.3 3.1 16l.9-5.3-4-3.9L5.5 6z"/></svg>
+            Auto
+          </span>
+        )}
         {task.product && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-overlay text-fg-secondary">
             {task.product}
