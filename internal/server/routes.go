@@ -203,7 +203,9 @@ type modelInfo struct {
 // handleModelsList returns available AI models.
 func (s *Server) handleModelsList(w http.ResponseWriter, r *http.Request) {
 	models := []modelInfo{
-		{ID: s.cfg.Model, Name: friendlyModelName(s.cfg.Model), Description: "Default model"},
+		{ID: "claude-sonnet-4-6", Name: "Sonnet", Description: "Fast & capable"},
+		{ID: "claude-opus-4-6", Name: "Opus", Description: "Most capable"},
+		{ID: "claude-haiku-4-5-20251001", Name: "Haiku", Description: "Fast & lightweight"},
 	}
 	writeJSON(w, http.StatusOK, models)
 }

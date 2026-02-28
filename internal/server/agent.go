@@ -66,7 +66,10 @@ func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.S
 
 // Run executes the agent loop for a single user message. It sends streaming
 // events back to the browser via the sendEvent callback.
-func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, sendEvent func(WSMessage)) {
+// chatType selects a mode-specific system prompt extension.
+// disabledTools lists tool qualified names that should be excluded.
+// thinking enables extended thinking for supported models (currently Opus).
+func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType string, disabledTools []string, thinking bool, sendEvent func(WSMessage)) {
 	// Validate dependencies.
 	if a.ai == nil {
 		sendEvent(WSMessage{
@@ -81,17 +84,28 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 		return
 	}
 
-	log.Printf("[agent] run session=%s msg=%q", sessionID, userMessage)
+	log.Printf("[agent] run session=%s msg=%q chatType=%s thinking=%v", sessionID, userMessage, chatType, thinking)
 
 	// Get or create session.
 	sess := a.sessions.GetOrCreate(sessionID)
 	sess.AddMessage("user", userMessage)
 
-	// Build Claude tools from the product registry.
+	// Build a set of disabled tool names for fast lookup.
+	disabledSet := make(map[string]bool, len(disabledTools))
+	for _, name := range disabledTools {
+		disabledSet[name] = true
+	}
+
+	// Build Claude tools from the product registry, filtering out disabled tools.
 	var claudeTools []ai.ClaudeTool
 	if a.products != nil {
 		registry := a.products.Registry()
 		for _, entry := range registry.AllTools() {
+			qualifiedName := entry.ProductName + "__" + entry.Tool.GetName()
+			if disabledSet[qualifiedName] {
+				log.Printf("[agent] tool disabled: %s", qualifiedName)
+				continue
+			}
 			tools := ai.BuildClaudeTools(entry.ProductName, []*soulv1.Tool{entry.Tool})
 			claudeTools = append(claudeTools, tools...)
 		}
@@ -107,20 +121,36 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 		sysPrompt += fmt.Sprintf("\n\nAvailable tools: %s", strings.Join(toolNames, ", "))
 	}
 
+	// Append chat-type-specific prompt instructions.
+	sysPrompt += chatTypePrompt(chatType)
+
 	// Convert session messages to AI messages for the request.
 	messages := buildAIMessages(sess)
 
 	log.Printf("[agent] tools available: %d", len(claudeTools))
+
+	// Determine max tokens and thinking config.
+	maxTokens := 4096
+	var thinkingConfig *ai.ThinkingConfig
+	if thinking && strings.Contains(a.model, "opus") {
+		maxTokens = 16000
+		thinkingConfig = &ai.ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 10000,
+		}
+		log.Printf("[agent] extended thinking enabled: budget_tokens=10000 max_tokens=%d", maxTokens)
+	}
 
 	// Run the agent loop — Claude may call multiple tools iteratively.
 	var fullResponse strings.Builder
 	for iteration := 0; iteration < maxToolIterations; iteration++ {
 		log.Printf("[agent] iteration %d/%d", iteration+1, maxToolIterations)
 		req := ai.Request{
-			MaxTokens: 4096,
+			MaxTokens: maxTokens,
 			System:    sysPrompt,
 			Messages:  messages,
 			Tools:     claudeTools,
+			Thinking:  thinkingConfig,
 		}
 
 		body, err := a.ai.SendStream(ctx, req)
@@ -183,6 +213,26 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage string, send
 	// Store the assistant response.
 	if fullResponse.Len() > 0 {
 		sess.AddMessage("assistant", fullResponse.String())
+	}
+}
+
+// chatTypePrompt returns a mode-specific system prompt extension based on the chat type.
+func chatTypePrompt(chatType string) string {
+	switch strings.ToLower(chatType) {
+	case "code":
+		return "\n\n# Mode: Code\nFocus on code generation. Be concise. Show code blocks. Minimize prose."
+	case "architect":
+		return "\n\n# Mode: Architect\nFocus on system design and architecture. Think about scalability, trade-offs, and structure. Use diagrams when helpful."
+	case "debug":
+		return "\n\n# Mode: Debug\nSystematic debugging workflow. Ask for the error first. Reproduce. Diagnose step by step. Identify root cause before suggesting fixes."
+	case "review":
+		return "\n\n# Mode: Code Review\nReview code for bugs, security issues, performance, and style. Give structured feedback with severity levels."
+	case "tdd":
+		return "\n\n# Mode: TDD\nTest-driven development. Write the failing test first, then the minimal implementation to pass it. Red-green-refactor."
+	case "brainstorm":
+		return "\n\n# Mode: Brainstorm\nOpen-ended exploration. Ask clarifying questions. Propose 2-3 approaches with trade-offs. Don't jump to implementation."
+	default:
+		return ""
 	}
 }
 

@@ -62,6 +62,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// chatOptions holds the per-message options the frontend sends in msg.Data.
+type chatOptions struct {
+	Model         string   `json:"model"`
+	ChatType      string   `json:"chatType"`
+	DisabledTools []string `json:"disabledTools"`
+	Thinking      bool     `json:"thinking"`
+}
+
 // handleChatSend processes a chat.send message by running the AI agent loop.
 // It streams tokens, tool calls, and progress events back to the browser.
 func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *WSMessage) {
@@ -72,6 +80,23 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 
 	log.Printf("[ws] chat.send session=%s content=%q", sessionID, msg.Content)
 
+	// Parse optional chat options from msg.Data.
+	var opts chatOptions
+	if len(msg.Data) > 0 {
+		if err := json.Unmarshal(msg.Data, &opts); err != nil {
+			log.Printf("[ws] failed to parse chat options: %v", err)
+		}
+	}
+
+	// Use the model from options if provided, otherwise fall back to config default.
+	model := s.cfg.Model
+	if opts.Model != "" {
+		model = opts.Model
+	}
+
+	log.Printf("[ws] chat options model=%s chatType=%s disabledTools=%v thinking=%v",
+		model, opts.ChatType, opts.DisabledTools, opts.Thinking)
+
 	// Create a sendEvent callback that writes to the WebSocket.
 	sendEvent := func(wsMsg WSMessage) {
 		if err := wsjson.Write(ctx, conn, wsMsg); err != nil {
@@ -80,8 +105,8 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	}
 
 	// Run the AI agent loop.
-	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.cfg.Model)
-	agent.Run(ctx, sessionID, msg.Content, sendEvent)
+	agent := NewAgentLoop(s.ai, s.products, s.sessions, model)
+	agent.Run(ctx, sessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, sendEvent)
 	log.Printf("[ws] chat.send complete session=%s", sessionID)
 }
 

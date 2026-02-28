@@ -60,14 +60,21 @@ type Message struct {
 	Content any    `json:"content"`
 }
 
+// ThinkingConfig enables extended thinking for supported models.
+type ThinkingConfig struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
 // Request represents a Claude Messages API request.
 type Request struct {
-	Model     string       `json:"model"`
-	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []Message    `json:"messages"`
-	Tools     []ClaudeTool `json:"tools,omitempty"`
-	Stream    bool         `json:"stream"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    string          `json:"system,omitempty"`
+	Messages  []Message       `json:"messages"`
+	Tools     []ClaudeTool    `json:"tools,omitempty"`
+	Stream    bool            `json:"stream"`
+	Thinking  *ThinkingConfig `json:"thinking,omitempty"`
 }
 
 // SendStream sends a streaming request to the Claude Messages API.
