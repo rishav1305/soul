@@ -29,6 +29,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/tasks/{id}", s.handleTaskDelete)
 	s.mux.HandleFunc("POST /api/tasks/{id}/move", s.handleTaskMove)
 
+	// Chat session endpoints.
+	s.mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
+	s.mux.HandleFunc("GET /api/sessions", s.handleSessionList)
+	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleSessionMessages)
+
 	// Catch-all for unknown API routes — returns 404 JSON.
 	s.mux.HandleFunc("/api/", handleAPINotFound)
 

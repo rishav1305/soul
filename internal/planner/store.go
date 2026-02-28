@@ -48,6 +48,20 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
     depends_on INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, depends_on)
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'idle',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 `
 
 // OpenStore opens (or creates) a SQLite database at dbPath, applies the schema,
