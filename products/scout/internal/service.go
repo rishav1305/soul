@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/rishav1305/soul/products/scout/internal/browser"
 	"github.com/rishav1305/soul/products/scout/internal/data"
+	"github.com/rishav1305/soul/products/scout/internal/generate"
+	"github.com/rishav1305/soul/products/scout/internal/supabase"
+	syncpkg "github.com/rishav1305/soul/products/scout/internal/sync"
+	sweeppkg "github.com/rishav1305/soul/products/scout/internal/sweep"
 	soulv1 "github.com/rishav1305/soul/proto/soul/v1"
 	"google.golang.org/grpc"
 )
@@ -149,10 +154,11 @@ type sweepInput struct {
 
 // generateInput holds the parsed JSON input for the generate tool.
 type generateInput struct {
-	JobURL         string `json:"jobUrl,omitempty"`
-	JobDescription string `json:"jobDescription,omitempty"`
-	ProfileID      string `json:"profileId,omitempty"`
-	OutputDir      string `json:"outputDir,omitempty"`
+	Variant       string `json:"variant"`
+	Company       string `json:"company,omitempty"`
+	Role          string `json:"role,omitempty"`
+	JobURL        string `json:"jobUrl,omitempty"`
+	SpecificThing string `json:"specific_thing,omitempty"`
 }
 
 // trackInput holds the parsed JSON input for the track tool.
@@ -268,9 +274,54 @@ func (s *ScoutService) executeSync(inputJSON string) (*soulv1.ToolResponse, erro
 			Output:  fmt.Sprintf("invalid input: %v", err),
 		}, nil
 	}
+
+	// Expand "all" to all platforms plus website and github.
+	platforms := input.Platforms
+	for _, p := range platforms {
+		if strings.ToLower(p) == "all" {
+			platforms = append(browser.AllPlatforms(), "website", "github")
+			break
+		}
+	}
+
+	// Fetch profile data from Supabase.
+	client, err := supabase.NewClient()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("supabase client error: %v", err),
+		}, nil
+	}
+
+	profile, err := client.GetProfileData()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("fetch profile error: %v", err),
+		}, nil
+	}
+
+	var results []data.PlatformSync
+	driftCount := 0
+
+	for _, platform := range platforms {
+		result := syncpkg.CheckPlatform(platform, profile)
+		results = append(results, result.Platform)
+		if result.Platform.Status == "drift" {
+			driftCount++
+		}
+	}
+
+	if s.store != nil {
+		if err := s.store.SetSyncResults(results); err != nil {
+			log.Printf("[scout] warning: failed to save sync results: %v", err)
+		}
+	}
+
+	syncedCount := len(results) - driftCount
 	return &soulv1.ToolResponse{
-		Success: false,
-		Output:  fmt.Sprintf("sync tool not implemented (platforms=%v)", input.Platforms),
+		Success: true,
+		Output:  fmt.Sprintf("Sync complete: %d/%d platforms in sync, %d with drift", syncedCount, len(results), driftCount),
 	}, nil
 }
 
@@ -282,9 +333,38 @@ func (s *ScoutService) executeSweep(inputJSON string) (*soulv1.ToolResponse, err
 			Output:  fmt.Sprintf("invalid input: %v", err),
 		}, nil
 	}
+
+	// Expand "all" to all platforms.
+	platforms := input.Platforms
+	for _, p := range platforms {
+		if strings.ToLower(p) == "all" {
+			platforms = browser.AllPlatforms()
+			break
+		}
+	}
+
+	var allOpps []data.Opportunity
+	var allMsgs []data.Message
+
+	for _, platform := range platforms {
+		result := sweeppkg.SweepPlatform(platform)
+		if result.Error != nil {
+			log.Printf("[scout] sweep %s error: %v", platform, result.Error)
+			continue
+		}
+		allOpps = append(allOpps, result.Opportunities...)
+		allMsgs = append(allMsgs, result.Messages...)
+	}
+
+	if s.store != nil {
+		if err := s.store.SetSweepResults(allOpps, allMsgs); err != nil {
+			log.Printf("[scout] warning: failed to save sweep results: %v", err)
+		}
+	}
+
 	return &soulv1.ToolResponse{
-		Success: false,
-		Output:  fmt.Sprintf("sweep tool not implemented (platforms=%v, keywords=%v)", input.Platforms, input.Keywords),
+		Success: true,
+		Output:  fmt.Sprintf("Sweep complete: found %d opportunities across %d platforms", len(allOpps), len(platforms)),
 	}, nil
 }
 
@@ -296,9 +376,102 @@ func (s *ScoutService) executeGenerate(inputJSON string) (*soulv1.ToolResponse, 
 			Output:  fmt.Sprintf("invalid input: %v", err),
 		}, nil
 	}
+
+	// Look up the variant.
+	variant, ok := generate.Variants[strings.ToUpper(input.Variant)]
+	if !ok {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("unknown variant %q — valid variants: A, B, C, D, E, F, G", input.Variant),
+		}, nil
+	}
+
+	// Fetch profile data from Supabase.
+	client, err := supabase.NewClient()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("supabase client error: %v", err),
+		}, nil
+	}
+
+	profile, err := client.GetProfileData()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("fetch profile error: %v", err),
+		}, nil
+	}
+
+	// Build output paths.
+	company := input.Company
+	if company == "" {
+		company = "general"
+	}
+	role := input.Role
+	if role == "" {
+		role = variant.TargetRole
+	}
+
+	slug := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(company, " ", "-"), "/", "-"))
+	dateStr := time.Now().Format("2006-01-02")
+	variantID := strings.ToLower(variant.ID)
+
+	draftsDir := filepath.Join(s.store.DataDir(), "drafts")
+	resumePath := filepath.Join(draftsDir, fmt.Sprintf("%s-%s-%s-resume.pdf", slug, variantID, dateStr))
+	coverPath := filepath.Join(draftsDir, fmt.Sprintf("%s-%s-%s-cover.pdf", slug, variantID, dateStr))
+
+	var artifacts []*soulv1.Artifact
+
+	// Build and generate resume PDF.
+	resumeHTML, err := generate.BuildResumeHTML(variant, profile)
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("build resume HTML error: %v", err),
+		}, nil
+	}
+
+	if err := generate.HTMLToPDF(resumeHTML, resumePath); err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("generate resume PDF error: %v", err),
+		}, nil
+	}
+	artifacts = append(artifacts, &soulv1.Artifact{
+		Type: "pdf",
+		Path: resumePath,
+	})
+
+	// Build and generate cover letter PDF.
+	specificThing := input.SpecificThing
+	if specificThing == "" {
+		specificThing = "Your focus on AI innovation"
+	}
+
+	coverHTML, err := generate.BuildCoverHTML(variant, profile, company, role, specificThing)
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("build cover HTML error: %v", err),
+		}, nil
+	}
+
+	if err := generate.HTMLToPDF(coverHTML, coverPath); err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("generate cover PDF error: %v", err),
+		}, nil
+	}
+	artifacts = append(artifacts, &soulv1.Artifact{
+		Type: "pdf",
+		Path: coverPath,
+	})
+
 	return &soulv1.ToolResponse{
-		Success: false,
-		Output:  "generate tool not implemented",
+		Success:   true,
+		Output:    fmt.Sprintf("Generated variant %s (%s) resume and cover letter for %s. Files: %s, %s", variant.ID, variant.TargetRole, company, resumePath, coverPath),
+		Artifacts: artifacts,
 	}, nil
 }
 
@@ -575,28 +748,99 @@ func (s *ScoutService) streamSync(inputJSON string, stream grpc.ServerStreamingS
 		})
 	}
 
-	// Send progress for each platform.
-	for i, platform := range input.Platforms {
-		pct := float64(i) / float64(len(input.Platforms)) * 100.0
+	// Expand "all" to all platforms plus website and github.
+	platforms := input.Platforms
+	for i, p := range platforms {
+		if strings.ToLower(p) == "all" {
+			platforms = append(browser.AllPlatforms(), "website", "github")
+			_ = i
+			break
+		}
+	}
+
+	// Fetch profile data from Supabase.
+	client, err := supabase.NewClient()
+	if err != nil {
+		return stream.Send(&soulv1.ToolEvent{
+			Event: &soulv1.ToolEvent_Error{
+				Error: &soulv1.ErrorEvent{
+					Code:    "SUPABASE_ERROR",
+					Message: fmt.Sprintf("supabase client error: %v", err),
+				},
+			},
+		})
+	}
+
+	profile, err := client.GetProfileData()
+	if err != nil {
+		return stream.Send(&soulv1.ToolEvent{
+			Event: &soulv1.ToolEvent_Error{
+				Error: &soulv1.ErrorEvent{
+					Code:    "PROFILE_ERROR",
+					Message: fmt.Sprintf("fetch profile error: %v", err),
+				},
+			},
+		})
+	}
+
+	var results []data.PlatformSync
+	driftCount := 0
+
+	for i, platform := range platforms {
+		// Send progress.
+		pct := float64(i) / float64(len(platforms)) * 100.0
 		if err := stream.Send(&soulv1.ToolEvent{
 			Event: &soulv1.ToolEvent_Progress{
 				Progress: &soulv1.ProgressUpdate{
 					Analyzer: platform,
 					Percent:  pct,
-					Message:  fmt.Sprintf("Syncing %s (not implemented)", platform),
+					Message:  fmt.Sprintf("Checking %s...", platform),
 				},
 			},
 		}); err != nil {
 			return err
 		}
+
+		// Check the platform.
+		result := syncpkg.CheckPlatform(platform, profile)
+		results = append(results, result.Platform)
+
+		// Send finding events for drift issues.
+		if result.Platform.Status == "drift" {
+			driftCount++
+			for _, issue := range result.Platform.Issues {
+				if err := stream.Send(&soulv1.ToolEvent{
+					Event: &soulv1.ToolEvent_Finding{
+						Finding: &soulv1.FindingEvent{
+							Id:       fmt.Sprintf("sync-%s-%d", platform, i),
+							Title:    fmt.Sprintf("Drift on %s", platform),
+							Severity: "warning",
+							Evidence: issue,
+						},
+					},
+				}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Store results.
+	if s.store != nil {
+		if err := s.store.SetSyncResults(results); err != nil {
+			log.Printf("[scout] warning: failed to save sync results: %v", err)
+		}
 	}
 
 	// Send completion.
+	syncedCount := len(results) - driftCount
+	summary := fmt.Sprintf("Sync complete: %d/%d platforms in sync, %d with drift", syncedCount, len(results), driftCount)
+
 	return stream.Send(&soulv1.ToolEvent{
 		Event: &soulv1.ToolEvent_Complete{
 			Complete: &soulv1.ToolResponse{
-				Success: false,
-				Output:  fmt.Sprintf("sync tool not implemented (platforms=%v)", input.Platforms),
+				Success: true,
+				Output:  summary,
 			},
 		},
 	})
@@ -615,28 +859,91 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 		})
 	}
 
-	// Send progress for each platform.
-	for i, platform := range input.Platforms {
-		pct := float64(i) / float64(len(input.Platforms)) * 100.0
+	// Expand "all" to all platforms.
+	platforms := input.Platforms
+	for _, p := range platforms {
+		if strings.ToLower(p) == "all" {
+			platforms = browser.AllPlatforms()
+			break
+		}
+	}
+
+	var allOpps []data.Opportunity
+	var allMsgs []data.Message
+	totalFound := 0
+
+	for i, platform := range platforms {
+		// Send progress.
+		pct := float64(i) / float64(len(platforms)) * 100.0
 		if err := stream.Send(&soulv1.ToolEvent{
 			Event: &soulv1.ToolEvent_Progress{
 				Progress: &soulv1.ProgressUpdate{
 					Analyzer: platform,
 					Percent:  pct,
-					Message:  fmt.Sprintf("Sweeping %s (not implemented)", platform),
+					Message:  fmt.Sprintf("Sweeping %s for opportunities...", platform),
 				},
 			},
 		}); err != nil {
 			return err
 		}
+
+		// Sweep the platform.
+		result := sweeppkg.SweepPlatform(platform)
+		if result.Error != nil {
+			log.Printf("[scout] sweep %s error: %v", platform, result.Error)
+			// Send a finding for the error but continue with other platforms.
+			if err := stream.Send(&soulv1.ToolEvent{
+				Event: &soulv1.ToolEvent_Finding{
+					Finding: &soulv1.FindingEvent{
+						Id:       fmt.Sprintf("sweep-err-%s", platform),
+						Title:    fmt.Sprintf("Sweep error on %s", platform),
+						Severity: "error",
+						Evidence: result.Error.Error(),
+					},
+				},
+			}); err != nil {
+				return err
+			}
+			continue
+		}
+
+		allOpps = append(allOpps, result.Opportunities...)
+		allMsgs = append(allMsgs, result.Messages...)
+
+		// Send finding events for each opportunity found.
+		for _, opp := range result.Opportunities {
+			totalFound++
+			if err := stream.Send(&soulv1.ToolEvent{
+				Event: &soulv1.ToolEvent_Finding{
+					Finding: &soulv1.FindingEvent{
+						Id:       opp.ID,
+						Title:    fmt.Sprintf("%s at %s", opp.Role, opp.Company),
+						Severity: "info",
+						File:     opp.URL,
+						Evidence: fmt.Sprintf("Found on %s", platform),
+					},
+				},
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Store results.
+	if s.store != nil {
+		if err := s.store.SetSweepResults(allOpps, allMsgs); err != nil {
+			log.Printf("[scout] warning: failed to save sweep results: %v", err)
+		}
 	}
 
 	// Send completion.
+	summary := fmt.Sprintf("Sweep complete: found %d opportunities across %d platforms", totalFound, len(platforms))
+
 	return stream.Send(&soulv1.ToolEvent{
 		Event: &soulv1.ToolEvent_Complete{
 			Complete: &soulv1.ToolResponse{
-				Success: false,
-				Output:  fmt.Sprintf("sweep tool not implemented (platforms=%v, keywords=%v)", input.Platforms, input.Keywords),
+				Success: true,
+				Output:  summary,
 			},
 		},
 	})
