@@ -58,7 +58,9 @@ func (wm *WorktreeManager) EnsureSetup() error {
 			return fmt.Errorf("open .gitignore: %w", err)
 		}
 		defer f.Close()
-		f.WriteString("\n.worktrees/\n")
+		if _, err := f.WriteString("\n.worktrees/\n"); err != nil {
+			return fmt.Errorf("write .gitignore: %w", err)
+		}
 		log.Printf("[worktree] added .worktrees/ to .gitignore")
 	}
 
@@ -138,5 +140,93 @@ func (wm *WorktreeManager) Cleanup(taskID int64, title string) error {
 	cmd.CombinedOutput()
 
 	log.Printf("[worktree] cleaned up task %d", taskID)
+	return nil
+}
+
+// CommitInWorktree stages all changes in a worktree and commits them.
+func (wm *WorktreeManager) CommitInWorktree(taskID int64, title string) error {
+	wtPath := wm.worktreePath(taskID)
+
+	// Stage all changes.
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = wtPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add: %s — %w", out, err)
+	}
+
+	// Check if there's anything to commit.
+	cmd = exec.Command("git", "diff", "--cached", "--quiet")
+	cmd.Dir = wtPath
+	if err := cmd.Run(); err == nil {
+		log.Printf("[worktree] task %d: nothing to commit", taskID)
+		return nil // nothing staged
+	}
+
+	// Commit.
+	msg := fmt.Sprintf("task #%d: %s", taskID, title)
+	cmd = exec.Command("git", "commit", "-m", msg)
+	cmd.Dir = wtPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit: %s — %w", out, err)
+	}
+
+	log.Printf("[worktree] committed in task %d worktree", taskID)
+	return nil
+}
+
+// MergeToDev merges a task branch into the dev branch.
+func (wm *WorktreeManager) MergeToDev(taskID int64, title string) error {
+	branch := wm.branchName(taskID, title)
+
+	cmd := exec.Command("git", "checkout", "dev")
+	cmd.Dir = wm.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("checkout dev: %s — %w", out, err)
+	}
+
+	cmd = exec.Command("git", "merge", branch, "--no-ff",
+		"-m", fmt.Sprintf("merge: task #%d — %s", taskID, title))
+	cmd.Dir = wm.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		// Switch back to master before returning error.
+		back := exec.Command("git", "checkout", "master")
+		back.Dir = wm.repoRoot
+		back.Run()
+		return fmt.Errorf("merge to dev: %s — %w", out, err)
+	}
+
+	// Switch back to master.
+	cmd = exec.Command("git", "checkout", "master")
+	cmd.Dir = wm.repoRoot
+	cmd.CombinedOutput()
+
+	log.Printf("[worktree] merged task %d to dev", taskID)
+	return nil
+}
+
+// MergeToMaster merges a task branch into the master branch.
+func (wm *WorktreeManager) MergeToMaster(taskID int64, title string) error {
+	branch := wm.branchName(taskID, title)
+
+	cmd := exec.Command("git", "merge", branch, "--no-ff",
+		"-m", fmt.Sprintf("merge: task #%d — %s", taskID, title))
+	cmd.Dir = wm.repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("merge to master: %s — %w", out, err)
+	}
+
+	log.Printf("[worktree] merged task %d to master", taskID)
+	return nil
+}
+
+// RebuildFrontend runs vite build in the given directory.
+func (wm *WorktreeManager) RebuildFrontend(dir string) error {
+	cmd := exec.Command("npx", "vite", "build")
+	cmd.Dir = filepath.Join(dir, "web")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("vite build: %s — %w", out, err)
+	}
+	log.Printf("[worktree] frontend rebuilt in %s", dir)
 	return nil
 }
