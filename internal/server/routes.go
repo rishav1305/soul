@@ -34,6 +34,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleSessionMessages)
 
+	// Model list endpoint.
+	s.mux.HandleFunc("GET /api/models", s.handleModelsList)
+
 	// Catch-all for unknown API routes — returns 404 JSON.
 	s.mux.HandleFunc("/api/", handleAPINotFound)
 
@@ -188,4 +191,32 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		"output":          resp.GetOutput(),
 		"structured_json": resp.GetStructuredJson(),
 	})
+}
+
+// modelInfo is returned by GET /api/models.
+type modelInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// handleModelsList returns available AI models.
+func (s *Server) handleModelsList(w http.ResponseWriter, r *http.Request) {
+	models := []modelInfo{
+		{ID: s.cfg.Model, Name: friendlyModelName(s.cfg.Model), Description: "Default model"},
+	}
+	writeJSON(w, http.StatusOK, models)
+}
+
+func friendlyModelName(model string) string {
+	switch {
+	case strings.Contains(model, "opus"):
+		return "Opus"
+	case strings.Contains(model, "sonnet"):
+		return "Sonnet"
+	case strings.Contains(model, "haiku"):
+		return "Haiku"
+	default:
+		return model
+	}
 }
