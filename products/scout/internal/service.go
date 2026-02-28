@@ -220,49 +220,40 @@ func (s *ScoutService) executeSetup(inputJSON string) (*soulv1.ToolResponse, err
 		}, nil
 	}
 
-	urls, ok := browser.PlatformURLs[input.Platform]
-	if !ok {
+	if _, ok := browser.PlatformURLs[input.Platform]; !ok {
 		return &soulv1.ToolResponse{
 			Success: false,
 			Output:  fmt.Sprintf("unknown platform: %s", input.Platform),
 		}, nil
 	}
 
-	b, page, err := browser.LaunchVisible(input.Platform)
+	cmd, err := browser.LaunchNative(input.Platform)
 	if err != nil {
 		return &soulv1.ToolResponse{
 			Success: false,
 			Output:  fmt.Sprintf("failed to launch browser: %v", err),
 		}, nil
 	}
-	defer b.MustClose()
 
-	loginURL := urls.Login
+	// Wait for the user to close Chrome after logging in.
+	if err := cmd.Wait(); err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("browser exited with error: %v", err),
+		}, nil
+	}
 
-	// Poll every 2 seconds for up to 5 minutes, waiting for the user to
-	// complete login (detected by the page URL changing away from the login URL).
-	const (
-		pollInterval = 2 * time.Second
-		timeout      = 5 * time.Minute
-	)
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		time.Sleep(pollInterval)
-		currentURL := page.MustInfo().URL
-		if currentURL != loginURL && !strings.HasPrefix(currentURL, loginURL) {
-			// User has navigated away from the login page — login succeeded.
-			profileDir, _ := browser.ProfileDir(input.Platform)
-			return &soulv1.ToolResponse{
-				Success: true,
-				Output:  fmt.Sprintf("Login successful for %s. Profile saved to %s", input.Platform, profileDir),
-			}, nil
-		}
+	profileDir, _ := browser.ProfileDir(input.Platform)
+	if browser.HasProfile(input.Platform) {
+		return &soulv1.ToolResponse{
+			Success: true,
+			Output:  fmt.Sprintf("Login session saved for %s at %s", input.Platform, profileDir),
+		}, nil
 	}
 
 	return &soulv1.ToolResponse{
 		Success: false,
-		Output:  fmt.Sprintf("login timed out after %s for %s", timeout, input.Platform),
+		Output:  fmt.Sprintf("No session data found for %s after browser closed", input.Platform),
 	}, nil
 }
 

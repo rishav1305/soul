@@ -2,57 +2,53 @@ package browser
 
 import (
 	"fmt"
+	"os/exec"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/proto"
 )
 
-// LaunchVisible opens a visible (non-headless) Chrome instance using the
-// persistent profile directory for the given platform, then navigates to
-// the platform's login URL. The caller is responsible for closing the
-// returned browser when done.
-func LaunchVisible(platform string) (*rod.Browser, *rod.Page, error) {
+// LaunchNative opens a regular (non-automated) Chrome process for manual
+// login. This avoids automation flags that trigger bot detection on sites
+// like LinkedIn. The caller receives the *exec.Cmd so it can wait on exit.
+func LaunchNative(platform string) (*exec.Cmd, error) {
 	urls, ok := PlatformURLs[platform]
 	if !ok {
-		return nil, nil, fmt.Errorf("unknown platform: %s", platform)
+		return nil, fmt.Errorf("unknown platform: %s", platform)
 	}
 
 	profileDir, err := ProfileDir(platform)
 	if err != nil {
-		return nil, nil, fmt.Errorf("profile dir: %w", err)
+		return nil, fmt.Errorf("profile dir: %w", err)
 	}
 
-	l := launcher.New().
-		UserDataDir(profileDir).
-		Headless(false).
-		NoSandbox(true)
-	if path, found := launcher.LookPath(); found {
-		l = l.Bin(path)
+	// Find Chrome/Chromium binary.
+	bin := ""
+	for _, candidate := range []string{
+		"google-chrome", "google-chrome-stable", "chromium-browser", "chromium",
+	} {
+		if p, err := exec.LookPath(candidate); err == nil {
+			bin = p
+			break
+		}
 	}
-	u, err := l.Launch()
-	if err != nil {
-		return nil, nil, fmt.Errorf("launch chrome: %w", err)
-	}
-
-	browser := rod.New().ControlURL(u)
-	if err := browser.Connect(); err != nil {
-		return nil, nil, fmt.Errorf("connect to chrome: %w", err)
+	if bin == "" {
+		return nil, fmt.Errorf("no Chrome or Chromium binary found in PATH")
 	}
 
-	page, err := browser.Page(proto.TargetCreateTarget{})
-	if err != nil {
-		browser.MustClose()
-		return nil, nil, fmt.Errorf("new page: %w", err)
+	cmd := exec.Command(bin,
+		"--user-data-dir="+profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--no-sandbox",
+		urls.Login,
+	)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start chrome: %w", err)
 	}
 
-	if err := NavigateWithDelay(page, urls.Login); err != nil {
-		browser.MustClose()
-		return nil, nil, fmt.Errorf("navigate to login: %w", err)
-	}
-
-	return browser, page, nil
+	return cmd, nil
 }
 
 // LaunchHeadless opens a headless Chrome instance using the persistent

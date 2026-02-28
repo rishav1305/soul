@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/rishav1305/soul/products/scout/internal"
 	"github.com/rishav1305/soul/products/scout/internal/browser"
@@ -79,13 +78,6 @@ func runSetup(args []string) {
 	}
 	platform := strings.ToLower(args[0])
 
-	if os.Getenv("DISPLAY") == "" {
-		fmt.Fprintln(os.Stderr, "Error: DISPLAY is not set. Use X11 forwarding:")
-		fmt.Fprintln(os.Stderr, "  ssh -X rishav@192.168.0.128")
-		fmt.Fprintln(os.Stderr, "  cd ~/soul && ./products/scout/scout setup linkedin")
-		os.Exit(1)
-	}
-
 	urls, ok := browser.PlatformURLs[platform]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Unknown platform: %s\nSupported: %s\n",
@@ -93,47 +85,36 @@ func runSetup(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Launching %s login page... (DISPLAY=%s)\n", platform, os.Getenv("DISPLAY"))
+	fmt.Printf("Launching %s login page...\n", platform)
 	fmt.Printf("Login URL: %s\n", urls.Login)
-	fmt.Println("Please log in. The browser will close automatically once login is detected.")
+	fmt.Println("Log in, then close the browser window when done.")
 	fmt.Println("Press Ctrl+C to cancel.\n")
 
-	b, page, err := browser.LaunchVisible(platform)
+	cmd, err := browser.LaunchNative(platform)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to launch browser: %v\n", err)
 		os.Exit(1)
 	}
-	defer b.MustClose()
 
-	// Handle Ctrl+C.
+	// Handle Ctrl+C — kill the browser process.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		fmt.Println("\nCancelled.")
-		b.MustClose()
+		cmd.Process.Kill()
 		os.Exit(0)
 	}()
 
-	loginURL := urls.Login
-	const (
-		pollInterval = 2 * time.Second
-		timeout      = 5 * time.Minute
-	)
-	deadline := time.Now().Add(timeout)
+	// Wait for user to close Chrome.
+	_ = cmd.Wait()
 
-	for time.Now().Before(deadline) {
-		time.Sleep(pollInterval)
-		info := page.MustInfo()
-		currentURL := info.URL
-		if currentURL != loginURL && !strings.HasPrefix(currentURL, loginURL) {
-			profileDir, _ := browser.ProfileDir(platform)
-			fmt.Printf("\nLogin successful for %s!\n", platform)
-			fmt.Printf("Session saved to: %s\n", profileDir)
-			return
-		}
+	profileDir, _ := browser.ProfileDir(platform)
+	if browser.HasProfile(platform) {
+		fmt.Printf("\nLogin session saved for %s!\n", platform)
+		fmt.Printf("Profile: %s\n", profileDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "\nNo session data found for %s.\n", platform)
+		os.Exit(1)
 	}
-
-	fmt.Fprintf(os.Stderr, "\nLogin timed out after %s.\n", timeout)
-	os.Exit(1)
 }
