@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import ChatView from './ChatView.tsx';
-import ChatNavbar from './ChatNavbar.tsx';
 import { useChat } from '../../hooks/useChat.ts';
 
 interface ChatPanelProps {
@@ -24,10 +23,6 @@ export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange }: C
 
   return (
     <div className="flex flex-col h-full relative bg-surface">
-      <ChatNavbar
-        onCollapse={onCollapse}
-        canCollapse={canCollapse}
-      />
       <div className="flex-1 overflow-hidden">
         <ChatView />
       </div>
