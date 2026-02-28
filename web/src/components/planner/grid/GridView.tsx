@@ -20,16 +20,16 @@ export default function GridView({ tasks, subView, onSubViewChange, onTaskClick 
   return (
     <div className="flex flex-col h-full">
       {/* Pill selector tabs */}
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-zinc-800 shrink-0">
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-border-subtle shrink-0">
         {TABS.map((tab) => (
           <button
             key={tab.value}
             type="button"
             onClick={() => onSubViewChange(tab.value)}
-            className={`px-2.5 py-1 text-xs cursor-pointer transition-colors ${
+            className={`px-2.5 py-1 font-display text-xs cursor-pointer transition-colors ${
               subView === tab.value
-                ? 'text-zinc-100 border-b-2 border-sky-500'
-                : 'text-zinc-500 hover:text-zinc-300 border-b-2 border-transparent'
+                ? 'text-fg font-semibold border-b-2 border-soul'
+                : 'text-fg-muted hover:text-fg-secondary border-b-2 border-transparent'
             }`}
           >
             {tab.label}

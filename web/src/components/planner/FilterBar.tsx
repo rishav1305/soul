@@ -24,15 +24,12 @@ const PRIORITY_OPTIONS: { value: number | 'all'; label: string }[] = [
   { value: 0, label: 'Low (0)' },
 ];
 
-const selectClass =
-  'bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 outline-none focus:border-zinc-500 cursor-pointer appearance-none';
-
 export default function FilterBar({ filters, products, onChange }: FilterBarProps) {
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 border-b border-zinc-800 shrink-0 text-xs">
+    <div className="flex items-center gap-3 bg-surface/50 border-b border-border-subtle px-4 py-2 shrink-0 text-xs">
       {/* Stage filter */}
       <select
-        className={selectClass}
+        className="soul-select"
         value={filters.stage}
         onChange={(e) => onChange({ stage: e.target.value as TaskStage | 'all' })}
       >
@@ -45,7 +42,7 @@ export default function FilterBar({ filters, products, onChange }: FilterBarProp
 
       {/* Priority filter */}
       <select
-        className={selectClass}
+        className="soul-select"
         value={filters.priority === 'all' ? 'all' : String(filters.priority)}
         onChange={(e) => {
           const val = e.target.value;
@@ -61,7 +58,7 @@ export default function FilterBar({ filters, products, onChange }: FilterBarProp
 
       {/* Product filter */}
       <select
-        className={selectClass}
+        className="soul-select"
         value={filters.product}
         onChange={(e) => onChange({ product: e.target.value as string | 'all' })}
       >

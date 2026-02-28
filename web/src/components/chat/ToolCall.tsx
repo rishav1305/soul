@@ -17,10 +17,10 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
 
   const statusColor =
     toolCall.status === 'running'
-      ? 'text-sky-400'
+      ? 'text-stage-active'
       : toolCall.status === 'complete'
-        ? 'text-emerald-400'
-        : 'text-red-400';
+        ? 'text-stage-done'
+        : 'text-stage-blocked';
 
   const findingsCount = toolCall.findings?.length ?? 0;
   const summary =
@@ -33,24 +33,24 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
           : 'Running...';
 
   return (
-    <div className="my-2 border border-zinc-700 rounded-lg overflow-hidden">
+    <div className="my-2 border border-border-default rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-800/50 hover:bg-zinc-800 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-elevated/60 hover:bg-elevated transition-colors text-left"
       >
         <span className={`${statusColor} ${toolCall.status === 'running' ? 'animate-spin' : ''}`}>
           {statusIcon}
         </span>
-        <span className="text-sm font-mono text-zinc-300">{toolCall.name}</span>
-        <span className="text-xs text-zinc-500 ml-auto">{summary}</span>
-        <span className="text-zinc-500 text-xs">{expanded ? '\u25B2' : '\u25BC'}</span>
+        <span className="font-mono text-sm text-fg-secondary">{toolCall.name}</span>
+        <span className="text-xs text-fg-muted ml-auto">{summary}</span>
+        <span className="text-fg-muted text-xs">{expanded ? '\u25B2' : '\u25BC'}</span>
       </button>
 
       {toolCall.status === 'running' && toolCall.progress != null && toolCall.progress > 0 && (
-        <div className="px-3 pb-2 bg-zinc-800/30">
-          <div className="h-1 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="px-3 pb-2 bg-elevated/60">
+          <div className="h-1 bg-overlay rounded-full overflow-hidden">
             <div
-              className="h-full bg-sky-500 rounded-full transition-all duration-300"
+              className="h-full bg-soul rounded-full transition-all duration-300"
               style={{ width: `${toolCall.progress}%` }}
             />
           </div>
@@ -58,9 +58,9 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
       )}
 
       {expanded && (
-        <div className="px-3 py-2 bg-zinc-900/50 text-sm">
+        <div className="px-3 py-2 bg-surface/60 text-sm">
           {toolCall.output && (
-            <pre className="text-zinc-400 whitespace-pre-wrap text-xs mb-2">
+            <pre className="text-fg-muted font-mono whitespace-pre-wrap text-xs mb-2">
               {toolCall.output}
             </pre>
           )}
@@ -69,12 +69,12 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
               {toolCall.findings!.map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center gap-2 text-xs text-zinc-400"
+                  className="flex items-center gap-2 text-xs text-fg-muted"
                 >
                   <SeverityBadge severity={f.severity} />
-                  <span className="text-zinc-300">{f.title}</span>
+                  <span className="text-fg">{f.title}</span>
                   {f.file && (
-                    <span className="text-zinc-600 ml-auto font-mono">
+                    <span className="text-fg-muted ml-auto font-mono">
                       {f.file}
                       {f.line != null ? `:${f.line}` : ''}
                     </span>
@@ -84,7 +84,7 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
             </div>
           )}
           {!toolCall.output && findingsCount === 0 && (
-            <span className="text-zinc-500 text-xs">No details available</span>
+            <span className="text-fg-muted text-xs">No details available</span>
           )}
         </div>
       )}
@@ -94,11 +94,11 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
 
 function SeverityBadge({ severity }: { severity: string }) {
   const colors: Record<string, string> = {
-    critical: 'bg-red-500/20 text-red-400',
-    high: 'bg-red-500/20 text-red-400',
-    medium: 'bg-amber-500/20 text-amber-400',
-    low: 'bg-sky-500/20 text-sky-400',
-    info: 'bg-zinc-500/20 text-zinc-400',
+    critical: 'bg-stage-blocked/20 text-stage-blocked',
+    high: 'bg-stage-blocked/20 text-stage-blocked',
+    medium: 'bg-stage-validation/20 text-stage-validation',
+    low: 'bg-stage-active/20 text-stage-active',
+    info: 'bg-overlay text-fg-muted',
   };
 
   const cls = colors[severity.toLowerCase()] ?? colors.info;

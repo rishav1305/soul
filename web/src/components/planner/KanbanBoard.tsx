@@ -17,7 +17,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick }: KanbanBoardPr
   }, [tasksByStage]);
 
   return (
-    <div className="flex h-full overflow-x-auto overflow-y-hidden">
+    <div className="flex gap-px h-full overflow-x-auto overflow-y-hidden">
       {visibleStages.map((stage) => (
         <StageColumn
           key={stage}

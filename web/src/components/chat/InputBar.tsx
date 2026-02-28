@@ -46,7 +46,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   );
 
   return (
-    <div className="border-t border-zinc-800 p-4">
+    <div className="glass px-5 py-4">
       <div className="flex items-end gap-2 max-w-3xl mx-auto">
         <textarea
           ref={textareaRef}
@@ -56,12 +56,12 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           disabled={disabled}
           placeholder="Message Soul..."
           rows={1}
-          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none focus:border-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 bg-elevated/80 border border-border-default rounded-xl px-4 py-3 text-fg placeholder:text-fg-muted font-body resize-none focus:border-soul/50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <button
           onClick={handleSend}
           disabled={disabled || !value.trim()}
-          className="px-4 py-3 bg-zinc-100 text-zinc-950 rounded-lg font-medium hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+          className="bg-soul text-deep font-display font-semibold rounded-xl px-5 py-3 hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0"
         >
           Send
         </button>

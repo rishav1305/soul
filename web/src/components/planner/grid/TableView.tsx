@@ -10,19 +10,19 @@ type SortKey = 'id' | 'title' | 'stage' | 'priority' | 'product' | 'substep';
 type SortDir = 'asc' | 'desc';
 
 const STAGE_COLORS: Record<TaskStage, string> = {
-  active: 'text-green-400',
-  backlog: 'text-zinc-400',
-  brainstorm: 'text-violet-400',
-  blocked: 'text-red-400',
-  validation: 'text-amber-400',
-  done: 'text-sky-400',
+  active: 'text-stage-active',
+  backlog: 'text-stage-backlog',
+  brainstorm: 'text-stage-brainstorm',
+  blocked: 'text-stage-blocked',
+  validation: 'text-stage-validation',
+  done: 'text-stage-done',
 };
 
 const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
-  0: { label: 'Low', color: 'text-zinc-500' },
-  1: { label: 'Norm', color: 'text-zinc-400' },
-  2: { label: 'High', color: 'text-amber-400' },
-  3: { label: 'Crit', color: 'text-red-400' },
+  0: { label: 'Low', color: 'text-priority-low' },
+  1: { label: 'Norm', color: 'text-priority-normal' },
+  2: { label: 'High', color: 'text-priority-high' },
+  3: { label: 'Crit', color: 'text-priority-critical' },
 };
 
 const SUBSTEP_LABELS: Record<TaskSubstep, string> = {
@@ -93,17 +93,17 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
   return (
     <div className="h-full overflow-auto">
       <table className="w-full text-xs border-collapse">
-        <thead className="sticky top-0 bg-zinc-900 z-10">
-          <tr className="border-b border-zinc-800">
+        <thead className="sticky top-0 bg-surface z-10">
+          <tr className="border-b border-border-subtle">
             {COLUMNS.map((col) => (
               <th
                 key={col.key}
-                className={`text-left px-3 py-2 text-zinc-400 font-medium cursor-pointer hover:text-zinc-200 select-none ${col.className ?? ''}`}
+                className={`text-left px-3 py-2 text-fg-muted font-display text-[11px] uppercase tracking-wider font-semibold cursor-pointer hover:text-fg-secondary select-none ${col.className ?? ''}`}
                 onClick={() => handleSort(col.key)}
               >
                 <span>{col.label}</span>
                 {sortKey === col.key && (
-                  <span className="ml-1 text-sky-400">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+                  <span className="ml-1 text-soul">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
                 )}
               </th>
             ))}
@@ -122,14 +122,14 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
               <tr
                 key={task.id}
                 onClick={() => onTaskClick(task)}
-                className="border-b border-zinc-800/50 hover:bg-zinc-900/70 cursor-pointer"
+                className="border-b border-border-subtle hover:bg-elevated/60 cursor-pointer transition-colors"
               >
-                <td className="px-3 py-1.5 text-zinc-500">#{task.id}</td>
-                <td className="px-3 py-1.5 text-zinc-200 truncate max-w-0">{task.title}</td>
+                <td className="px-3 py-1.5 text-fg-muted font-mono">#{task.id}</td>
+                <td className="px-3 py-1.5 text-fg truncate max-w-0">{task.title}</td>
                 <td className={`px-3 py-1.5 uppercase ${STAGE_COLORS[task.stage]}`}>{task.stage}</td>
                 <td className={`px-3 py-1.5 ${prio.color}`}>{prio.label}</td>
-                <td className="px-3 py-1.5 text-zinc-500 truncate max-w-0">{task.product || '\u2014'}</td>
-                <td className="px-3 py-1.5 text-sky-400">{subLabel}</td>
+                <td className="px-3 py-1.5 text-fg-muted truncate max-w-0">{task.product || '\u2014'}</td>
+                <td className="px-3 py-1.5 text-fg-muted">{subLabel}</td>
               </tr>
             );
           })}

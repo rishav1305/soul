@@ -6,19 +6,19 @@ interface CompactGridProps {
 }
 
 const STAGE_COLORS: Record<TaskStage, string> = {
-  active: 'bg-green-500',
-  backlog: 'bg-zinc-500',
-  brainstorm: 'bg-violet-500',
-  blocked: 'bg-red-500',
-  validation: 'bg-amber-500',
-  done: 'bg-sky-500',
+  active: 'bg-stage-active',
+  backlog: 'bg-stage-backlog',
+  brainstorm: 'bg-stage-brainstorm',
+  blocked: 'bg-stage-blocked',
+  validation: 'bg-stage-validation',
+  done: 'bg-stage-done',
 };
 
 const PRIORITY_BORDER: Record<number, string> = {
-  0: 'border-l-zinc-600',
-  1: 'border-l-zinc-400',
-  2: 'border-l-amber-400',
-  3: 'border-l-red-500',
+  0: 'border-l-priority-low',
+  1: 'border-l-priority-normal',
+  2: 'border-l-priority-high',
+  3: 'border-l-priority-critical',
 };
 
 export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
@@ -35,13 +35,13 @@ export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
           key={task.id}
           type="button"
           onClick={() => onTaskClick(task)}
-          className={`text-left bg-zinc-900 rounded border-l-4 ${PRIORITY_BORDER[task.priority] ?? 'border-l-zinc-600'} p-2.5 hover:bg-zinc-800 cursor-pointer transition-colors`}
+          className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
         >
-          <div className="text-xs text-zinc-200 font-medium truncate">{task.title}</div>
+          <div className="font-display text-xs font-medium text-fg truncate">{task.title}</div>
           <div className="flex items-center gap-1.5 mt-1.5">
-            <span className="text-[10px] text-zinc-500">#{task.id}</span>
+            <span className="text-[10px] text-fg-muted font-mono">#{task.id}</span>
             <span className={`w-1.5 h-1.5 rounded-full ${STAGE_COLORS[task.stage]} shrink-0`} />
-            <span className="text-[10px] text-zinc-500 uppercase">{task.stage}</span>
+            <span className="text-[10px] text-fg-secondary uppercase">{task.stage}</span>
           </div>
         </button>
       ))}

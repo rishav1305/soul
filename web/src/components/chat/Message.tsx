@@ -11,12 +11,12 @@ export default function Message({ message }: MessageProps) {
   const isUser = message.role === 'user';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[80%] px-4 py-3 ${
           isUser
-            ? 'bg-zinc-800 text-zinc-100'
-            : 'bg-zinc-900 text-zinc-200'
+            ? 'bg-elevated text-fg rounded-2xl rounded-br-md'
+            : 'bg-surface border border-border-subtle text-fg rounded-2xl rounded-bl-md'
         }`}
       >
         {isUser ? (
@@ -24,7 +24,7 @@ export default function Message({ message }: MessageProps) {
             {message.content}
           </div>
         ) : (
-          <div className="prose prose-invert prose-sm max-w-none break-words">
+          <div className="prose prose-sm prose-soul max-w-none break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           </div>
         )}

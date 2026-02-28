@@ -91,7 +91,7 @@ export default function AppShell() {
   }, [layout.setTaskState]);
 
   return (
-    <div className="h-screen bg-zinc-950 text-zinc-100 flex overflow-hidden">
+    <div className="h-screen bg-deep text-fg font-body noise flex overflow-hidden">
       {/* Chat: rail or panel */}
       {layout.chatState === 'rail' ? (
         <ChatRail unreadCount={unreadCount} onExpand={handleChatExpand} />

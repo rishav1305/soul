@@ -77,10 +77,10 @@ export default function TaskPanel({
   };
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950">
+    <div className="flex flex-col h-full bg-surface">
       {/* Navbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0 h-11">
-        <span className="text-sm font-semibold text-zinc-100">Tasks</span>
+      <div className="glass flex items-center gap-2 px-4 shrink-0 h-11">
+        <span className="font-display text-sm font-semibold text-fg">Tasks</span>
 
         {/* View mode buttons */}
         <div className="flex items-center gap-0.5 ml-2">
@@ -92,8 +92,8 @@ export default function TaskPanel({
               title={title}
               className={`w-7 h-7 flex items-center justify-center rounded text-sm cursor-pointer transition-colors ${
                 taskView === view
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                  ? 'bg-overlay text-fg'
+                  : 'text-fg-muted hover:text-fg-secondary hover:bg-elevated'
               }`}
             >
               {icon}
@@ -108,7 +108,7 @@ export default function TaskPanel({
           <button
             type="button"
             onClick={() => setPanelWidth(null)}
-            className="text-zinc-500 hover:text-zinc-300 text-sm cursor-pointer"
+            className="text-fg-muted hover:text-fg-secondary text-sm cursor-pointer"
             title="Reset to auto width"
           >
             &#8635;
@@ -120,7 +120,7 @@ export default function TaskPanel({
           type="button"
           onClick={onCollapse}
           disabled={!canCollapse}
-          className="text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed text-lg leading-none cursor-pointer"
+          className="text-fg-muted hover:text-fg-secondary disabled:opacity-20 disabled:cursor-not-allowed text-lg leading-none cursor-pointer"
           title={canCollapse ? 'Collapse tasks' : 'Cannot collapse — chat panel is collapsed'}
         >
           &times;
@@ -130,7 +130,7 @@ export default function TaskPanel({
         <button
           type="button"
           onClick={() => setShowNewForm(true)}
-          className="px-2.5 py-1 text-xs font-medium rounded bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer"
+          className="bg-soul hover:bg-soul/80 text-deep font-display font-semibold text-xs rounded-md px-3 py-1 transition-colors cursor-pointer"
         >
           + New Task
         </button>

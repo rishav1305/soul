@@ -32,11 +32,11 @@ function relativeTime(dateStr: string): string {
 function statusIcon(status: ChatSession['status']) {
   switch (status) {
     case 'running':
-      return <span className="text-green-400" title="Running">&#9679;</span>;
+      return <span className="text-stage-active" title="Running">&#9679;</span>;
     case 'idle':
-      return <span className="text-zinc-400" title="Idle">&#9675;</span>;
+      return <span className="text-fg-muted" title="Idle">&#9675;</span>;
     case 'completed':
-      return <span className="text-zinc-600" title="Completed">&#10003;</span>;
+      return <span className="text-stage-done" title="Completed">&#10003;</span>;
   }
 }
 
@@ -51,21 +51,21 @@ export default function SessionDrawer({
     <>
       {/* Backdrop */}
       <div
-        className="absolute inset-0 z-10"
+        className="absolute inset-0 z-10 bg-black/40"
         onClick={onClose}
       />
 
       {/* Drawer */}
-      <div className="absolute left-0 top-10 bottom-0 z-20 w-52 bg-zinc-900 border-r border-zinc-800 flex flex-col">
+      <div className="absolute left-0 top-11 bottom-0 z-20 w-52 bg-surface border-r border-border-default flex flex-col animate-slide-left">
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
-          <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wide">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
+          <span className="font-display text-[10px] font-semibold text-fg-secondary uppercase tracking-widest">
             Sessions
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-sm cursor-pointer"
+            className="text-fg-muted hover:text-fg text-sm cursor-pointer"
             title="Close"
           >
             &times;
@@ -77,7 +77,7 @@ export default function SessionDrawer({
           <button
             type="button"
             onClick={onNew}
-            className="w-full text-xs font-medium text-white bg-sky-600 hover:bg-sky-500 rounded px-2 py-1.5 cursor-pointer"
+            className="w-full text-xs font-semibold text-deep bg-soul hover:bg-soul/80 rounded px-2 py-1.5 cursor-pointer"
           >
             + New Chat
           </button>
@@ -86,7 +86,7 @@ export default function SessionDrawer({
         {/* Session list */}
         <div className="flex-1 overflow-y-auto">
           {sessions.length === 0 && (
-            <div className="px-3 py-4 text-xs text-zinc-600 text-center">
+            <div className="px-3 py-4 text-xs text-fg-muted text-center">
               No sessions yet
             </div>
           )}
@@ -98,18 +98,18 @@ export default function SessionDrawer({
                 onSelect(session.id);
                 onClose();
               }}
-              className={`w-full text-left px-3 py-2 flex items-start gap-2 cursor-pointer hover:bg-zinc-800/60 ${
-                session.id === activeSessionId ? 'bg-zinc-800' : ''
+              className={`w-full text-left px-3 py-2 flex items-start gap-2 cursor-pointer hover:bg-elevated ${
+                session.id === activeSessionId ? 'bg-elevated' : ''
               }`}
             >
               <span className="text-xs mt-0.5 shrink-0">
                 {statusIcon(session.status)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-zinc-200 truncate">
+                <div className="text-fg font-body text-xs truncate">
                   {session.title || 'Untitled'}
                 </div>
-                <div className="text-[10px] text-zinc-500">
+                <div className="text-[10px] text-fg-muted">
                   {relativeTime(session.updated_at)}
                 </div>
               </div>

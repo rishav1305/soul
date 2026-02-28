@@ -27,7 +27,7 @@ export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange }: C
   }, [messages.length, onUnreadChange]);
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex flex-col h-full relative bg-surface">
       <ChatNavbar
         onToggleDrawer={() => setDrawerOpen(!drawerOpen)}
         onCollapse={onCollapse}

@@ -1,2 +1,242 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
+/* ═══════════════════════════════════════════════════════
+   SOUL DESIGN SYSTEM — "Obsidian Command"
+   ═══════════════════════════════════════════════════════ */
+
+@theme {
+  /* Typography */
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-body: 'Instrument Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Background layers (deep → elevated) */
+  --color-deep: #08080d;
+  --color-surface: #111118;
+  --color-elevated: #1a1a24;
+  --color-overlay: #22223a;
+
+  /* Soul brand accent */
+  --color-soul: #e8a849;
+  --color-soul-dim: #e8a84920;
+  --color-soul-glow: #e8a84933;
+
+  /* Text */
+  --color-fg: #ededf0;
+  --color-fg-secondary: #8888a0;
+  --color-fg-muted: #4a4a60;
+
+  /* Borders */
+  --color-border-subtle: #ffffff0f;
+  --color-border-default: #ffffff1a;
+  --color-border-active: #ffffff28;
+
+  /* Stage colors — refined */
+  --color-stage-backlog: #7c7c8a;
+  --color-stage-brainstorm: #b07ce8;
+  --color-stage-active: #4ca8e8;
+  --color-stage-blocked: #e85c5c;
+  --color-stage-validation: #e8a849;
+  --color-stage-done: #4ce88c;
+
+  /* Priority colors */
+  --color-priority-low: #5a5a70;
+  --color-priority-normal: #4ca8e8;
+  --color-priority-high: #e8a849;
+  --color-priority-critical: #e85c5c;
+}
+
+/* ─── Base ─── */
+
+html {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-deep);
+  color: var(--color-fg);
+}
+
+/* ─── Scrollbar ─── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-fg-muted);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-secondary);
+}
+
+/* ─── Noise texture overlay ─── */
+
+.noise::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+/* ─── Glass effect ─── */
+
+.glass {
+  background: rgba(17, 17, 24, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.glass-subtle {
+  background: rgba(17, 17, 24, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ─── Animations ─── */
+
+@keyframes soul-pulse {
+  0%, 100% { opacity: 0.5; filter: blur(12px); }
+  50% { opacity: 0.8; filter: blur(16px); }
+}
+
+@keyframes soul-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-soul-pulse { animation: soul-pulse 3s ease-in-out infinite; }
+.animate-fade-in { animation: fade-in 0.3s ease-out both; }
+.animate-fade-in-scale { animation: fade-in-scale 0.2s ease-out both; }
+.animate-slide-left { animation: slide-in-left 0.25s ease-out both; }
+.animate-slide-right { animation: slide-in-right 0.25s ease-out both; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.04) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Stagger animation delays */
+.delay-1 { animation-delay: 50ms; }
+.delay-2 { animation-delay: 100ms; }
+.delay-3 { animation-delay: 150ms; }
+.delay-4 { animation-delay: 200ms; }
+.delay-5 { animation-delay: 250ms; }
+
+/* ─── Glow utilities ─── */
+
+.glow-soul {
+  box-shadow: 0 0 20px rgba(232, 168, 73, 0.15),
+              0 0 60px rgba(232, 168, 73, 0.05);
+}
+
+.glow-active {
+  box-shadow: 0 0 20px rgba(76, 168, 232, 0.15),
+              0 0 60px rgba(76, 168, 232, 0.05);
+}
+
+/* ─── Focus ring ─── */
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-soul);
+  outline-offset: 2px;
+}
+
+/* ─── Selection ─── */
+
+::selection {
+  background: rgba(232, 168, 73, 0.25);
+  color: var(--color-fg);
+}
+
+/* ─── Prose overrides (for markdown content) ─── */
+
+.prose-soul {
+  --tw-prose-body: var(--color-fg);
+  --tw-prose-headings: var(--color-fg);
+  --tw-prose-lead: var(--color-fg-secondary);
+  --tw-prose-links: var(--color-soul);
+  --tw-prose-bold: var(--color-fg);
+  --tw-prose-counters: var(--color-fg-muted);
+  --tw-prose-bullets: var(--color-fg-muted);
+  --tw-prose-hr: var(--color-border-default);
+  --tw-prose-quotes: var(--color-fg-secondary);
+  --tw-prose-quote-borders: var(--color-soul);
+  --tw-prose-captions: var(--color-fg-muted);
+  --tw-prose-code: var(--color-soul);
+  --tw-prose-pre-code: var(--color-fg-secondary);
+  --tw-prose-pre-bg: var(--color-elevated);
+  --tw-prose-th-borders: var(--color-border-default);
+  --tw-prose-td-borders: var(--color-border-subtle);
+}
+
+/* ─── Custom select styling ─── */
+
+select.soul-select {
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  padding: 4px 24px 4px 8px;
+  font-size: 11px;
+  color: var(--color-fg-secondary);
+  font-family: var(--font-body);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%234a4a60' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+select.soul-select:hover {
+  border-color: var(--color-border-active);
+  background-color: var(--color-overlay);
+}
+
+select.soul-select:focus {
+  outline: none;
+  border-color: var(--color-soul);
+}

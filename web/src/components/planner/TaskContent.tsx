@@ -26,11 +26,11 @@ export default function TaskContent({
   if (filteredTasks.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center h-full gap-2">
-        <span className="text-zinc-500 text-sm">No tasks match filters</span>
+        <span className="text-fg-muted text-sm font-body">No tasks match filters</span>
         <button
           type="button"
           onClick={onClearFilters}
-          className="text-sky-400 hover:text-sky-300 text-xs cursor-pointer underline"
+          className="text-soul hover:text-soul/80 text-xs cursor-pointer underline"
         >
           Clear filters
         </button>

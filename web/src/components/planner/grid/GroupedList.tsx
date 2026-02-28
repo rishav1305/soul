@@ -10,19 +10,19 @@ interface GroupedListProps {
 const STAGE_ORDER: TaskStage[] = ['active', 'backlog', 'brainstorm', 'blocked', 'validation', 'done'];
 
 const STAGE_COLORS: Record<TaskStage, string> = {
-  active: 'bg-green-500',
-  backlog: 'bg-zinc-500',
-  brainstorm: 'bg-violet-500',
-  blocked: 'bg-red-500',
-  validation: 'bg-amber-500',
-  done: 'bg-sky-500',
+  active: 'bg-stage-active',
+  backlog: 'bg-stage-backlog',
+  brainstorm: 'bg-stage-brainstorm',
+  blocked: 'bg-stage-blocked',
+  validation: 'bg-stage-validation',
+  done: 'bg-stage-done',
 };
 
 const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
-  0: { label: 'Low', color: 'text-zinc-500' },
-  1: { label: 'Norm', color: 'text-zinc-400' },
-  2: { label: 'High', color: 'text-amber-400' },
-  3: { label: 'Crit', color: 'text-red-400' },
+  0: { label: 'Low', color: 'text-priority-low' },
+  1: { label: 'Norm', color: 'text-priority-normal' },
+  2: { label: 'High', color: 'text-priority-high' },
+  3: { label: 'Crit', color: 'text-priority-critical' },
 };
 
 const SUBSTEP_LABELS: Record<TaskSubstep, string> = {
@@ -91,14 +91,14 @@ export default function GroupedList({ tasks, onTaskClick }: GroupedListProps) {
             <button
               type="button"
               onClick={() => toggle(stage)}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-900 cursor-pointer select-none"
+              className="flex items-center gap-2 w-full px-3 py-1.5 font-display text-[11px] font-semibold uppercase tracking-widest text-fg-secondary hover:bg-elevated cursor-pointer select-none"
             >
               <span className="text-[10px] w-3 text-center">
                 {isCollapsed ? '\u25B6' : '\u25BC'}
               </span>
               <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[stage]} shrink-0`} />
-              <span className="uppercase tracking-wide">{stage}</span>
-              <span className="text-zinc-600 ml-0.5">{stageTasks.length}</span>
+              <span>{stage}</span>
+              <span className="text-fg-muted ml-0.5">{stageTasks.length}</span>
             </button>
 
             {/* Task rows with more detail */}
@@ -118,20 +118,20 @@ export default function GroupedList({ tasks, onTaskClick }: GroupedListProps) {
                     key={task.id}
                     type="button"
                     onClick={() => onTaskClick(task)}
-                    className="flex flex-col gap-0.5 w-full px-3 py-1.5 pl-8 hover:bg-zinc-900/70 cursor-pointer text-left"
+                    className="flex flex-col gap-0.5 w-full px-3 py-1.5 pl-8 hover:bg-elevated cursor-pointer text-left"
                   >
                     {/* First line: id, title, priority, substep */}
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="text-zinc-600 shrink-0 w-8 text-right">#{task.id}</span>
-                      <span className="text-zinc-200 truncate flex-1 min-w-0">{task.title}</span>
+                      <span className="text-fg-muted shrink-0 w-8 text-right font-mono">#{task.id}</span>
+                      <span className="text-fg truncate flex-1 min-w-0">{task.title}</span>
                       <span className={`shrink-0 ${prio.color}`}>{prio.label}</span>
-                      {sub && <span className="text-sky-400 shrink-0">{sub}</span>}
+                      {sub && <span className="text-fg-secondary shrink-0">{sub}</span>}
                     </div>
                     {/* Second line: description preview + timestamp */}
                     {(desc || timeStr) && (
                       <div className="flex items-center gap-3 text-[10px] pl-11">
-                        {desc && <span className="text-zinc-600 truncate flex-1 min-w-0">{desc}</span>}
-                        {timeStr && <span className="text-zinc-700 shrink-0">{timeStr}</span>}
+                        {desc && <span className="text-fg-secondary truncate flex-1 min-w-0">{desc}</span>}
+                        {timeStr && <span className="text-fg-muted shrink-0">{timeStr}</span>}
                       </div>
                     )}
                   </button>
