@@ -108,8 +108,25 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	tp.broadcastTaskUpdate(taskID)
 	tp.sendActivity(taskID, "stage", "active")
 
+	// Create isolated worktree for this task.
+	var taskRoot string
+	if tp.worktrees != nil {
+		tp.sendActivity(taskID, "status", "Creating isolated worktree...")
+		var err error
+		taskRoot, err = tp.worktrees.Create(taskID, task.Title)
+		if err != nil {
+			log.Printf("[autonomous] failed to create worktree for task %d: %v", taskID, err)
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Worktree failed: %v — falling back to main repo", err))
+			taskRoot = tp.projectRoot
+		} else {
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Working in isolated branch: %s", tp.worktrees.branchName(taskID, task.Title)))
+		}
+	} else {
+		taskRoot = tp.projectRoot
+	}
+
 	// Build the task prompt.
-	prompt := tp.buildTaskPrompt(task)
+	prompt := tp.buildTaskPrompt(task, taskRoot)
 
 	// Create a dedicated session for this task.
 	sessionID := fmt.Sprintf("auto-task-%d", taskID)
@@ -143,7 +160,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	}
 
 	// Run the agent loop with code tools enabled.
-	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, tp.projectRoot)
+	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
 	agent.Run(ctx, sessionID, prompt, "code", nil, false, sendEvent)
 
 	// Check if cancelled.
@@ -156,6 +173,23 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	// Save the full output.
 	finalOutput := outputBuf.String()
 	tp.planner.Update(taskID, planner.TaskUpdate{Output: &finalOutput})
+
+	// Commit changes in the worktree and merge to dev.
+	if tp.worktrees != nil && taskRoot != tp.projectRoot {
+		tp.sendActivity(taskID, "status", "Committing changes...")
+		if err := tp.worktrees.CommitInWorktree(taskID, task.Title); err != nil {
+			log.Printf("[autonomous] commit failed for task %d: %v", taskID, err)
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", err))
+		}
+
+		tp.sendActivity(taskID, "status", "Merging to dev branch...")
+		if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
+			log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
+		} else {
+			tp.sendActivity(taskID, "status", "Changes merged to dev — visible on dev server")
+		}
+	}
 
 	// Re-read the task to see what stage the agent left it in.
 	// The agent may have moved it to blocked, done, etc. via task_update.
@@ -189,7 +223,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	log.Printf("[autonomous] === completed task %d (stage=%s) ===", taskID, updated.Stage)
 }
 
-func (tp *TaskProcessor) buildTaskPrompt(task planner.Task) string {
+func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are autonomously working on task #%d.\n\n", task.ID)
 	fmt.Fprintf(&b, "**Title:** %s\n", task.Title)
@@ -203,9 +237,9 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task) string {
 		fmt.Fprintf(&b, "**Product:** %s\n", task.Product)
 	}
 
-	// Add project context based on product.
+	// Add project context.
 	b.WriteString("\n## Project Context\n")
-	fmt.Fprintf(&b, "Project root: `%s`\n", tp.projectRoot)
+	fmt.Fprintf(&b, "Project root: `%s`\n", taskRoot)
 	b.WriteString("This is a Go + React/TypeScript monorepo:\n")
 	b.WriteString("- `cmd/soul/` — Go entrypoint\n")
 	b.WriteString("- `internal/server/` — Go HTTP server, WebSocket, agent loop, task APIs\n")
@@ -227,7 +261,10 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task) string {
 	b.WriteString("5. Update the task with your results using `task_update`.\n")
 	b.WriteString("6. If you cannot complete the task, move it to `blocked` with a description of why.\n")
 	b.WriteString("7. If you complete it, move it to `validation`.\n")
-	b.WriteString("\nBe precise. Make minimal changes. Do not refactor unrelated code.\n")
+	b.WriteString("\n## Rules\n")
+	b.WriteString("- Be precise. Make minimal changes. Do not refactor unrelated code.\n")
+	b.WriteString("- Do NOT run git commands — the system handles commits and merges automatically.\n")
+	b.WriteString("- All file paths are relative to the project root shown above.\n")
 	return b.String()
 }
 
