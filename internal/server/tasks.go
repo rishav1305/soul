@@ -253,6 +253,24 @@ func (s *Server) handleTaskMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Gate: merge to master when task moves to Done.
+	if body.Stage == planner.StageDone && s.worktrees != nil {
+		log.Printf("[tasks] task %d moved to done — merging to master", id)
+
+		if err := s.worktrees.MergeToMaster(id, task.Title); err != nil {
+			log.Printf("[tasks] merge to master failed for task %d: %v", id, err)
+			// Don't fail the move — log the error. User can retry.
+		} else {
+			// Rebuild prod frontend.
+			if err := s.worktrees.RebuildFrontend(s.projectRoot); err != nil {
+				log.Printf("[tasks] prod frontend rebuild failed: %v", err)
+			}
+		}
+
+		// Cleanup the worktree.
+		s.worktrees.Cleanup(id, task.Title)
+	}
+
 	// Fetch the updated task.
 	moved, err := s.planner.Get(id)
 	if err != nil {
