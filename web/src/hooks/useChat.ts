@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
-import type { ChatMessage, ToolCallMessage, WSMessage } from '../lib/types.ts';
+import type { ChatMessage, ToolCallMessage, WSMessage, SendOptions } from '../lib/types.ts';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -142,7 +142,7 @@ export function useChat() {
   }, [onMessage]);
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, options?: SendOptions) => {
       const userMessage: ChatMessage = {
         id: uuid(),
         role: 'user',
@@ -156,6 +156,7 @@ export function useChat() {
         type: 'chat.message',
         session_id: sessionIdRef.current,
         content,
+        data: options,
       });
     },
     [send],

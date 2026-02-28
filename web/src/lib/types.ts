@@ -95,3 +95,9 @@ export interface ChatMessageRecord {
   content: string;
   created_at: string;
 }
+
+export interface SendOptions {
+  model?: string;
+  chatType?: string;
+  disabledTools?: string[];
+}
