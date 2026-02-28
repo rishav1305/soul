@@ -108,10 +108,15 @@ export default function TaskPanel({
           <button
             type="button"
             onClick={() => setPanelWidth(null)}
-            className="text-fg-muted hover:text-fg-secondary text-sm cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
             title="Reset to auto width"
           >
-            &#8635;
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 8a6 6 0 0 1 10.3-4.2" />
+              <path d="M14 2v4h-4" />
+              <path d="M14 8a6 6 0 0 1-10.3 4.2" />
+              <path d="M2 14v-4h4" />
+            </svg>
           </button>
         )}
 
@@ -120,17 +125,19 @@ export default function TaskPanel({
           type="button"
           onClick={onCollapse}
           disabled={!canCollapse}
-          className="text-fg-muted hover:text-fg-secondary disabled:opacity-20 disabled:cursor-not-allowed text-lg leading-none cursor-pointer"
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg disabled:opacity-20 disabled:cursor-not-allowed transition-colors cursor-pointer"
           title={canCollapse ? 'Collapse tasks' : 'Cannot collapse — chat panel is collapsed'}
         >
-          &times;
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 3l5 5-5 5" />
+          </svg>
         </button>
 
         {/* New Task */}
         <button
           type="button"
           onClick={() => setShowNewForm(true)}
-          className="bg-soul hover:bg-soul/80 text-deep font-display font-semibold text-xs rounded-md px-3 py-1 transition-colors cursor-pointer"
+          className="bg-soul hover:bg-soul/80 text-deep font-display font-semibold text-xs rounded-md px-3 h-7 whitespace-nowrap shrink-0 flex items-center transition-colors cursor-pointer"
         >
           + New Task
         </button>
