@@ -110,3 +110,79 @@ export interface TaskActivity {
   content: string;
   time: string;
 }
+
+/* ── Scout types ────────────────────────────────────── */
+
+export interface ScoutReport {
+  sync: ScoutSyncData;
+  sweep: ScoutSweepData;
+  applications: ScoutApplicationData;
+  metrics: Record<string, ScoutMetric>;
+  follow_ups: ScoutFollowUp[];
+}
+
+export interface ScoutSyncData {
+  last_run: string;
+  platforms_checked: number;
+  in_sync: number;
+  drift: number;
+  details: ScoutPlatformSync[];
+}
+
+export interface ScoutPlatformSync {
+  platform: string;
+  status: 'synced' | 'drift';
+  issues?: string[];
+}
+
+export interface ScoutSweepData {
+  last_run: string;
+  new_opportunities: number;
+  messages: number;
+  opportunities: ScoutOpportunity[];
+}
+
+export interface ScoutOpportunity {
+  id: string;
+  company: string;
+  role: string;
+  platform: string;
+  match?: string;
+  url?: string;
+  found_at: string;
+  dismissed?: boolean;
+}
+
+export interface ScoutApplicationData {
+  total: number;
+  active: number;
+  by_status: Record<string, number>;
+  recent: ScoutApplication[];
+}
+
+export interface ScoutApplication {
+  id: string;
+  company: string;
+  role: string;
+  platform: string;
+  variant: string;
+  status: string;
+  follow_up?: string;
+  notes?: string;
+  applied_at: string;
+  updated_at: string;
+}
+
+export interface ScoutMetric {
+  applied: number;
+  responses: number;
+  interviews: number;
+  offers: number;
+}
+
+export interface ScoutFollowUp {
+  company: string;
+  role: string;
+  due: string;
+  action: string;
+}
