@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters } from '../../lib/types.ts';
-import KanbanBoard from './KanbanBoard.tsx';
+import FilterBar from './FilterBar.tsx';
+import TaskContent from './TaskContent.tsx';
 import TaskDetail from './TaskDetail.tsx';
 import NewTaskForm from './NewTaskForm.tsx';
 
@@ -36,12 +37,18 @@ const VIEW_BUTTONS: { view: TaskView; icon: string; title: string }[] = [
 
 export default function TaskPanel({
   taskView,
+  gridSubView,
   panelWidth,
+  filters,
   setTaskView,
+  setGridSubView,
   setPanelWidth,
+  setFilters,
   canCollapse,
   onCollapse,
+  filteredTasks,
   tasksByStage,
+  products,
   loading,
   createTask,
   moveTask,
@@ -63,6 +70,10 @@ export default function TaskPanel({
   const handleDelete = async (id: number) => {
     await deleteTask(id);
     setSelectedTask(null);
+  };
+
+  const handleClearFilters = () => {
+    setFilters({ stage: 'all', priority: 'all', product: 'all' });
   };
 
   return (
@@ -125,6 +136,9 @@ export default function TaskPanel({
         </button>
       </div>
 
+      {/* Filter Bar */}
+      <FilterBar filters={filters} products={products} onChange={setFilters} />
+
       {/* Body */}
       <div className="flex-1 overflow-hidden">
         {loading ? (
@@ -132,10 +146,14 @@ export default function TaskPanel({
             <span className="text-zinc-500 text-sm">Loading tasks...</span>
           </div>
         ) : (
-          /* For now, always render KanbanBoard; view switching comes in Task 4 */
-          <KanbanBoard
+          <TaskContent
+            taskView={taskView}
+            filteredTasks={filteredTasks}
             tasksByStage={tasksByStage}
+            gridSubView={gridSubView}
+            onGridSubViewChange={setGridSubView}
             onTaskClick={setSelectedTask}
+            onClearFilters={handleClearFilters}
           />
         )}
       </div>
