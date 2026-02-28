@@ -17,20 +17,21 @@ import (
 
 // TaskProcessor handles autonomous task execution in the background.
 type TaskProcessor struct {
-	ai        *ai.Client
-	products  *products.Manager
-	sessions  *session.Store
-	planner   *planner.Store
-	broadcast func(WSMessage)
-	model     string
+	ai          *ai.Client
+	products    *products.Manager
+	sessions    *session.Store
+	planner     *planner.Store
+	broadcast   func(WSMessage)
+	model       string
 	projectRoot string
+	worktrees   *WorktreeManager
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string) *TaskProcessor {
+func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
 	return &TaskProcessor{
 		ai:          aiClient,
 		products:    pm,
@@ -39,6 +40,7 @@ func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *sessi
 		broadcast:   broadcast,
 		model:       model,
 		projectRoot: projectRoot,
+		worktrees:   worktrees,
 		running:     make(map[int64]context.CancelFunc),
 	}
 }

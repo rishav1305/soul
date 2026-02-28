@@ -32,8 +32,9 @@ type Server struct {
 	ai          *ai.Client
 	planner     *planner.Store
 	processor   *TaskProcessor
-	projectRoot string // working directory for code tools
-	webFS       fs.FS  // embedded SPA files (nil = use placeholder)
+	projectRoot string           // working directory for code tools
+	worktrees   *WorktreeManager // manages per-task git worktrees
+	webFS       fs.FS            // embedded SPA files (nil = use placeholder)
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -46,6 +47,10 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 	mux := http.NewServeMux()
 	sessions := session.NewStore()
 	projectRoot, _ := os.Getwd()
+	wm := NewWorktreeManager(projectRoot)
+	if err := wm.EnsureSetup(); err != nil {
+		log.Printf("WARNING: worktree setup failed: %v", err)
+	}
 	s := &Server{
 		cfg:         cfg,
 		mux:         mux,
@@ -54,9 +59,10 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 		ai:          aiClient,
 		planner:     plannerStore,
 		projectRoot: projectRoot,
+		worktrees:   wm,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot)
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 	return s
 }
@@ -77,6 +83,10 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 	}
 	sessions := session.NewStore()
 	projectRoot, _ := os.Getwd()
+	wm := NewWorktreeManager(projectRoot)
+	if wmErr := wm.EnsureSetup(); wmErr != nil {
+		log.Printf("WARNING: worktree setup failed: %v", wmErr)
+	}
 	s := &Server{
 		cfg:         cfg,
 		mux:         mux,
@@ -85,10 +95,11 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		ai:          aiClient,
 		planner:     plannerStore,
 		projectRoot: projectRoot,
+		worktrees:   wm,
 		webFS:       webFS,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot)
+	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 	return s
 }
