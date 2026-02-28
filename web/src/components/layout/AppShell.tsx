@@ -1,7 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useLayoutStore, autoWidth } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
+import { useSessions } from '../../hooks/useSessions.ts';
+import { useWebSocket } from '../../hooks/useWebSocket.ts';
 import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import SoulRail from './SoulRail.tsx';
+import SoulPanel from './SoulPanel.tsx';
 import ChatRail from './ChatRail.tsx';
 import TaskRail from './TaskRail.tsx';
 import ResizeDivider from './ResizeDivider.tsx';
@@ -15,6 +19,8 @@ function emptyByStage(): Record<TaskStage, PlannerTask[]> {
 export default function AppShell() {
   const layout = useLayoutStore();
   const planner = usePlanner();
+  const { sessions, activeSessionId, createSession, switchSession } = useSessions();
+  const { connected } = useWebSocket();
 
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -72,6 +78,14 @@ export default function AppShell() {
     setUnreadCount(count);
   }, []);
 
+  const handleSoulExpand = useCallback(() => {
+    layout.setSoulState('open');
+  }, [layout.setSoulState]);
+
+  const handleSoulCollapse = useCallback(() => {
+    layout.setSoulState('rail');
+  }, [layout.setSoulState]);
+
   // When chat collapses, track incoming messages as unread
   const handleChatCollapse = useCallback(() => {
     layout.setChatState('rail');
@@ -92,12 +106,26 @@ export default function AppShell() {
 
   return (
     <div className="h-screen bg-deep text-fg font-body noise flex overflow-hidden">
+      {/* Soul: rail or panel */}
+      {layout.soulState === 'rail' ? (
+        <SoulRail onExpand={handleSoulExpand} />
+      ) : (
+        <SoulPanel
+          onCollapse={handleSoulCollapse}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSessionSelect={switchSession}
+          onNewChat={createSession}
+          connected={connected}
+        />
+      )}
+
       {/* Chat: rail or panel */}
       {layout.chatState === 'rail' ? (
         <ChatRail unreadCount={unreadCount} onExpand={handleChatExpand} />
       ) : (
         <div
-          className="h-full overflow-hidden transition-[width] duration-200 ease-in-out"
+          className="h-full min-w-0 overflow-hidden transition-[width] duration-200 ease-in-out"
           style={{
             width: bothOpen ? `${chatPercent}%` : 'calc(100% - 40px)',
           }}

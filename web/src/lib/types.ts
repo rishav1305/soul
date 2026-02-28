@@ -72,6 +72,7 @@ export interface TaskFilters {
 }
 
 export interface LayoutState {
+  soulState: PanelState;
   chatState: PanelState;
   taskState: PanelState;
   taskView: TaskView;

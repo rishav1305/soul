@@ -4,6 +4,7 @@ import type { LayoutState, PanelState, TaskView, GridSubView, TaskFilters } from
 const STORAGE_KEY = 'soul-layout';
 
 const DEFAULT_STATE: LayoutState = {
+  soulState: 'rail',
   chatState: 'open',
   taskState: 'open',
   taskView: 'kanban',
@@ -59,6 +60,13 @@ export function useLayoutStore() {
     [state.chatState, state.taskState],
   );
 
+  const setSoulState = useCallback(
+    (s: PanelState) => {
+      setState((prev) => ({ ...prev, soulState: s }));
+    },
+    [setState],
+  );
+
   const setChatState = useCallback(
     (s: PanelState) => {
       setState((prev) => {
@@ -110,6 +118,7 @@ export function useLayoutStore() {
   return useMemo(
     () => ({
       ...state,
+      setSoulState,
       setChatState,
       setTaskState,
       setTaskView,
@@ -118,6 +127,6 @@ export function useLayoutStore() {
       setFilters,
       canCollapse,
     }),
-    [state, setChatState, setTaskState, setTaskView, setGridSubView, setPanelWidth, setFilters, canCollapse],
+    [state, setSoulState, setChatState, setTaskState, setTaskView, setGridSubView, setPanelWidth, setFilters, canCollapse],
   );
 }
