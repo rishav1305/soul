@@ -106,6 +106,15 @@ func (wm *WorktreeManager) Create(taskID int64, title string) (string, error) {
 		return "", fmt.Errorf("git worktree add: %s — %w", out, err)
 	}
 
+	// Symlink web/node_modules so vite/npm tools work in the worktree.
+	wtNodeModules := filepath.Join(wtPath, "web", "node_modules")
+	mainNodeModules := filepath.Join(wm.repoRoot, "web", "node_modules")
+	if _, err := os.Lstat(wtNodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, wtNodeModules); err != nil {
+			log.Printf("[worktree] failed to symlink node_modules: %v", err)
+		}
+	}
+
 	log.Printf("[worktree] created %s (branch: %s)", wtPath, branch)
 	return wtPath, nil
 }

@@ -135,6 +135,15 @@ func (s *Server) StartDevServer(devPort int) {
 		}
 	}
 
+	// Symlink web/node_modules from main repo so vite can find dependencies.
+	devNodeModules := filepath.Join(devRoot, "web", "node_modules")
+	mainNodeModules := filepath.Join(s.projectRoot, "web", "node_modules")
+	if _, err := os.Lstat(devNodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, devNodeModules); err != nil {
+			log.Printf("[dev-server] failed to symlink node_modules: %v", err)
+		}
+	}
+
 	// Build frontend in dev worktree.
 	cmd = exec.Command("npx", "vite", "build")
 	cmd.Dir = filepath.Join(devRoot, "web")
