@@ -127,10 +127,18 @@ func (c *Client) query(table, filter string) ([]byte, error) {
 // Row types (match Supabase table schemas)
 // ---------------------------------------------------------------------------
 
-// SiteConfigRow represents a single key-value pair from the site_config table.
+// SiteConfigRow represents the profile row from the site_config table.
 type SiteConfigRow struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Title      string            `json:"title"`
+	Email      string            `json:"email"`
+	ShortBio   string            `json:"short_bio"`
+	LongBio    []string          `json:"long_bio"`
+	Location   string            `json:"location"`
+	YearsStart int               `json:"years_experience_start_year"`
+	WhatsApp   string            `json:"whatsapp"`
+	SocialMedia map[string]string `json:"social_media"`
 }
 
 // ExperienceRow represents a work-experience entry from the experience table.
@@ -139,24 +147,36 @@ type ExperienceRow struct {
 	Role         string   `json:"role"`
 	Company      string   `json:"company"`
 	Period       string   `json:"period"`
+	StartDate    string   `json:"start_date"`
+	EndDate      *string  `json:"end_date"`
+	Location     string   `json:"location"`
 	Achievements []string `json:"achievements"`
-	Order        int      `json:"display_order"`
+	TechStack    []string `json:"tech_stack"`
 }
 
-// SkillRow represents a single skill entry from the skills table.
-type SkillRow struct {
-	ID       string `json:"id"`
-	Category string `json:"category"`
-	Name     string `json:"name"`
-	Level    string `json:"level"`
+// SkillEntry represents a single skill within a category.
+type SkillEntry struct {
+	Name  string  `json:"name"`
+	Level float64 `json:"level"`
+}
+
+// SkillCategoryRow represents a skill category from the skill_categories table.
+type SkillCategoryRow struct {
+	ID           string       `json:"id"`
+	CategoryName string       `json:"category_name"`
+	Skills       []SkillEntry `json:"skills"`
+	DisplayOrder int          `json:"display_order"`
 }
 
 // ProjectRow represents a portfolio project from the projects table.
 type ProjectRow struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	TechStack   []string `json:"tech_stack"`
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	ShortDescription string   `json:"short_description"`
+	TechStack        []string `json:"tech_stack"`
+	Category         string   `json:"category"`
+	Company          string   `json:"company"`
 }
 
 // ---------------------------------------------------------------------------
@@ -165,14 +185,14 @@ type ProjectRow struct {
 
 // ProfileData holds the complete profile fetched from all four Supabase tables.
 type ProfileData struct {
-	SiteConfig []SiteConfigRow `json:"site_config"`
-	Experience []ExperienceRow `json:"experience"`
-	Skills     []SkillRow      `json:"skills"`
-	Projects   []ProjectRow    `json:"projects"`
+	SiteConfig []SiteConfigRow    `json:"site_config"`
+	Experience []ExperienceRow    `json:"experience"`
+	Skills     []SkillCategoryRow `json:"skills"`
+	Projects   []ProjectRow       `json:"projects"`
 }
 
 // GetProfileData fetches all four profile tables from Supabase and returns
-// the combined result. Experience rows are ordered by display_order.
+// the combined result. Experience ordered by start_date desc, skills by display_order.
 func (c *Client) GetProfileData() (*ProfileData, error) {
 	var pd ProfileData
 
@@ -185,8 +205,8 @@ func (c *Client) GetProfileData() (*ProfileData, error) {
 		return nil, fmt.Errorf("decode site_config: %w", err)
 	}
 
-	// --- experience (ordered) ---
-	raw, err = c.query("experience", "order=display_order")
+	// --- experience (ordered by start_date descending — most recent first) ---
+	raw, err = c.query("experience", "order=start_date.desc")
 	if err != nil {
 		return nil, fmt.Errorf("get experience: %w", err)
 	}
@@ -194,13 +214,13 @@ func (c *Client) GetProfileData() (*ProfileData, error) {
 		return nil, fmt.Errorf("decode experience: %w", err)
 	}
 
-	// --- skills ---
-	raw, err = c.query("skills", "")
+	// --- skill_categories (ordered by display_order) ---
+	raw, err = c.query("skill_categories", "order=display_order")
 	if err != nil {
-		return nil, fmt.Errorf("get skills: %w", err)
+		return nil, fmt.Errorf("get skill_categories: %w", err)
 	}
 	if err := json.Unmarshal(raw, &pd.Skills); err != nil {
-		return nil, fmt.Errorf("decode skills: %w", err)
+		return nil, fmt.Errorf("decode skill_categories: %w", err)
 	}
 
 	// --- projects ---

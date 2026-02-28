@@ -53,16 +53,28 @@ type CoverData struct {
 	Website   string
 }
 
+// profileConfig extracts the first site_config row into simple field accessors.
+func profileConfig(profile *supabase.ProfileData) (name, email, website, location string) {
+	if len(profile.SiteConfig) == 0 {
+		return
+	}
+	sc := profile.SiteConfig[0]
+	name = sc.Name
+	email = sc.Email
+	location = sc.Location
+	if linkedin, ok := sc.SocialMedia["linkedin"]; ok {
+		website = linkedin
+	}
+	return
+}
+
 // BuildResumeHTML renders the resume HTML template using profile data
 // tailored to the given variant.
 func BuildResumeHTML(variant Variant, profile *supabase.ProfileData) (string, error) {
-	// Extract site_config into a map for easy lookup.
-	cfg := make(map[string]string, len(profile.SiteConfig))
-	for _, row := range profile.SiteConfig {
-		cfg[row.Key] = row.Value
-	}
+	name, email, website, location := profileConfig(profile)
 
 	// Build skills list with emphasis skills first.
+	// Flatten skill_categories into individual skill entries.
 	emphasisSet := make(map[string]bool, len(variant.SkillEmphasis))
 	for _, s := range variant.SkillEmphasis {
 		emphasisSet[strings.ToLower(s)] = true
@@ -70,22 +82,25 @@ func BuildResumeHTML(variant Variant, profile *supabase.ProfileData) (string, er
 
 	var emphasized []SkillEntry
 	var regular []SkillEntry
-	for _, sk := range profile.Skills {
-		entry := SkillEntry{Name: sk.Name}
-		if emphasisSet[strings.ToLower(sk.Name)] || emphasisSet[strings.ToLower(sk.Category)] {
-			entry.Emphasis = true
-			emphasized = append(emphasized, entry)
-		} else {
-			regular = append(regular, entry)
+	seen := make(map[string]bool)
+	for _, cat := range profile.Skills {
+		for _, sk := range cat.Skills {
+			if seen[strings.ToLower(sk.Name)] {
+				continue
+			}
+			seen[strings.ToLower(sk.Name)] = true
+			entry := SkillEntry{Name: sk.Name}
+			if emphasisSet[strings.ToLower(sk.Name)] || emphasisSet[strings.ToLower(cat.CategoryName)] {
+				entry.Emphasis = true
+				emphasized = append(emphasized, entry)
+			} else {
+				regular = append(regular, entry)
+			}
 		}
 	}
 	// Also add variant emphasis skills that may not be in the profile.
-	existingSkills := make(map[string]bool)
-	for _, sk := range profile.Skills {
-		existingSkills[strings.ToLower(sk.Name)] = true
-	}
 	for _, s := range variant.SkillEmphasis {
-		if !existingSkills[strings.ToLower(s)] {
+		if !seen[strings.ToLower(s)] {
 			emphasized = append(emphasized, SkillEntry{Name: s, Emphasis: true})
 		}
 	}
@@ -111,9 +126,13 @@ func BuildResumeHTML(variant Variant, profile *supabase.ProfileData) (string, er
 	var emphProjects []ProjectEntry
 	var otherProjects []ProjectEntry
 	for _, proj := range profile.Projects {
+		desc := proj.ShortDescription
+		if desc == "" {
+			desc = proj.Description
+		}
 		entry := ProjectEntry{
 			Title:       proj.Title,
-			Description: proj.Description,
+			Description: desc,
 		}
 		if projectEmphasisSet[strings.ToLower(proj.Title)] {
 			emphProjects = append(emphProjects, entry)
@@ -124,11 +143,11 @@ func BuildResumeHTML(variant Variant, profile *supabase.ProfileData) (string, er
 	allProjects := append(emphProjects, otherProjects...)
 
 	data := ResumeData{
-		Name:       cfg["name"],
+		Name:       name,
 		Headline:   variant.Headline,
-		Email:      cfg["email"],
-		Website:    cfg["website"],
-		Location:   cfg["location"],
+		Email:      email,
+		Website:    website,
+		Location:   location,
 		Summary:    variant.Summary,
 		Experience: experience,
 		Skills:     allSkills,
@@ -151,10 +170,7 @@ func BuildResumeHTML(variant Variant, profile *supabase.ProfileData) (string, er
 // BuildCoverHTML renders the cover letter HTML template using profile data
 // and the variant's cover template with company-specific placeholders filled in.
 func BuildCoverHTML(variant Variant, profile *supabase.ProfileData, company, role, specificThing string) (string, error) {
-	cfg := make(map[string]string, len(profile.SiteConfig))
-	for _, row := range profile.SiteConfig {
-		cfg[row.Key] = row.Value
-	}
+	name, email, website, _ := profileConfig(profile)
 
 	// Replace placeholders in the cover template.
 	coverText := variant.CoverTemplate
@@ -166,9 +182,9 @@ func BuildCoverHTML(variant Variant, profile *supabase.ProfileData, company, rol
 		Date:      "", // Will be set by caller or left for template default.
 		Company:   company,
 		CoverText: coverText,
-		Name:      cfg["name"],
-		Email:     cfg["email"],
-		Website:   cfg["website"],
+		Name:      name,
+		Email:     email,
+		Website:   website,
 	}
 
 	tmpl, err := template.New("cover.html").ParseFS(templates.FS, "cover.html")

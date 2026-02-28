@@ -24,10 +24,12 @@ func HTMLToPDF(html string, outputPath string) error {
 		return fmt.Errorf("create output dir %s: %w", dir, err)
 	}
 
-	// Launch headless Chrome.
-	u, err := launcher.New().
-		Headless(true).
-		Launch()
+	// Launch headless Chrome. Try system chromium first, fall back to default.
+	l := launcher.New().Headless(true).NoSandbox(true)
+	if path, found := launcher.LookPath(); found {
+		l = l.Bin(path)
+	}
+	u, err := l.Launch()
 	if err != nil {
 		return fmt.Errorf("launch headless chrome: %w", err)
 	}

@@ -96,11 +96,8 @@ func checkBrowserPlatform(platform string, profile *supabase.ProfileData) CheckR
 
 	// Extract the title from site_config.
 	var title string
-	for _, row := range profile.SiteConfig {
-		if row.Key == "title" || row.Key == "name" {
-			title = row.Value
-			break
-		}
+	if len(profile.SiteConfig) > 0 {
+		title = profile.SiteConfig[0].Title
 	}
 
 	// Launch headless browser with existing profile.
