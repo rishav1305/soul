@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters } from '../../lib/types.ts';
 import FilterBar from './FilterBar.tsx';
 import TaskContent from './TaskContent.tsx';
@@ -85,6 +85,39 @@ export default function TaskPanel({
 }: TaskPanelProps) {
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [showFilterPopover, setShowFilterPopover] = useState(false);
+  const filterPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setIsNarrow(entry.contentRect.width < 400);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!showFilterPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
+        setShowFilterPopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showFilterPopover]);
+
+  const activeFilterCount = [
+    filters.stage !== 'all',
+    filters.priority !== 'all',
+    filters.product !== 'all',
+  ].filter(Boolean).length;
 
   const handleCreate = async (title: string, description: string, priority: number, product: string) => {
     await createTask(title, description, priority, product);
@@ -106,7 +139,7 @@ export default function TaskPanel({
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface">
+    <div ref={panelRef} className="flex flex-col h-full bg-surface">
       {/* Navbar */}
       <div className="glass flex items-center gap-2 px-4 shrink-0 h-11">
         <span className="font-display text-sm font-semibold text-fg">Tasks</span>
@@ -129,6 +162,34 @@ export default function TaskPanel({
             </button>
           ))}
         </div>
+
+        {/* Filters — inline when wide, popover when narrow */}
+        {isNarrow ? (
+          <div className="relative" ref={filterPopoverRef}>
+            <button
+              type="button"
+              onClick={() => setShowFilterPopover(!showFilterPopover)}
+              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+              title="Filters"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 3h12M4 8h8M6 13h4" />
+              </svg>
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-soul text-deep text-[9px] font-bold rounded-full flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            {showFilterPopover && (
+              <div className="absolute top-full right-0 mt-1 bg-surface border border-border-default rounded-xl shadow-xl z-40 p-3 min-w-[200px]">
+                <FilterBar filters={filters} products={products} onChange={setFilters} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <FilterBar filters={filters} products={products} onChange={setFilters} />
+        )}
 
         <div className="flex-1" />
 
@@ -172,9 +233,6 @@ export default function TaskPanel({
           + New Task
         </button>
       </div>
-
-      {/* Filter Bar */}
-      <FilterBar filters={filters} products={products} onChange={setFilters} />
 
       {/* Body */}
       <div className="flex-1 overflow-hidden">

@@ -26,7 +26,7 @@ const PRIORITY_OPTIONS: { value: number | 'all'; label: string }[] = [
 
 export default function FilterBar({ filters, products, onChange }: FilterBarProps) {
   return (
-    <div className="flex items-center gap-3 bg-surface/50 border-b border-border-subtle px-4 py-2 shrink-0 text-xs">
+    <div className="flex items-center gap-2 text-xs">
       {/* Stage filter */}
       <select
         className="soul-select"
