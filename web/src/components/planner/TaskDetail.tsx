@@ -142,6 +142,12 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                     {task.product || '+ Product'}
                   </button>
                 )}
+                {/* Branch info for active/validation tasks */}
+                {(task.stage === 'active' || task.stage === 'validation') && task.agent_id?.startsWith('auto-') && (
+                  <span className="text-[10px] text-fg-muted font-mono">
+                    branch: task/{task.id}-...
+                  </span>
+                )}
               </div>
 
               {/* Autonomous toggle */}
@@ -163,6 +169,30 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                   <span className="inline-block w-2 h-2 rounded-full bg-soul animate-pulse" />
                 )}
               </div>
+
+              {/* Workflow mode selector */}
+              {autonomous && (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-fg-muted">Workflow:</span>
+                  {(['quick', 'full'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={async () => {
+                        const newMeta = { ...meta, workflow: mode };
+                        await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                        (meta.workflow || 'quick') === mode
+                          ? 'bg-soul/20 text-soul'
+                          : 'bg-elevated text-fg-muted hover:text-fg-secondary'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               type="button"
@@ -201,6 +231,25 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                   <ActivityEntry key={i} activity={a} />
                 ))}
               </div>
+            </Section>
+          )}
+
+          {task.stage === 'validation' && task.agent_id?.startsWith('auto-') && (
+            <Section title="Review">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-fg-secondary">Changes are live on the dev server:</span>
+                <a
+                  href="http://localhost:3001"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-soul hover:underline font-mono text-xs"
+                >
+                  localhost:3001
+                </a>
+              </div>
+              <p className="text-[10px] text-fg-muted mt-1">
+                Move to Done to merge to production (localhost:3000)
+              </p>
             </Section>
           )}
 
