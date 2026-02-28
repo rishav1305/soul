@@ -7,8 +7,8 @@ export default function SoulRail({ onExpand }: SoulRailProps) {
     <div className="w-10 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-3 shrink-0">
       {/* Soul logo */}
       <span className="relative">
-        <span className="absolute inset-0 -m-0.5 bg-soul/10 rounded-full blur-sm animate-soul-pulse" />
-        <span className="relative text-lg text-soul">&#9670;</span>
+        <span className="absolute inset-0 -m-1 bg-soul/10 rounded-full blur-sm animate-soul-pulse" />
+        <span className="relative text-4xl text-soul">&#9670;</span>
       </span>
 
       <div className="w-5 border-t border-border-subtle" />
