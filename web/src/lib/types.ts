@@ -58,3 +58,40 @@ export interface PlannerTask {
   started_at: string | null;
   completed_at: string | null;
 }
+
+/* ── Layout types ────────────────────────────────────── */
+
+export type PanelState = 'rail' | 'open';
+export type TaskView = 'list' | 'kanban' | 'grid';
+export type GridSubView = 'grid' | 'table' | 'grouped';
+
+export interface TaskFilters {
+  stage: TaskStage | 'all';
+  priority: number | 'all';
+  product: string | 'all';
+}
+
+export interface LayoutState {
+  chatState: PanelState;
+  taskState: PanelState;
+  taskView: TaskView;
+  gridSubView: GridSubView;
+  panelWidth: number | null;
+  filters: TaskFilters;
+}
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  status: 'running' | 'idle' | 'completed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessageRecord {
+  id: number;
+  session_id: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  created_at: string;
+}
