@@ -5,7 +5,7 @@ interface OpportunitiesProps {
 }
 
 export default function Opportunities({ opportunities }: OpportunitiesProps) {
-  const visible = opportunities.filter((o) => !o.dismissed);
+  const visible = (opportunities ?? []).filter((o) => !o.dismissed);
 
   if (visible.length === 0) {
     return (

@@ -21,8 +21,8 @@ function statusLabel(status: string): string {
 }
 
 export default function ApplicationTracker({ applications, byStatus }: ApplicationTrackerProps) {
-  const statuses = Object.entries(byStatus).filter(([, count]) => count > 0);
-  const recent = applications.slice(0, 10);
+  const statuses = Object.entries(byStatus ?? {}).filter(([, count]) => count > 0);
+  const recent = (applications ?? []).slice(0, 10);
 
   if (recent.length === 0 && statuses.length === 0) return null;
 
