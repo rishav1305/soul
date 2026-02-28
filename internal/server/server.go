@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -114,6 +116,50 @@ func (s *Server) ListenAndServe() error {
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
 	fmt.Printf("◆ Soul server listening on %s\n", addr)
 	return http.ListenAndServe(addr, s.mux)
+}
+
+// StartDevServer starts a second HTTP server on devPort, serving from the
+// dev branch's web/dist/ directory. It shares the same API/WS state.
+func (s *Server) StartDevServer(devPort int) {
+	devRoot := filepath.Join(s.projectRoot, ".worktrees", "dev-server")
+
+	// Create a worktree for the dev branch to serve from.
+	cmd := exec.Command("git", "worktree", "add", devRoot, "dev")
+	cmd.Dir = s.projectRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		// Might already exist — try to update it.
+		cmd = exec.Command("git", "-C", devRoot, "checkout", "dev")
+		if out2, err2 := cmd.CombinedOutput(); err2 != nil {
+			log.Printf("[dev-server] failed to set up dev worktree: %s / %s", out, out2)
+			return
+		}
+	}
+
+	// Build frontend in dev worktree.
+	cmd = exec.Command("npx", "vite", "build")
+	cmd.Dir = filepath.Join(devRoot, "web")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[dev-server] frontend build failed: %s — %v", out, err)
+		return
+	}
+
+	// Serve dev frontend from disk.
+	devDist := filepath.Join(devRoot, "web", "dist")
+	devMux := http.NewServeMux()
+	devMux.Handle("/", newSPAFileServer(os.DirFS(devDist)))
+
+	// Share API and WS routes with prod.
+	devMux.HandleFunc("GET /api/health", handleHealth)
+	devMux.HandleFunc("GET /api/tasks", s.handleTaskList)
+	devMux.HandleFunc("GET /api/tasks/{id}", s.handleTaskGet)
+
+	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(devPort))
+	fmt.Printf("◆ Soul dev server listening on %s\n", addr)
+	go func() {
+		if err := http.ListenAndServe(addr, devMux); err != nil {
+			log.Printf("[dev-server] error: %v", err)
+		}
+	}()
 }
 
 // registerWSClient adds a WebSocket connection to the tracked clients map.

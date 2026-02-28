@@ -107,6 +107,9 @@ func runServe(args []string) {
 	// Create server with embedded SPA (falls back to placeholder if web/dist not built).
 	srv := server.NewWithWebFS(cfg, manager, aiClient, plannerStore, soul.WebDist)
 
+	// Start dev server on port+1.
+	go srv.StartDevServer(cfg.Port + 1)
+
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
