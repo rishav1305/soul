@@ -20,8 +20,12 @@ export default function ChatView() {
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full min-h-[200px]">
               <div className="text-center">
-                <div className="text-5xl mb-3 text-soul animate-float">&#9670;</div>
-                <p className="font-display text-lg text-fg-secondary">How can I help you?</p>
+                <div className="relative inline-block">
+                  {/* Glow ring behind diamond */}
+                  <div className="absolute inset-0 -m-8 bg-soul/15 rounded-full blur-3xl animate-soul-pulse" />
+                  <div className="relative text-8xl text-soul animate-float">&#9670;</div>
+                </div>
+                <p className="font-display text-xl text-fg-secondary mt-6">How can I help you?</p>
               </div>
             </div>
           )}
