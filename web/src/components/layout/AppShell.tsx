@@ -115,7 +115,13 @@ export default function AppShell() {
 
       {/* Task: rail or panel */}
       {layout.taskState === 'rail' ? (
-        <TaskRail tasksByStage={allByStage} onExpand={handleTaskExpand} />
+        <TaskRail
+          tasksByStage={allByStage}
+          onExpand={handleTaskExpand}
+          onNewTask={async (title, desc, priority, product) => {
+            await planner.createTask(title, desc, priority, product);
+          }}
+        />
       ) : (
         <div
           className="h-full overflow-hidden transition-[width] duration-200 ease-in-out"
