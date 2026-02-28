@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 interface ResizeDividerProps {
   onResize: (chatPercent: number) => void;
@@ -6,6 +6,16 @@ interface ResizeDividerProps {
 
 export default function ResizeDivider({ onResize }: ResizeDividerProps) {
   const dragging = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (dragging.current) {
+        dragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+  }, []);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
