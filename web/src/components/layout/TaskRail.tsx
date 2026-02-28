@@ -32,8 +32,9 @@ export default function TaskRail({ tasksByStage, onExpand, onNewTask }: TaskRail
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           title="Expand tasks"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 3l5 5-5 5" />
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+            <line x1="10.5" y1="2.5" x2="10.5" y2="13.5" />
           </svg>
         </button>
 

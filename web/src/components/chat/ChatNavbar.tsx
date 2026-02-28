@@ -33,8 +33,9 @@ export default function ChatNavbar({ onToggleDrawer, onCollapse, canCollapse }: 
         className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg disabled:opacity-20 disabled:cursor-not-allowed transition-colors cursor-pointer"
         title={canCollapse ? 'Collapse chat' : 'Cannot collapse — task panel is collapsed'}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 3L5 8l5 5" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+          <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
         </svg>
       </button>
     </div>

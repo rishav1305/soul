@@ -29,11 +29,40 @@ interface TaskPanelProps {
   deleteTask: (id: number) => Promise<void>;
 }
 
-const VIEW_BUTTONS: { view: TaskView; icon: string; title: string }[] = [
-  { view: 'list', icon: '\u2261', title: 'List view' },      // ≡
-  { view: 'kanban', icon: '\u229E', title: 'Kanban view' },   // ⊞
-  { view: 'grid', icon: '\u229F', title: 'Grid view' },       // ⊟
+const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
+  { view: 'list', title: 'List view' },
+  { view: 'kanban', title: 'Kanban view' },
+  { view: 'grid', title: 'Grid view' },
 ];
+
+function ViewIcon({ view }: { view: TaskView }) {
+  switch (view) {
+    case 'list':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 4h10M3 8h10M3 12h10" />
+        </svg>
+      );
+    case 'kanban':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M3 3v10M8 3v7M13 3v10" />
+          <circle cx="3" cy="3" r="0.8" fill="currentColor" stroke="none" />
+          <circle cx="8" cy="3" r="0.8" fill="currentColor" stroke="none" />
+          <circle cx="13" cy="3" r="0.8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'grid':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <rect x="2" y="2" width="5" height="5" rx="1" />
+          <rect x="9" y="2" width="5" height="5" rx="1" />
+          <rect x="2" y="9" width="5" height="5" rx="1" />
+          <rect x="9" y="9" width="5" height="5" rx="1" />
+        </svg>
+      );
+  }
+}
 
 export default function TaskPanel({
   taskView,
@@ -84,19 +113,19 @@ export default function TaskPanel({
 
         {/* View mode buttons */}
         <div className="flex items-center gap-0.5 ml-2">
-          {VIEW_BUTTONS.map(({ view, icon, title }) => (
+          {VIEW_BUTTONS.map(({ view, title }) => (
             <button
               key={view}
               type="button"
               onClick={() => setTaskView(view)}
               title={title}
-              className={`w-7 h-7 flex items-center justify-center rounded text-sm cursor-pointer transition-colors ${
+              className={`w-8 h-8 flex items-center justify-center rounded cursor-pointer transition-colors ${
                 taskView === view
                   ? 'bg-overlay text-fg'
                   : 'text-fg-muted hover:text-fg-secondary hover:bg-elevated'
               }`}
             >
-              {icon}
+              <ViewIcon view={view} />
             </button>
           ))}
         </div>
@@ -128,8 +157,9 @@ export default function TaskPanel({
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg disabled:opacity-20 disabled:cursor-not-allowed transition-colors cursor-pointer"
           title={canCollapse ? 'Collapse tasks' : 'Cannot collapse — chat panel is collapsed'}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 3l5 5-5 5" />
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+            <line x1="10.5" y1="2.5" x2="10.5" y2="13.5" />
           </svg>
         </button>
 

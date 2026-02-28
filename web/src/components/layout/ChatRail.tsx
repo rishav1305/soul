@@ -23,9 +23,12 @@ export default function ChatRail({ unreadCount, onExpand }: ChatRailProps) {
       <div className="flex-1" />
 
       {/* Chat bubble icon */}
-      <span className="text-lg text-fg-muted" title="Expand chat">
-        &#128172;
-      </span>
+      <button type="button" className="w-7 h-7 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors" title="Expand chat">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+          <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+        </svg>
+      </button>
     </button>
   );
 }
