@@ -87,6 +87,12 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
+// URL returns the Supabase project URL.
+func (c *Client) URL() string { return c.url }
+
+// AnonKey returns the Supabase anonymous API key.
+func (c *Client) AnonKey() string { return c.anonKey }
+
 // query performs a GET request against the Supabase PostgREST endpoint for the
 // given table with an optional query-string filter (e.g. "order=display_order").
 // It returns the raw JSON response body.

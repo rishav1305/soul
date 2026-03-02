@@ -1,0 +1,18 @@
+# Profile Hub — Local PostgreSQL container on titan-pc
+# Deploy: scp to titan-pc, then PROFILE_DB_PASSWORD=<pw> docker compose up -d
+services:
+  titan-profile-db:
+    image: postgres:16
+    container_name: titan-profile-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_DB: profile
+      POSTGRES_USER: profile
+      POSTGRES_PASSWORD: "${PROFILE_DB_PASSWORD}"
+    volumes:
+      - profile-db-data:/var/lib/postgresql/data
+
+volumes:
+  profile-db-data:

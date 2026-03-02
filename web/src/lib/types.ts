@@ -192,3 +192,116 @@ export interface ScoutFollowUp {
   follow_up: string;
   notes: string;
 }
+
+/* ── Profile Hub types ─────────────────────────────── */
+
+export interface ProfileData {
+  site_config: ProfileSiteConfig[];
+  experience: ProfileExperience[];
+  skill_categories: ProfileSkillCategory[];
+  projects: ProfileProject[];
+  education: ProfileEducation[];
+  testimonials: ProfileTestimonial[];
+  brands: ProfileBrand[];
+  services: ProfileService[];
+  case_studies: ProfileCaseStudy[];
+}
+
+export interface ProfileSiteConfig {
+  id: string;
+  name: string;
+  title: string;
+  email: string;
+  short_bio: string;
+  long_bio: string[];
+  location: string;
+  years_experience_start_year: number;
+  whatsapp: string;
+  social_media: Record<string, string>;
+  domain_expertise?: string[];
+  contact_info?: Record<string, string>;
+}
+
+export interface ProfileExperience {
+  id: string;
+  role: string;
+  company: string;
+  period: string;
+  start_date: string;
+  end_date: string | null;
+  location: string;
+  achievements: string[];
+  tech_stack: string[];
+  experience_type?: string;
+  description?: string | null;
+  details?: string[];
+  tags?: string[];
+  remote_work?: boolean;
+  team_size?: number;
+  key_metrics?: { label: string; value: string }[];
+}
+
+export interface ProfileSkillCategory {
+  id: string;
+  category_name: string;
+  skills: { name: string; level: number }[];
+  display_order: number;
+}
+
+export interface ProfileProject {
+  id: string;
+  title: string;
+  description: string;
+  short_description: string;
+  tech_stack: string[];
+  category: string;
+  company: string;
+  link?: string;
+  start_date?: string;
+  end_date?: string | null;
+}
+
+export interface ProfileEducation {
+  id: string;
+  institution: string;
+  degree: string;
+  period: string;
+  location: string;
+  focus_area: string;
+  description: string;
+}
+
+export interface ProfileTestimonial {
+  id: string;
+  name: string;
+  position: string;
+  company: string;
+  text: string;
+  location?: string;
+}
+
+export interface ProfileBrand {
+  id: string;
+  name: string;
+  logo: string;
+  color: string;
+}
+
+export interface ProfileService {
+  id: string;
+  title: string;
+  description: string;
+  icon_name: string;
+  skills: string[];
+}
+
+export interface ProfileCaseStudy {
+  id: string;
+  title: string;
+  role: string;
+  challenge: string;
+  solution: string;
+  impact: string;
+  metrics: { label: string; value: string }[];
+  tech_stack: string[];
+}

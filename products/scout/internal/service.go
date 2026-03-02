@@ -13,6 +13,7 @@ import (
 	"github.com/rishav1305/soul/products/scout/internal/browser"
 	"github.com/rishav1305/soul/products/scout/internal/data"
 	"github.com/rishav1305/soul/products/scout/internal/generate"
+	"github.com/rishav1305/soul/products/scout/internal/profiledb"
 	"github.com/rishav1305/soul/products/scout/internal/supabase"
 	syncpkg "github.com/rishav1305/soul/products/scout/internal/sync"
 	sweeppkg "github.com/rishav1305/soul/products/scout/internal/sweep"
@@ -155,6 +156,38 @@ func (s *ScoutService) GetManifest(_ context.Context, _ *soulv1.Empty) (*soulv1.
 					"required": []
 				}`,
 			},
+			{
+				Name:        "profile",
+				Description: "Return the full professional profile from the local profile database as structured JSON",
+				InputSchemaJson: `{
+					"type": "object",
+					"properties": {
+						"sections": {"type": "array", "items": {"type": "string"}, "description": "Return only these sections (e.g. ['experience','skills']). Empty = all 13 tables."}
+					}
+				}`,
+			},
+			{
+				Name:        "profile_pull",
+				Description: "Pull profile data from Supabase cloud into the local profile database",
+				InputSchemaJson: `{
+					"type": "object",
+					"properties": {
+						"tables": {"type": "array", "items": {"type": "string"}, "description": "Tables to pull. Empty = all 13 tables."}
+					}
+				}`,
+			},
+			{
+				Name:        "profile_push",
+				Description: "Push local profile database to Supabase cloud (overwrites live website data)",
+				InputSchemaJson: `{
+					"type": "object",
+					"properties": {
+						"tables": {"type": "array", "items": {"type": "string"}, "description": "Tables to push. Empty = all 13 tables."},
+						"confirm": {"type": "boolean", "description": "Must be true to actually push. Safety gate to prevent accidental overwrites."}
+					},
+					"required": ["confirm"]
+				}`,
+			},
 		},
 	}, nil
 }
@@ -208,6 +241,22 @@ type reportInput struct {
 	DateRange json.RawMessage `json:"dateRange,omitempty"`
 }
 
+// profileInput holds the parsed JSON input for the profile tool.
+type profileInput struct {
+	Sections []string `json:"sections"`
+}
+
+// profilePullInput holds the parsed JSON input for the profile_pull tool.
+type profilePullInput struct {
+	Tables []string `json:"tables"`
+}
+
+// profilePushInput holds the parsed JSON input for the profile_push tool.
+type profilePushInput struct {
+	Tables  []string `json:"tables"`
+	Confirm bool     `json:"confirm"`
+}
+
 // ExecuteTool routes incoming tool requests to the appropriate handler.
 func (s *ScoutService) ExecuteTool(_ context.Context, req *soulv1.ToolRequest) (*soulv1.ToolResponse, error) {
 	switch req.Tool {
@@ -223,6 +272,12 @@ func (s *ScoutService) ExecuteTool(_ context.Context, req *soulv1.ToolRequest) (
 		return s.executeTrack(req.InputJson)
 	case "report":
 		return s.executeReport(req.InputJson)
+	case "profile":
+		return s.executeProfile(req.InputJson)
+	case "profile_pull":
+		return s.executeProfilePull(req.InputJson)
+	case "profile_push":
+		return s.executeProfilePush(req.InputJson)
 	default:
 		return &soulv1.ToolResponse{
 			Success: false,
@@ -1013,6 +1068,179 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 			},
 		},
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Profile tools
+// ---------------------------------------------------------------------------
+
+func (s *ScoutService) executeProfile(inputJSON string) (*soulv1.ToolResponse, error) {
+	var input profileInput
+	if inputJSON != "" {
+		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+			return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("invalid input: %v", err)}, nil
+		}
+	}
+
+	cfg, err := profiledb.LoadConfig()
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("profile_db config: %v", err)}, nil
+	}
+
+	ctx := context.Background()
+	client, err := profiledb.New(ctx, *cfg)
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("connect profile_db: %v", err)}, nil
+	}
+	defer client.Close()
+
+	var result map[string]json.RawMessage
+	if len(input.Sections) > 0 {
+		result, err = client.GetSections(ctx, input.Sections)
+	} else {
+		result, err = client.GetFullProfile(ctx)
+	}
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("fetch profile: %v", err)}, nil
+	}
+
+	jsonData, _ := json.Marshal(result)
+	return &soulv1.ToolResponse{
+		Success:        true,
+		Output:         fmt.Sprintf("Profile loaded: %d sections", len(result)),
+		StructuredJson: string(jsonData),
+	}, nil
+}
+
+func (s *ScoutService) executeProfilePull(inputJSON string) (*soulv1.ToolResponse, error) {
+	var input profilePullInput
+	if inputJSON != "" {
+		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+			return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("invalid input: %v", err)}, nil
+		}
+	}
+
+	// Load Supabase config for the source.
+	sbClient, err := supabase.NewClient()
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("supabase config: %v", err)}, nil
+	}
+
+	// Load profile DB config for the destination.
+	cfg, err := profiledb.LoadConfig()
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("profile_db config: %v", err)}, nil
+	}
+
+	ctx := context.Background()
+	client, err := profiledb.New(ctx, *cfg)
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("connect profile_db: %v", err)}, nil
+	}
+	defer client.Close()
+
+	var counts map[string]int
+	if len(input.Tables) > 0 {
+		counts = make(map[string]int, len(input.Tables))
+		for _, table := range input.Tables {
+			n, err := client.PullTable(ctx, sbClient.URL(), sbClient.AnonKey(), table)
+			if err != nil {
+				return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("pull %s: %v", table, err)}, nil
+			}
+			counts[table] = n
+		}
+	} else {
+		counts, err = client.PullAll(ctx, sbClient.URL(), sbClient.AnonKey())
+		if err != nil {
+			return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("pull all: %v", err)}, nil
+		}
+	}
+
+	// Build summary.
+	var parts []string
+	total := 0
+	for _, table := range profiledb.AllTables {
+		if n, ok := counts[table]; ok {
+			parts = append(parts, fmt.Sprintf("%s(%d)", table, n))
+			total += n
+		}
+	}
+	summary := fmt.Sprintf("Pulled %d rows across %d tables: %s", total, len(counts), strings.Join(parts, ", "))
+	log.Printf("[scout] profile_pull: %s", summary)
+
+	return &soulv1.ToolResponse{
+		Success: true,
+		Output:  summary,
+	}, nil
+}
+
+func (s *ScoutService) executeProfilePush(inputJSON string) (*soulv1.ToolResponse, error) {
+	var input profilePushInput
+	if inputJSON != "" {
+		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+			return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("invalid input: %v", err)}, nil
+		}
+	}
+
+	if !input.Confirm {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  "Push to Supabase requires confirm=true. This will overwrite live website data. Set confirm to true to proceed.",
+		}, nil
+	}
+
+	// Load Supabase config for the destination.
+	sbClient, err := supabase.NewClient()
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("supabase config: %v", err)}, nil
+	}
+
+	// Load profile DB config for the source.
+	cfg, err := profiledb.LoadConfig()
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("profile_db config: %v", err)}, nil
+	}
+
+	ctx := context.Background()
+	client, err := profiledb.New(ctx, *cfg)
+	if err != nil {
+		return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("connect profile_db: %v", err)}, nil
+	}
+	defer client.Close()
+
+	var counts map[string]int
+	if len(input.Tables) > 0 {
+		counts = make(map[string]int, len(input.Tables))
+		for _, table := range input.Tables {
+			n, err := client.PushTable(ctx, sbClient.URL(), sbClient.AnonKey(), table)
+			if err != nil {
+				return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("push %s: %v", table, err)}, nil
+			}
+			counts[table] = n
+		}
+	} else {
+		counts, err = client.PushAll(ctx, sbClient.URL(), sbClient.AnonKey())
+		if err != nil {
+			return &soulv1.ToolResponse{Success: false, Output: fmt.Sprintf("push all: %v", err)}, nil
+		}
+	}
+
+	// Build summary.
+	var parts []string
+	total := 0
+	for _, table := range profiledb.AllTables {
+		if n, ok := counts[table]; ok {
+			parts = append(parts, fmt.Sprintf("%s(%d)", table, n))
+			total += n
+		}
+	}
+	summary := fmt.Sprintf("Pushed %d rows across %d tables to Supabase: %s", total, len(counts), strings.Join(parts, ", "))
+	log.Printf("[scout] profile_push: %s", summary)
+
+	return &soulv1.ToolResponse{
+		Success: true,
+		Output:  summary,
+	}, nil
 }
 
 // Health returns the health status of the scout service.
