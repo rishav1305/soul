@@ -140,6 +140,7 @@ export interface ScoutPlatformSync {
   status: 'synced' | 'drift';
   issues?: string[];
   details?: ScoutSyncDetail[];
+  checkedAt?: string;
 }
 
 export interface ScoutSweepData {
@@ -154,11 +155,11 @@ export interface ScoutOpportunity {
   company: string;
   role: string;
   platform: string;
-  match?: string;
+  match?: number;
   url?: string;
   location?: string;
-  posted_at?: string;
-  found_at: string;
+  postedAt?: string;
+  foundAt: string;
   dismissed?: boolean;
 }
 
@@ -173,13 +174,9 @@ export interface ScoutApplication {
   id: string;
   company: string;
   role: string;
-  platform: string;
-  variant: string;
   status: string;
-  follow_up?: string;
-  notes?: string;
-  applied_at: string;
-  updated_at: string;
+  appliedAt: string;
+  updatedAt: string;
 }
 
 export interface ScoutMetric {
@@ -192,6 +189,6 @@ export interface ScoutMetric {
 export interface ScoutFollowUp {
   company: string;
   role: string;
-  due: string;
-  action: string;
+  follow_up: string;
+  notes: string;
 }

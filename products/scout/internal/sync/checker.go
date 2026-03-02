@@ -5,6 +5,7 @@ package sync
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -93,7 +94,37 @@ func checkBrowserPlatform(platform string, profile *supabase.ProfileData) CheckR
 		}
 	}
 
-	// Launch headless browser with existing profile (remote-first).
+	// LinkedIn uses a clean browser to access the public profile page (avoids authwall).
+	// Other platforms use the logged-in browser profile.
+	if platform == "linkedin" {
+		b, err := browser.LaunchHeadlessNoPlatform()
+		if err != nil {
+			return CheckResult{
+				Platform: data.PlatformSync{
+					Platform:  "linkedin",
+					Status:    "error",
+					Issues:    []string{fmt.Sprintf("browser launch error: %v", err)},
+					CheckedAt: now,
+				},
+				Error: err,
+			}
+		}
+		defer b.MustClose()
+		page, err := b.Page(proto.TargetCreateTarget{})
+		if err != nil {
+			return CheckResult{
+				Platform: data.PlatformSync{
+					Platform:  "linkedin",
+					Status:    "error",
+					Issues:    []string{fmt.Sprintf("page creation error: %v", err)},
+					CheckedAt: now,
+				},
+				Error: err,
+			}
+		}
+		return checkLinkedInProfile(page, profile, now)
+	}
+
 	b, err := browser.LaunchHeadless(platform)
 	if err != nil {
 		return CheckResult{
@@ -121,10 +152,6 @@ func checkBrowserPlatform(platform string, profile *supabase.ProfileData) CheckR
 		}
 	}
 
-	if platform == "linkedin" {
-		return checkLinkedInProfile(page, profile, now)
-	}
-
 	return checkGenericPlatform(page, platform, urls.Jobs, profile, now)
 }
 
@@ -148,6 +175,7 @@ func checkLinkedInProfile(page *rod.Page, profile *supabase.ProfileData, now str
 	}
 
 	// Navigate to the profile page.
+	log.Printf("[scout] sync linkedin: navigating to %s", profileURL)
 	if err := browser.NavigateWithDelay(page, profileURL); err != nil {
 		return CheckResult{
 			Platform: data.PlatformSync{
@@ -160,21 +188,23 @@ func checkLinkedInProfile(page *rod.Page, profile *supabase.ProfileData, now str
 		}
 	}
 
-	// Get the full page text for field checking.
-	el, err := page.Element("body")
-	if err != nil {
-		return CheckResult{
-			Platform: data.PlatformSync{
-				Platform:  "linkedin",
-				Status:    "error",
-				Issues:    []string{fmt.Sprintf("body element error: %v", err)},
-				CheckedAt: now,
-			},
-			Error: err,
+	// Wait for LinkedIn profile content to render (SPA takes time).
+	contentSelectors := []string{
+		"h1",                        // name heading
+		".text-heading-xlarge",      // authenticated profile name
+		".top-card-layout__title",   // public profile name
+		".pv-text-details__left-panel", // profile details
+	}
+	for _, sel := range contentSelectors {
+		el, err := page.Timeout(15 * time.Second).Element(sel)
+		if err == nil && el != nil {
+			log.Printf("[scout] sync linkedin: content loaded (found %s)", sel)
+			break
 		}
 	}
 
-	text, err := el.Text()
+	// Get the full page text via JavaScript (more reliable than Element.Text for SPAs).
+	res, err := page.Eval(`() => document.body.innerText`)
 	if err != nil {
 		return CheckResult{
 			Platform: data.PlatformSync{
@@ -186,8 +216,16 @@ func checkLinkedInProfile(page *rod.Page, profile *supabase.ProfileData, now str
 			Error: err,
 		}
 	}
+	text := res.Value.Str()
 
 	pageText := strings.ToLower(text)
+
+	// Log page URL and snippet for debugging.
+	info, _ := page.Info()
+	if info != nil {
+		log.Printf("[scout] sync linkedin: final URL: %s", info.URL)
+	}
+	log.Printf("[scout] sync linkedin: page text length: %d chars", len(text))
 
 	// Extract expected values from Supabase profile.
 	var name, title, location string
@@ -401,16 +439,19 @@ func splitTitleKeywords(title string) []string {
 }
 
 // containsCompanyName checks if a company name appears in text, trying
-// both the full name and the first word (e.g. "IBM" from "IBM - TWC").
+// full name, individual significant words, and parenthesized terms.
 func containsCompanyName(pageText, company string) bool {
 	lower := strings.ToLower(company)
 	if strings.Contains(pageText, lower) {
 		return true
 	}
-	// Try first word for abbreviated names.
-	parts := strings.Fields(lower)
-	if len(parts) > 0 && len(parts[0]) >= 2 {
-		return strings.Contains(pageText, parts[0])
+	// Try each significant word (3+ chars) individually.
+	for _, word := range strings.Fields(lower) {
+		// Strip parentheses and separators.
+		word = strings.Trim(word, "()-,")
+		if len(word) >= 3 && strings.Contains(pageText, word) {
+			return true
+		}
 	}
 	return false
 }

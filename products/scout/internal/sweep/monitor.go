@@ -42,8 +42,12 @@ func SweepPlatform(platform string, profile *supabase.ProfileData, keywords []st
 	}
 
 	// Derive keywords from profile title if not provided.
+	// Use only the first segment to avoid overly specific queries.
 	if len(keywords) == 0 && profile != nil && len(profile.SiteConfig) > 0 {
-		keywords = splitTitleKeywords(profile.SiteConfig[0].Title)
+		parts := splitTitleKeywords(profile.SiteConfig[0].Title)
+		if len(parts) > 0 {
+			keywords = []string{parts[0]}
+		}
 	}
 
 	// Derive location from profile if not provided.

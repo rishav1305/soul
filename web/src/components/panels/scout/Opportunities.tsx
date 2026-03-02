@@ -64,8 +64,8 @@ export default function Opportunities({ opportunities }: OpportunitiesProps) {
               )}
               <span className="capitalize">{opp.platform}</span>
             </div>
-            {opp.posted_at && (
-              <div className="text-[10px] text-fg-muted">{opp.posted_at}</div>
+            {opp.postedAt && (
+              <div className="text-[10px] text-fg-muted">{opp.postedAt}</div>
             )}
           </div>
         ))}

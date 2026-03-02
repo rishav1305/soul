@@ -37,10 +37,10 @@ export default function FollowUps({ followUps }: FollowUpsProps) {
                 {fu.company} &mdash; {fu.role}
               </span>
               <span className="shrink-0 text-[10px] font-medium text-amber-400">
-                {formatDue(fu.due)}
+                {formatDue(fu.follow_up)}
               </span>
             </div>
-            <p className="text-[10px] text-amber-300/70 truncate">{fu.action}</p>
+            <p className="text-[10px] text-amber-300/70 truncate">{fu.notes}</p>
           </div>
         ))}
       </div>

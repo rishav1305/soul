@@ -60,7 +60,7 @@ export default function ApplicationTracker({ applications, byStatus }: Applicati
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-fg truncate">{app.role}</div>
                 <div className="text-[10px] text-fg-secondary truncate">
-                  {app.company} &middot; {app.platform}
+                  {app.company}
                 </div>
               </div>
               <span
