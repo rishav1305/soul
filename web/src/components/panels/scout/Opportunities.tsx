@@ -24,7 +24,7 @@ export default function Opportunities({ opportunities }: OpportunitiesProps) {
         <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted font-display">
           Opportunities
         </h3>
-        <span className="text-[10px] text-fg-muted">{visible.length} new</span>
+        <span className="text-[10px] text-fg-muted">{visible.length} found</span>
       </div>
 
       <div className="space-y-1.5">
@@ -34,18 +34,39 @@ export default function Opportunities({ opportunities }: OpportunitiesProps) {
             className="rounded-lg bg-elevated/50 border border-border-subtle px-3 py-2 space-y-1"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-fg truncate">{opp.role}</span>
+              {opp.url ? (
+                <a
+                  href={opp.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-soul hover:text-soul/80 truncate transition-colors"
+                  title={opp.role}
+                >
+                  {opp.role || 'Untitled role'}
+                </a>
+              ) : (
+                <span className="text-xs font-medium text-fg truncate">{opp.role || 'Untitled role'}</span>
+              )}
               {opp.match && (
                 <span className="shrink-0 text-[10px] font-medium text-soul bg-soul/10 rounded px-1.5 py-0.5">
                   {opp.match}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-fg-secondary">
-              <span>{opp.company}</span>
-              <span className="text-fg-muted">on</span>
+            <div className="flex items-center gap-2 text-[10px] text-fg-secondary flex-wrap">
+              {opp.company && <span>{opp.company}</span>}
+              {opp.company && (opp.location || opp.platform) && (
+                <span className="text-fg-muted">&middot;</span>
+              )}
+              {opp.location && <span>{opp.location}</span>}
+              {opp.location && opp.platform && (
+                <span className="text-fg-muted">&middot;</span>
+              )}
               <span className="capitalize">{opp.platform}</span>
             </div>
+            {opp.posted_at && (
+              <div className="text-[10px] text-fg-muted">{opp.posted_at}</div>
+            )}
           </div>
         ))}
       </div>

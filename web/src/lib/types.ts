@@ -129,10 +129,17 @@ export interface ScoutSyncData {
   details: ScoutPlatformSync[];
 }
 
+export interface ScoutSyncDetail {
+  field: string;
+  expected: string;
+  match: boolean;
+}
+
 export interface ScoutPlatformSync {
   platform: string;
   status: 'synced' | 'drift';
   issues?: string[];
+  details?: ScoutSyncDetail[];
 }
 
 export interface ScoutSweepData {
@@ -149,6 +156,8 @@ export interface ScoutOpportunity {
   platform: string;
   match?: string;
   url?: string;
+  location?: string;
+  posted_at?: string;
   found_at: string;
   dismissed?: boolean;
 }

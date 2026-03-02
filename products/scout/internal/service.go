@@ -361,11 +361,28 @@ func (s *ScoutService) executeSweep(inputJSON string) (*soulv1.ToolResponse, err
 		}
 	}
 
+	// Fetch profile data for keyword/location defaults.
+	client, err := supabase.NewClient()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("supabase client error: %v", err),
+		}, nil
+	}
+
+	profile, err := client.GetProfileData()
+	if err != nil {
+		return &soulv1.ToolResponse{
+			Success: false,
+			Output:  fmt.Sprintf("fetch profile error: %v", err),
+		}, nil
+	}
+
 	var allOpps []data.Opportunity
 	var allMsgs []data.Message
 
 	for _, platform := range platforms {
-		result := sweeppkg.SweepPlatform(platform)
+		result := sweeppkg.SweepPlatform(platform, profile, input.Keywords, input.Location)
 		if result.Error != nil {
 			log.Printf("[scout] sweep %s error: %v", platform, result.Error)
 			continue
@@ -608,6 +625,9 @@ func (s *ScoutService) executeReport(inputJSON string) (*soulv1.ToolResponse, er
 			"issues":    r.Issues,
 			"checkedAt": r.CheckedAt,
 		}
+		if len(r.Details) > 0 {
+			detail["details"] = r.Details
+		}
 		syncDetails = append(syncDetails, detail)
 		if r.Status == "synced" {
 			inSync++
@@ -626,7 +646,7 @@ func (s *ScoutService) executeReport(inputJSON string) (*soulv1.ToolResponse, er
 	// --- sweep section ---
 	var opps []map[string]interface{}
 	for _, o := range d.Sweep.Opportunities {
-		opps = append(opps, map[string]interface{}{
+		opp := map[string]interface{}{
 			"id":       o.ID,
 			"company":  o.Company,
 			"role":     o.Role,
@@ -634,7 +654,14 @@ func (s *ScoutService) executeReport(inputJSON string) (*soulv1.ToolResponse, er
 			"match":    o.Match,
 			"url":      o.URL,
 			"foundAt":  o.FoundAt,
-		})
+		}
+		if o.Location != "" {
+			opp["location"] = o.Location
+		}
+		if o.PostedAt != "" {
+			opp["postedAt"] = o.PostedAt
+		}
+		opps = append(opps, opp)
 	}
 	sweepSection := map[string]interface{}{
 		"last_run":          d.Sweep.LastRun,
@@ -886,6 +913,31 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 		}
 	}
 
+	// Fetch profile data for keyword/location defaults.
+	client, err := supabase.NewClient()
+	if err != nil {
+		return stream.Send(&soulv1.ToolEvent{
+			Event: &soulv1.ToolEvent_Error{
+				Error: &soulv1.ErrorEvent{
+					Code:    "SUPABASE_ERROR",
+					Message: fmt.Sprintf("supabase client error: %v", err),
+				},
+			},
+		})
+	}
+
+	profile, err := client.GetProfileData()
+	if err != nil {
+		return stream.Send(&soulv1.ToolEvent{
+			Event: &soulv1.ToolEvent_Error{
+				Error: &soulv1.ErrorEvent{
+					Code:    "PROFILE_ERROR",
+					Message: fmt.Sprintf("fetch profile error: %v", err),
+				},
+			},
+		})
+	}
+
 	var allOpps []data.Opportunity
 	var allMsgs []data.Message
 	totalFound := 0
@@ -906,10 +958,9 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 		}
 
 		// Sweep the platform.
-		result := sweeppkg.SweepPlatform(platform)
+		result := sweeppkg.SweepPlatform(platform, profile, input.Keywords, input.Location)
 		if result.Error != nil {
 			log.Printf("[scout] sweep %s error: %v", platform, result.Error)
-			// Send a finding for the error but continue with other platforms.
 			if err := stream.Send(&soulv1.ToolEvent{
 				Event: &soulv1.ToolEvent_Finding{
 					Finding: &soulv1.FindingEvent{
@@ -928,7 +979,6 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 		allOpps = append(allOpps, result.Opportunities...)
 		allMsgs = append(allMsgs, result.Messages...)
 
-		// Send finding events for each opportunity found.
 		for _, opp := range result.Opportunities {
 			totalFound++
 			if err := stream.Send(&soulv1.ToolEvent{
@@ -947,14 +997,12 @@ func (s *ScoutService) streamSweep(inputJSON string, stream grpc.ServerStreaming
 		}
 	}
 
-	// Store results.
 	if s.store != nil {
 		if err := s.store.SetSweepResults(allOpps, allMsgs); err != nil {
 			log.Printf("[scout] warning: failed to save sweep results: %v", err)
 		}
 	}
 
-	// Send completion.
 	summary := fmt.Sprintf("Sweep complete: found %d opportunities across %d platforms", totalFound, len(platforms))
 
 	return stream.Send(&soulv1.ToolEvent{

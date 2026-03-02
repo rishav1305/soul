@@ -32,12 +32,20 @@ type SyncData struct {
 	Results []PlatformSync `json:"results"`
 }
 
+// SyncDetail records the result of checking a single profile field.
+type SyncDetail struct {
+	Field    string `json:"field"`
+	Expected string `json:"expected"`
+	Match    bool   `json:"match"`
+}
+
 // PlatformSync records the sync status for a single platform.
 type PlatformSync struct {
-	Platform  string   `json:"platform"`
-	Status    string   `json:"status"` // "synced" or "drift"
-	Issues    []string `json:"issues"`
-	CheckedAt string   `json:"checkedAt"`
+	Platform  string       `json:"platform"`
+	Status    string       `json:"status"` // "synced" or "drift"
+	Issues    []string     `json:"issues"`
+	Details   []SyncDetail `json:"details,omitempty"`
+	CheckedAt string       `json:"checkedAt"`
 }
 
 // SweepData holds results from the most recent opportunity sweep.
@@ -55,6 +63,8 @@ type Opportunity struct {
 	Platform  string  `json:"platform"`
 	Match     float64 `json:"match"`
 	URL       string  `json:"url"`
+	Location  string  `json:"location,omitempty"`
+	PostedAt  string  `json:"postedAt,omitempty"`
 	FoundAt   string  `json:"foundAt"`
 	Dismissed bool    `json:"dismissed"`
 }

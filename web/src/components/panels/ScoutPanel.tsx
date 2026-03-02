@@ -5,8 +5,16 @@ import ApplicationTracker from './scout/ApplicationTracker.tsx';
 import WeeklyMetrics from './scout/WeeklyMetrics.tsx';
 import FollowUps from './scout/FollowUps.tsx';
 
+const PHASE_LABELS: Record<string, string> = {
+  syncing: 'Syncing platforms...',
+  sweeping: 'Sweeping opportunities...',
+  loading: 'Loading report...',
+};
+
 export default function ScoutPanel() {
-  const { report, loading, refreshReport } = useScout();
+  const { report, loading, refreshing, refreshPhase, refreshReport } = useScout();
+
+  const busy = loading || refreshing;
 
   return (
     <div className="flex flex-col h-full">
@@ -19,16 +27,16 @@ export default function ScoutPanel() {
         <button
           type="button"
           onClick={() => refreshReport()}
-          disabled={loading}
+          disabled={busy}
           className="px-2.5 py-1 rounded-lg text-[10px] font-medium bg-soul/10 text-soul hover:bg-soul/20 transition-colors disabled:opacity-50 cursor-pointer"
         >
-          {loading ? 'Loading...' : 'Refresh'}
+          {refreshing ? (PHASE_LABELS[refreshPhase!] ?? 'Refreshing...') : loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {!report && !loading && (
+        {!report && !busy && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
             <span className="text-3xl text-fg-muted">&#9830;</span>
             <p className="text-xs text-fg-muted">
@@ -37,17 +45,24 @@ export default function ScoutPanel() {
           </div>
         )}
 
-        {loading && !report && (
+        {busy && !report && (
           <div className="flex items-center justify-center h-full">
             <div className="flex items-center gap-2 text-xs text-fg-muted">
               <span className="w-3 h-3 border-2 border-soul/40 border-t-soul rounded-full animate-spin" />
-              Fetching report...
+              {refreshPhase ? (PHASE_LABELS[refreshPhase] ?? 'Working...') : 'Fetching report...'}
             </div>
           </div>
         )}
 
         {report && (
           <div className="px-4 py-3 space-y-5">
+            {refreshing && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-soul/5 border border-soul/15 text-xs text-soul">
+                <span className="w-3 h-3 border-2 border-soul/40 border-t-soul rounded-full animate-spin shrink-0" />
+                {PHASE_LABELS[refreshPhase!] ?? 'Refreshing...'}
+              </div>
+            )}
+
             <SyncStatus
               platforms={report.sync.details}
               lastRun={report.sync.last_run}
