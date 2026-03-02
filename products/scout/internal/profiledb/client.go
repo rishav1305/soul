@@ -306,8 +306,10 @@ func fetchSupabaseTable(baseURL, anonKey, table string) ([]byte, error) {
 	endpoint := fmt.Sprintf("%s/rest/v1/%s?select=*", baseURL, table)
 
 	// Add ordering for tables that have it.
+	// PostgREST uses lowercase dot-separated: "start_date.desc"
 	if order, ok := tableOrder[table]; ok {
-		endpoint += "&order=" + strings.ReplaceAll(order, " ", ".")
+		pgrstOrder := strings.ToLower(strings.ReplaceAll(order, " ", "."))
+		endpoint += "&order=" + pgrstOrder
 	}
 
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
