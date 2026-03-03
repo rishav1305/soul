@@ -55,7 +55,33 @@ interface TaskDetailProps {
 export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [] }: TaskDetailProps) {
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync title draft when task prop changes (e.g., from WebSocket update).
+  useEffect(() => {
+    if (!editingTitle) setTitleDraft(task.title);
+  }, [task.title, editingTitle]);
+
+  // Focus title input when entering edit mode.
+  useEffect(() => {
+    if (editingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [editingTitle]);
+
+  const commitTitle = async () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== task.title) {
+      await onUpdate(task.id, { title: trimmed });
+    } else {
+      setTitleDraft(task.title);
+    }
+  };
 
   // Sync autonomous state when task prop changes (e.g., from WebSocket update).
   useEffect(() => {
@@ -115,7 +141,27 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
         <div className="px-6 py-4 border-b border-border-subtle shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h3 className="font-display text-lg font-semibold text-fg">{task.title}</h3>
+              {editingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitTitle();
+                    if (e.key === 'Escape') { setEditingTitle(false); setTitleDraft(task.title); }
+                  }}
+                  className="w-full font-display text-lg font-semibold text-fg bg-transparent border-b border-soul/60 outline-none pb-0.5"
+                />
+              ) : (
+                <h3
+                  className="font-display text-lg font-semibold text-fg cursor-text hover:text-fg/80 transition-colors"
+                  onClick={() => setEditingTitle(true)}
+                  title="Click to edit title"
+                >
+                  {task.title}
+                </h3>
+              )}
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-fg-muted font-mono text-xs">#{task.id}</span>
                 {/* Stage dropdown */}
@@ -210,14 +256,23 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-fg-muted hover:text-fg transition-colors cursor-pointer text-xl leading-none"
-              aria-label="Close"
-            >
-              &times;
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => onDelete(task.id)}
+                className="px-2.5 py-1 text-xs font-medium rounded-md bg-stage-blocked/15 hover:bg-stage-blocked/25 text-stage-blocked transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-fg-muted hover:text-fg transition-colors cursor-pointer text-xl leading-none"
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         </div>
 
@@ -310,18 +365,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
           )}
         </div>
 
-        {/* Actions */}
-        <div className="px-6 py-4 border-t border-border-subtle shrink-0">
-          <div className="flex items-center justify-end">
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-stage-blocked/15 hover:bg-stage-blocked/25 text-stage-blocked transition-colors cursor-pointer"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
+
       </div>
     </div>
   );
