@@ -111,6 +111,16 @@ export interface TaskActivity {
   time: string;
 }
 
+export interface TaskComment {
+  id: number;
+  task_id: number;
+  author: 'user' | 'soul';
+  type: 'feedback' | 'status' | 'verification' | 'error';
+  body: string;
+  attachments: string[];
+  created_at: string;
+}
+
 /* ── Scout types ────────────────────────────────────── */
 
 export interface ScoutReport {
