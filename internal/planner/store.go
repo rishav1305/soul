@@ -2,6 +2,7 @@ package planner
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -48,6 +49,16 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
     depends_on INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, depends_on)
 );
+CREATE TABLE IF NOT EXISTS task_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'feedback',
+    body TEXT NOT NULL,
+    attachments TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, created_at);
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL DEFAULT '',
@@ -375,4 +386,88 @@ func (s *Store) RemoveDependency(taskID, dependsOn int64) error {
 		return fmt.Errorf("remove dependency %d→%d: %w", taskID, dependsOn, err)
 	}
 	return nil
+}
+
+// CreateComment inserts a new comment and returns its auto-generated ID.
+func (s *Store) CreateComment(c Comment) (int64, error) {
+	att, err := json.Marshal(c.Attachments)
+	if err != nil {
+		return 0, fmt.Errorf("marshal attachments: %w", err)
+	}
+	res, err := s.db.Exec(`
+		INSERT INTO task_comments (task_id, author, type, body, attachments, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		c.TaskID, c.Author, c.Type, c.Body, string(att), c.CreatedAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert comment: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// ListComments returns all comments for a task, ordered by created_at ASC.
+func (s *Store) ListComments(taskID int64) ([]Comment, error) {
+	rows, err := s.db.Query(`
+		SELECT id, task_id, author, type, body, attachments, created_at
+		FROM task_comments
+		WHERE task_id = ?
+		ORDER BY created_at ASC`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list comments for task %d: %w", taskID, err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		var att string
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &att, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan comment: %w", err)
+		}
+		if err := json.Unmarshal([]byte(att), &c.Attachments); err != nil {
+			return nil, fmt.Errorf("unmarshal attachments: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
+}
+
+// MaxCommentID returns the highest comment ID, or 0 if the table is empty.
+func (s *Store) MaxCommentID() (int64, error) {
+	var id sql.NullInt64
+	err := s.db.QueryRow("SELECT MAX(id) FROM task_comments").Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("max comment id: %w", err)
+	}
+	if !id.Valid {
+		return 0, nil
+	}
+	return id.Int64, nil
+}
+
+// CommentsAfter returns user comments with id > afterID, ordered by id ASC.
+func (s *Store) CommentsAfter(afterID int64) ([]Comment, error) {
+	rows, err := s.db.Query(`
+		SELECT id, task_id, author, type, body, attachments, created_at
+		FROM task_comments
+		WHERE id > ? AND author = 'user'
+		ORDER BY id ASC`, afterID)
+	if err != nil {
+		return nil, fmt.Errorf("comments after %d: %w", afterID, err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		var att string
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &att, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan comment: %w", err)
+		}
+		if err := json.Unmarshal([]byte(att), &c.Attachments); err != nil {
+			return nil, fmt.Errorf("unmarshal attachments: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
 }

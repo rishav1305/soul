@@ -167,3 +167,14 @@ type TaskUpdate struct {
 	StartedAt   *string  `json:"started_at,omitempty"`
 	CompletedAt *string  `json:"completed_at,omitempty"`
 }
+
+// Comment represents a comment on a task.
+type Comment struct {
+	ID          int64    `json:"id"`
+	TaskID      int64    `json:"task_id"`
+	Author      string   `json:"author"`      // "user" or "soul"
+	Type        string   `json:"type"`         // "feedback", "status", "verification", "error"
+	Body        string   `json:"body"`
+	Attachments []string `json:"attachments"`  // MinIO keys
+	CreatedAt   string   `json:"created_at"`
+}
