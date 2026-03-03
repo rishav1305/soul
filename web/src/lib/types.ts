@@ -62,7 +62,7 @@ export interface PlannerTask {
 /* ── Layout types ────────────────────────────────────── */
 
 export type PanelState = 'rail' | 'open';
-export type TaskView = 'list' | 'kanban' | 'grid';
+export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
 export type GridSubView = 'grid' | 'table' | 'grouped';
 
 export interface TaskFilters {

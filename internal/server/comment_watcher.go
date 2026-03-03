@@ -135,24 +135,29 @@ func (cw *CommentWatcher) handleComment(ctx context.Context, task planner.Task, 
 	cw.postReply(comment.TaskID, "status", response)
 
 	// Commit changes in the worktree and merge to dev (same as autonomous pipeline).
+	merged := false
 	if cw.worktrees != nil && taskRoot != cw.projectRoot {
-		cw.postReply(comment.TaskID, "status", "Committing changes...")
-		if err := cw.worktrees.CommitInWorktree(comment.TaskID, task.Title); err != nil {
-			log.Printf("[comment-watcher] commit failed for task %d: %v", comment.TaskID, err)
-			cw.postReply(comment.TaskID, "status", fmt.Sprintf("Commit warning: %v", err))
+		commitErr := cw.worktrees.CommitInWorktree(comment.TaskID, task.Title)
+		if commitErr == ErrNothingToCommit {
+			log.Printf("[comment-watcher] task %d: agent made no file changes", comment.TaskID)
+			cw.postReply(comment.TaskID, "status", "No file changes were made by the agent.")
+		} else if commitErr != nil {
+			log.Printf("[comment-watcher] commit failed for task %d: %v", comment.TaskID, commitErr)
+			cw.postReply(comment.TaskID, "status", fmt.Sprintf("Commit warning: %v", commitErr))
 		} else {
-			cw.postReply(comment.TaskID, "status", "Merging to dev branch...")
+			cw.postReply(comment.TaskID, "status", "Changes committed — merging to dev branch...")
 			if err := cw.worktrees.MergeToDev(comment.TaskID, task.Title); err != nil {
 				log.Printf("[comment-watcher] merge to dev failed for task %d: %v", comment.TaskID, err)
 				cw.postReply(comment.TaskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
 			} else {
 				log.Printf("[comment-watcher] merged feedback changes for task %d to dev", comment.TaskID)
+				merged = true
 			}
 		}
 	}
 
-	// Rebuild dev frontend after merge.
-	if cw.server != nil {
+	// Rebuild dev frontend only if we actually merged changes.
+	if merged && cw.server != nil {
 		if err := cw.server.RebuildDevFrontend(); err != nil {
 			log.Printf("[comment-watcher] dev rebuild failed: %v", err)
 		} else {

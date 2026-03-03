@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
 import type { PlannerTask, TaskStage, TaskActivity, TaskComment, WSMessage } from '../lib/types.ts';
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 )
+
+// ErrNothingToCommit is returned when CommitInWorktree finds no changes to commit.
+var ErrNothingToCommit = errors.New("nothing to commit")
 
 // WorktreeManager manages git worktrees for isolated task execution.
 type WorktreeManager struct {
@@ -168,7 +172,7 @@ func (wm *WorktreeManager) CommitInWorktree(taskID int64, title string) error {
 	cmd.Dir = wtPath
 	if err := cmd.Run(); err == nil {
 		log.Printf("[worktree] task %d: nothing to commit", taskID)
-		return nil // nothing staged
+		return ErrNothingToCommit
 	}
 
 	// Commit.
