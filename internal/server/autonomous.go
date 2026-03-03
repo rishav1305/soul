@@ -201,6 +201,46 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		}
 	}
 
+	// Run E2E verification.
+	if tp.server != nil {
+		tp.sendActivity(taskID, "status", "Running E2E verification...")
+		vResult := tp.verifyTask(ctx, task)
+		if vResult != nil {
+			// Post verification comment.
+			var body strings.Builder
+			if vResult.Passed {
+				body.WriteString("**E2E Verification: PASSED**\n\n")
+			} else {
+				body.WriteString("**E2E Verification: FAILED**\n\n")
+			}
+			for _, check := range vResult.Checks {
+				if check.Passed {
+					fmt.Fprintf(&body, "- %s: PASS — %s\n", check.Name, check.Detail)
+				} else {
+					fmt.Fprintf(&body, "- %s: FAIL — %s\n", check.Name, check.Detail)
+				}
+			}
+
+			verComment := planner.Comment{
+				TaskID:      taskID,
+				Author:      "soul",
+				Type:        "verification",
+				Body:        body.String(),
+				Attachments: vResult.Screenshots,
+				CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+			}
+			if id, err := tp.planner.CreateComment(verComment); err == nil {
+				verComment.ID = id
+				raw, _ := json.Marshal(verComment)
+				tp.broadcast(WSMessage{Type: "task.comment.added", Data: raw})
+			}
+
+			if !vResult.Passed {
+				tp.sendActivity(taskID, "status", "E2E verification failed — staying in active stage")
+			}
+		}
+	}
+
 	// Re-read the task to see what stage the agent left it in.
 	// The agent may have moved it to blocked, done, etc. via task_update.
 	// Only advance to validation if the agent left it in active.

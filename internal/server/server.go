@@ -39,6 +39,7 @@ type Server struct {
 	projectRoot    string           // working directory for code tools
 	worktrees      *WorktreeManager // manages per-task git worktrees
 	webFS          fs.FS            // embedded SPA files (nil = use placeholder)
+	minioClient    *MinIOClient     // optional MinIO client for screenshots/attachments
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -68,6 +69,16 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 	}
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Try to initialize MinIO client.
+	if minioCfg, err := LoadMinIOConfig(); err == nil {
+		if mc, err := NewMinIOClient(minioCfg); err == nil {
+			s.minioClient = mc
+			log.Println("MinIO client initialized")
+		} else {
+			log.Printf("WARNING: MinIO client init failed: %v", err)
+		}
+	}
 
 	// Start the comment watcher.
 	cw := NewCommentWatcher(s)
@@ -111,6 +122,16 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 	}
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Try to initialize MinIO client.
+	if minioCfg, err := LoadMinIOConfig(); err == nil {
+		if mc, err := NewMinIOClient(minioCfg); err == nil {
+			s.minioClient = mc
+			log.Println("MinIO client initialized")
+		} else {
+			log.Printf("WARNING: MinIO client init failed: %v", err)
+		}
+	}
 
 	// Start the comment watcher.
 	cw := NewCommentWatcher(s)
