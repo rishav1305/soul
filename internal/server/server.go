@@ -34,10 +34,11 @@ type Server struct {
 	products    *products.Manager
 	ai          *ai.Client
 	planner     *planner.Store
-	processor   *TaskProcessor
-	projectRoot string           // working directory for code tools
-	worktrees   *WorktreeManager // manages per-task git worktrees
-	webFS       fs.FS            // embedded SPA files (nil = use placeholder)
+	processor      *TaskProcessor
+	commentWatcher *CommentWatcher
+	projectRoot    string           // working directory for code tools
+	worktrees      *WorktreeManager // manages per-task git worktrees
+	webFS          fs.FS            // embedded SPA files (nil = use placeholder)
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -67,6 +68,12 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 	}
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Start the comment watcher.
+	cw := NewCommentWatcher(s)
+	cw.Start(context.Background())
+	s.commentWatcher = cw
+
 	return s
 }
 
@@ -104,6 +111,12 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 	}
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Start the comment watcher.
+	cw := NewCommentWatcher(s)
+	cw.Start(context.Background())
+	s.commentWatcher = cw
+
 	return s
 }
 
