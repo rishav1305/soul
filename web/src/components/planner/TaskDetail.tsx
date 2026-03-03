@@ -256,11 +256,11 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => onDelete(task.id)}
-                className="flex items-center justify-center w-7 h-7 rounded bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer text-sm leading-none"
+                className="flex items-center justify-center w-9 h-9 rounded bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer text-base leading-none"
                 aria-label="Delete task"
                 title="Delete task"
               >
@@ -269,7 +269,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
               <button
                 type="button"
                 onClick={onClose}
-                className="text-fg-muted hover:text-fg transition-colors cursor-pointer text-xl leading-none"
+                className="flex items-center justify-center w-9 h-9 rounded bg-elevated hover:bg-overlay text-fg-muted hover:text-fg transition-colors cursor-pointer text-lg leading-none"
                 aria-label="Close"
               >
                 &times;
