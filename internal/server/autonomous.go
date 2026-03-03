@@ -189,6 +189,20 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", commitErr))
 		} else {
 			hasChanges = true
+
+			// Post-commit diff review: check for unintended large deletions.
+			if warnings := tp.worktrees.ReviewCommitDiff(taskID); len(warnings) > 0 {
+				var body strings.Builder
+				body.WriteString("**Post-commit review: potential unintended deletions**\n\n")
+				for _, w := range warnings {
+					fmt.Fprintf(&body, "- `%s`: +%d/-%d (net -%d lines removed)\n",
+						w.File, w.LinesAdded, w.LinesRemoved, w.LinesRemoved-w.LinesAdded)
+				}
+				body.WriteString("\nLarge net deletions may indicate the agent accidentally dropped existing code. Please review these files carefully during validation.")
+				tp.postVerificationComment(taskID, body.String())
+				tp.sendActivity(taskID, "status", fmt.Sprintf("Warning: %d file(s) have large net deletions — review recommended", len(warnings)))
+				log.Printf("[autonomous] task %d: diff review flagged %d files with large deletions", taskID, len(warnings))
+			}
 		}
 
 		if hasChanges {
@@ -361,7 +375,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		b.WriteString("### Step 2: Write Tests\n")
 		b.WriteString("If test files exist for the affected area, write failing tests first (TDD). Use `code_exec` to run them and confirm they fail.\n\n")
 		b.WriteString("### Step 3: Implement\n")
-		b.WriteString("Make the minimal changes needed. Use `code_edit` for surgical changes, `code_write` only for new files.\n\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for ALL modifications to existing files. Only use `code_write` for brand-new files.\n\n")
 		b.WriteString("### Step 4: Build & Verify\n")
 		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes. Run tests with `code_exec`.\n\n")
 		b.WriteString("### Step 5: Security Review\n")
@@ -376,7 +390,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		b.WriteString("### Step 1: Search & Understand\n")
 		b.WriteString("Use `code_search` and `code_grep` to find relevant files. Use `code_read` to understand the code.\n\n")
 		b.WriteString("### Step 2: Implement\n")
-		b.WriteString("Make the minimal changes needed. Use `code_edit` for modifications, `code_write` for new files.\n\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for ALL modifications to existing files. Only use `code_write` for brand-new files.\n\n")
 		b.WriteString("### Step 3: Build & Verify\n")
 		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes.\n\n")
 		b.WriteString("### Step 4: Summary\n")
@@ -389,6 +403,15 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 	b.WriteString("- Be precise. Make minimal changes. Do not refactor unrelated code.\n")
 	b.WriteString("- Do NOT run git commands — the system handles commits and merges automatically.\n")
 	b.WriteString("- All file paths are relative to the project root shown above.\n")
+	b.WriteString("\n## CRITICAL: Preserving Existing Code\n")
+	b.WriteString("- NEVER use `code_write` on existing files. ALWAYS use `code_edit` for modifications.\n")
+	b.WriteString("- `code_write` is ONLY for creating brand-new files that don't exist yet.\n")
+	b.WriteString("- When editing a file, preserve ALL existing functionality not mentioned in the task:\n")
+	b.WriteString("  - Do not remove imports unrelated to your changes.\n")
+	b.WriteString("  - Do not remove props, state variables, effects, or handlers unrelated to your task.\n")
+	b.WriteString("  - Do not remove UI sections (comment threads, activity feeds, etc.) unrelated to your task.\n")
+	b.WriteString("- Make multiple small `code_edit` calls instead of one large replacement.\n")
+	b.WriteString("- If you need to restructure a section, ensure your new_string includes ALL existing code from old_string that is unrelated to your task.\n")
 
 	return b.String()
 }
