@@ -1,0 +1,14 @@
+services:
+  titan-minio:
+    image: minio/minio
+    container_name: titan-minio
+    command: server /data --console-address ":9101"
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9101"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - /mnt/vault/minio-data:/data
+    restart: unless-stopped
