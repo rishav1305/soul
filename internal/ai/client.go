@@ -121,6 +121,74 @@ func (c *Client) SendStream(ctx context.Context, req Request) (io.ReadCloser, er
 	return resp.Body, nil
 }
 
+// CompleteSimple makes a non-streaming API call and returns the text response.
+// Useful for quick, lightweight tasks like verification where streaming isn't needed.
+func (c *Client) CompleteSimple(ctx context.Context, model, prompt string) (string, error) {
+	if model == "" {
+		model = c.model
+	}
+
+	apiReq := Request{
+		Model:     model,
+		MaxTokens: 1024,
+		Messages: []Message{
+			{Role: "user", Content: prompt},
+		},
+		Stream: false,
+	}
+
+	body, err := json.Marshal(apiReq)
+	if err != nil {
+		return "", fmt.Errorf("ai: failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, claudeAPIURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("ai: failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+
+	if err := c.setAuthHeader(httpReq); err != nil {
+		return "", err
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("ai: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("ai: failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ai: API returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse the Messages API response to extract text content.
+	var apiResp struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return "", fmt.Errorf("ai: failed to parse response: %w", err)
+	}
+
+	var result string
+	for _, block := range apiResp.Content {
+		if block.Type == "text" {
+			result += block.Text
+		}
+	}
+	return result, nil
+}
+
 func (c *Client) setAuthHeader(req *http.Request) error {
 	switch c.authMode {
 	case AuthOAuth:

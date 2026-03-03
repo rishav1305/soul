@@ -134,12 +134,29 @@ func (cw *CommentWatcher) handleComment(ctx context.Context, task planner.Task, 
 	}
 	cw.postReply(comment.TaskID, "status", response)
 
-	// Rebuild dev frontend if the agent made changes.
+	// Commit changes in the worktree and merge to dev (same as autonomous pipeline).
+	if cw.worktrees != nil && taskRoot != cw.projectRoot {
+		cw.postReply(comment.TaskID, "status", "Committing changes...")
+		if err := cw.worktrees.CommitInWorktree(comment.TaskID, task.Title); err != nil {
+			log.Printf("[comment-watcher] commit failed for task %d: %v", comment.TaskID, err)
+			cw.postReply(comment.TaskID, "status", fmt.Sprintf("Commit warning: %v", err))
+		} else {
+			cw.postReply(comment.TaskID, "status", "Merging to dev branch...")
+			if err := cw.worktrees.MergeToDev(comment.TaskID, task.Title); err != nil {
+				log.Printf("[comment-watcher] merge to dev failed for task %d: %v", comment.TaskID, err)
+				cw.postReply(comment.TaskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
+			} else {
+				log.Printf("[comment-watcher] merged feedback changes for task %d to dev", comment.TaskID)
+			}
+		}
+	}
+
+	// Rebuild dev frontend after merge.
 	if cw.server != nil {
 		if err := cw.server.RebuildDevFrontend(); err != nil {
 			log.Printf("[comment-watcher] dev rebuild failed: %v", err)
 		} else {
-			cw.postReply(comment.TaskID, "status", "Dev frontend rebuilt — check the dev server for updates.")
+			cw.postReply(comment.TaskID, "status", "Changes committed, merged to dev, and frontend rebuilt — check the dev server.")
 		}
 	}
 }
