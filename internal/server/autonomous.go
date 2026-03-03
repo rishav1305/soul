@@ -17,6 +17,7 @@ import (
 
 // TaskProcessor handles autonomous task execution in the background.
 type TaskProcessor struct {
+	server      *Server
 	ai          *ai.Client
 	products    *products.Manager
 	sessions    *session.Store
@@ -31,8 +32,9 @@ type TaskProcessor struct {
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
+func NewTaskProcessor(srv *Server, aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
 	return &TaskProcessor{
+		server:      srv,
 		ai:          aiClient,
 		products:    pm,
 		sessions:    sessions,
@@ -187,7 +189,15 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
 			tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
 		} else {
-			tp.sendActivity(taskID, "status", "Changes merged to dev — visible on dev server")
+			tp.sendActivity(taskID, "status", "Changes merged to dev — rebuilding frontend...")
+			if tp.server != nil {
+				if err := tp.server.RebuildDevFrontend(); err != nil {
+					log.Printf("[autonomous] dev frontend rebuild failed for task %d: %v", taskID, err)
+					tp.sendActivity(taskID, "status", fmt.Sprintf("Dev rebuild warning: %v", err))
+				} else {
+					tp.sendActivity(taskID, "status", "Dev frontend rebuilt — changes visible on dev server")
+				}
+			}
 		}
 	}
 

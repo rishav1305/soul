@@ -65,7 +65,7 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 		worktrees:   wm,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 	return s
 }
@@ -102,7 +102,7 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		webFS:       webFS,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 	return s
 }
@@ -173,6 +173,31 @@ func (s *Server) StartDevServer(devPort int) {
 			log.Printf("[dev-server] error: %v", err)
 		}
 	}()
+}
+
+// RebuildDevFrontend runs vite build in the dev server worktree,
+// updating the dev server's SPA files. Since the dev server serves
+// from disk (not embed), the new build takes effect immediately.
+func (s *Server) RebuildDevFrontend() error {
+	devWeb := filepath.Join(s.projectRoot, ".worktrees", "dev-server", "web")
+
+	// Ensure node_modules symlink exists.
+	devNodeModules := filepath.Join(devWeb, "node_modules")
+	mainNodeModules := filepath.Join(s.projectRoot, "web", "node_modules")
+	if _, err := os.Lstat(devNodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, devNodeModules); err != nil {
+			return fmt.Errorf("symlink node_modules: %w", err)
+		}
+	}
+
+	cmd := exec.Command("npx", "vite", "build")
+	cmd.Dir = devWeb
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("vite build failed: %w\n%s", err, out)
+	}
+	log.Printf("[dev-server] frontend rebuilt successfully")
+	return nil
 }
 
 // registerWSClient adds a WebSocket connection to the tracked clients map.
