@@ -200,7 +200,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                   <option value="" className="bg-surface text-fg">No product</option>
                   {productOptions.map((p) => (
                     <option key={p} value={p} className="bg-surface text-fg">
-                      {p}
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
                     </option>
                   ))}
                 </select>
