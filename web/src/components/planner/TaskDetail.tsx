@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
-import { ValidTransitions } from './transitions.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -26,21 +25,14 @@ const STAGE_COLORS: Record<TaskStage, string> = {
   done: 'bg-stage-done/15 text-stage-done',
 };
 
-const TRANSITION_BUTTON_COLORS: Record<TaskStage, string> = {
-  backlog: 'bg-stage-backlog/20 hover:bg-stage-backlog/30 text-stage-backlog',
-  brainstorm: 'bg-stage-brainstorm/20 hover:bg-stage-brainstorm/30 text-stage-brainstorm',
-  active: 'bg-stage-active/20 hover:bg-stage-active/30 text-stage-active',
-  blocked: 'bg-stage-blocked/20 hover:bg-stage-blocked/30 text-stage-blocked',
-  validation: 'bg-stage-validation/20 hover:bg-stage-validation/30 text-stage-validation',
-  done: 'bg-stage-done/20 hover:bg-stage-done/30 text-stage-done',
-};
+const ALL_STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
-const PRIORITY_LABELS: Record<number, string> = {
-  0: 'Low',
-  1: 'Normal',
-  2: 'High',
-  3: 'Critical',
-};
+const PRIORITY_OPTIONS = [
+  { value: 0, label: 'Low' },
+  { value: 1, label: 'Normal' },
+  { value: 2, label: 'High' },
+  { value: 3, label: 'Critical' },
+];
 
 const PRIORITY_COLORS: Record<number, string> = {
   0: 'text-priority-low',
@@ -57,15 +49,12 @@ interface TaskDetailProps {
   onDelete: (id: number) => Promise<void>;
   activities?: TaskActivity[];
   streamContent?: string;
+  products?: string[];
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '' }: TaskDetailProps) {
-  const transitions = ValidTransitions[task.stage];
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [] }: TaskDetailProps) {
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
-  const [editingProduct, setEditingProduct] = useState(false);
-  const [productValue, setProductValue] = useState(task.product || '');
-  const productInputRef = useRef<HTMLInputElement>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
 
   // Sync autonomous state when task prop changes (e.g., from WebSocket update).
@@ -73,12 +62,6 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
     const m = parseMetadata(task.metadata);
     setAutonomous(!!m.autonomous);
   }, [task.metadata]);
-
-  useEffect(() => {
-    if (editingProduct && productInputRef.current) {
-      productInputRef.current.focus();
-    }
-  }, [editingProduct]);
 
   // Auto-scroll the stream output as new content arrives.
   useEffect(() => {
@@ -94,16 +77,36 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
     await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
   };
 
-  const saveProduct = async () => {
-    const trimmed = productValue.trim();
-    if (trimmed !== task.product) {
-      await onUpdate(task.id, { product: trimmed });
+  const handleStageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStage = e.target.value as TaskStage;
+    if (newStage !== task.stage) {
+      await onMove(task.id, newStage, '');
     }
-    setEditingProduct(false);
+  };
+
+  const handlePriorityChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPriority = Number(e.target.value);
+    if (newPriority !== task.priority) {
+      await onUpdate(task.id, { priority: newPriority });
+    }
+  };
+
+  const handleProductChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val !== task.product) {
+      await onUpdate(task.id, { product: val });
+    }
   };
 
   const isProcessing = autonomous && streamContent.length > 0;
   const hasActivities = activities.length > 0;
+
+  // Build product options: existing products list + current task product (if not in list)
+  const productOptions = products.includes(task.product ?? '')
+    ? products
+    : task.product
+    ? [task.product, ...products]
+    : products;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -113,35 +116,48 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h3 className="font-display text-lg font-semibold text-fg">{task.title}</h3>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-fg-muted font-mono text-xs">#{task.id}</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STAGE_COLORS[task.stage]}`}>
-                  {STAGE_LABELS[task.stage]}
-                </span>
-                <span className={`text-xs font-medium ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}>
-                  {PRIORITY_LABELS[task.priority] ?? 'Unknown'} priority
-                </span>
-                {/* Editable product badge */}
-                {editingProduct ? (
-                  <input
-                    ref={productInputRef}
-                    type="text"
-                    value={productValue}
-                    onChange={(e) => setProductValue(e.target.value)}
-                    onBlur={saveProduct}
-                    onKeyDown={(e) => { if (e.key === 'Enter') saveProduct(); if (e.key === 'Escape') setEditingProduct(false); }}
-                    placeholder="product"
-                    className="px-2 py-0.5 rounded text-xs bg-elevated border border-soul/50 text-fg outline-none w-24"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingProduct(true)}
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${task.product ? 'bg-overlay text-fg-secondary hover:bg-elevated' : 'border border-dashed border-border-default text-fg-muted hover:border-fg-muted'}`}
-                  >
-                    {task.product || '+ Product'}
-                  </button>
-                )}
+                {/* Stage dropdown */}
+                <select
+                  value={task.stage}
+                  onChange={handleStageChange}
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer border-0 outline-none appearance-none ${STAGE_COLORS[task.stage]} bg-transparent`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  {ALL_STAGES.map((s) => (
+                    <option key={s} value={s} className="bg-surface text-fg">
+                      {STAGE_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                {/* Priority dropdown */}
+                <select
+                  value={task.priority}
+                  onChange={handlePriorityChange}
+                  className={`text-xs font-medium cursor-pointer border-0 outline-none appearance-none bg-transparent ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-surface text-fg">
+                      {opt.label} priority
+                    </option>
+                  ))}
+                </select>
+                {/* Product dropdown */}
+                <select
+                  value={task.product ?? ''}
+                  onChange={handleProductChange}
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer border-0 outline-none appearance-none ${task.product ? 'bg-overlay text-fg-secondary' : 'text-fg-muted'} bg-transparent`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  <option value="" className="bg-surface text-fg">No product</option>
+                  {productOptions.map((p) => (
+                    <option key={p} value={p} className="bg-surface text-fg">
+                      {p}
+                    </option>
+                  ))}
+                </select>
                 {/* Branch info for active/validation tasks */}
                 {(task.stage === 'active' || task.stage === 'validation') && task.agent_id?.startsWith('auto-') && (
                   <span className="text-[10px] text-fg-muted font-mono">
@@ -296,18 +312,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
 
         {/* Actions */}
         <div className="px-6 py-4 border-t border-border-subtle shrink-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {transitions.map((targetStage) => (
-              <button
-                key={targetStage}
-                type="button"
-                onClick={() => onMove(task.id, targetStage, '')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${TRANSITION_BUTTON_COLORS[targetStage]}`}
-              >
-                Move to {STAGE_LABELS[targetStage]}
-              </button>
-            ))}
-            <div className="flex-1" />
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={() => onDelete(task.id)}

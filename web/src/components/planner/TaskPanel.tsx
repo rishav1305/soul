@@ -283,6 +283,7 @@ export default function TaskPanel({
           onDelete={handleDelete}
           activities={taskActivities[selectedTask.id] || []}
           streamContent={taskStreams[selectedTask.id] || ''}
+          products={products}
         />
       )}
 
