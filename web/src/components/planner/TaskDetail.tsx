@@ -260,9 +260,11 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
               <button
                 type="button"
                 onClick={() => onDelete(task.id)}
-                className="px-2.5 py-1 text-xs font-medium rounded-md bg-stage-blocked/15 hover:bg-stage-blocked/25 text-stage-blocked transition-colors cursor-pointer"
+                className="text-fg-muted hover:text-stage-blocked transition-colors cursor-pointer text-lg leading-none"
+                aria-label="Delete task"
+                title="Delete task"
               >
-                Delete
+                🗑
               </button>
               <button
                 type="button"
