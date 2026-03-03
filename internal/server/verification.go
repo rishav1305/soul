@@ -35,14 +35,27 @@ func (tp *TaskProcessor) verifyTask(ctx context.Context, task planner.Task) *Ver
 	result := &VerificationResult{Passed: true}
 	devURL := fmt.Sprintf("http://localhost:%d", tp.server.cfg.Port+1)
 
-	// Try to launch Rod browser.
-	u, err := launcher.ResolveURL("")
+	// Find system Chromium/Chrome binary.
+	browserPath, found := launcher.LookPath()
+	if !found {
+		log.Printf("[verify] no browser binary found — skipping verification")
+		return nil
+	}
+	log.Printf("[verify] using browser: %s", browserPath)
+
+	// Launch a headless browser for verification.
+	l, err := launcher.New().Bin(browserPath).
+		Headless(true).
+		Set("no-sandbox").
+		Set("disable-gpu").
+		Set("disable-dev-shm-usage").
+		Launch()
 	if err != nil {
-		log.Printf("[verify] no browser available: %v — skipping verification", err)
+		log.Printf("[verify] failed to launch browser: %v — skipping verification", err)
 		return nil
 	}
 
-	browser := rod.New().ControlURL(u)
+	browser := rod.New().ControlURL(l)
 	if err := browser.Connect(); err != nil {
 		log.Printf("[verify] failed to connect to browser: %v — skipping verification", err)
 		return nil
