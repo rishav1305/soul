@@ -34,9 +34,9 @@ export default function AppShell() {
     });
   }, [planner.tasks, layout.filters]);
 
-  // Derive unique products
+  // Derive unique products — always include Soul + products/ dir names, plus any on tasks
   const products = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(['Soul', 'compliance', 'compliance-go']);
     for (const t of planner.tasks) {
       if (t.product) set.add(t.product);
     }
