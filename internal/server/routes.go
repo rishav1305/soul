@@ -33,6 +33,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/tasks/{id}/comments", s.handleCommentCreate)
 	s.mux.HandleFunc("GET /api/tasks/{id}/comments", s.handleCommentList)
 
+	// Attachment proxy — redirects to MinIO pre-signed URL.
+	s.mux.HandleFunc("GET /api/attachments/", s.handleAttachment)
+
 	// Chat session endpoints.
 	s.mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionList)

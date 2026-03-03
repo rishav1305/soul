@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rishav1305/soul/internal/planner"
@@ -397,4 +398,26 @@ func (s *Server) handleCommentList(w http.ResponseWriter, r *http.Request) {
 		comments = []planner.Comment{}
 	}
 	writeJSON(w, http.StatusOK, comments)
+}
+
+// handleAttachment proxies attachment requests to MinIO via pre-signed URL.
+func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
+	if s.minioClient == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "attachments not configured"})
+		return
+	}
+
+	key := strings.TrimPrefix(r.URL.Path, "/api/attachments/")
+	if key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing attachment key"})
+		return
+	}
+
+	url, err := s.minioClient.PresignedURL(r.Context(), key)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to get attachment URL: %v", err)})
+		return
+	}
+
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
