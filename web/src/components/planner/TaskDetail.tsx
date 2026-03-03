@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
 import { ValidTransitions } from './transitions.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
@@ -57,9 +57,12 @@ interface TaskDetailProps {
   onDelete: (id: number) => Promise<void>;
   activities?: TaskActivity[];
   streamContent?: string;
+  comments?: TaskComment[];
+  onFetchComments?: (id: number) => Promise<any>;
+  onAddComment?: (id: number, body: string) => Promise<TaskComment>;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '' }: TaskDetailProps) {
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
   const transitions = ValidTransitions[task.stage];
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
@@ -67,6 +70,9 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
   const [productValue, setProductValue] = useState(task.product || '');
   const productInputRef = useRef<HTMLInputElement>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
 
   // Sync autonomous state when task prop changes (e.g., from WebSocket update).
   useEffect(() => {
@@ -87,6 +93,16 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
     }
   }, [streamContent]);
 
+  useEffect(() => {
+    if (onFetchComments) {
+      onFetchComments(task.id);
+    }
+  }, [task.id, onFetchComments]);
+
+  useEffect(() => {
+    commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [comments]);
+
   const toggleAutonomous = async () => {
     const next = !autonomous;
     setAutonomous(next);
@@ -100,6 +116,19 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
       await onUpdate(task.id, { product: trimmed });
     }
     setEditingProduct(false);
+  };
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim() || !onAddComment) return;
+    setSubmitting(true);
+    try {
+      await onAddComment(task.id, commentText.trim());
+      setCommentText('');
+    } catch (err) {
+      console.error('Failed to add comment:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const isProcessing = autonomous && streamContent.length > 0;
@@ -292,6 +321,73 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
               <p className="text-sm text-stage-blocked whitespace-pre-wrap">{task.blocker}</p>
             </Section>
           )}
+
+          {/* Comment Thread */}
+          <div className="border-t border-zinc-700/50 pt-4 mt-4">
+            <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+              Comments
+            </h3>
+
+            <div className="space-y-3 max-h-64 overflow-y-auto mb-3">
+              {(comments || []).map((c) => (
+                <div
+                  key={c.id}
+                  className={`rounded-lg p-3 text-sm ${
+                    c.author === 'user'
+                      ? 'bg-blue-500/10 border border-blue-500/20'
+                      : c.type === 'error'
+                        ? 'bg-red-500/10 border border-red-500/20'
+                        : c.type === 'verification'
+                          ? 'bg-emerald-500/10 border border-emerald-500/20'
+                          : 'bg-zinc-700/30 border border-zinc-600/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-medium ${
+                      c.author === 'user' ? 'text-blue-400' : 'text-zinc-400'
+                    }`}>
+                      {c.author === 'user' ? 'You' : 'Soul'}
+                    </span>
+                    <span className="text-xs text-zinc-500">
+                      {new Date(c.created_at).toLocaleTimeString()}
+                    </span>
+                    {c.type !== 'feedback' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-600/50 text-zinc-400">
+                        {c.type}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-zinc-300 whitespace-pre-wrap">{c.body}</p>
+                </div>
+              ))}
+              <div ref={commentsEndRef} />
+            </div>
+
+            {/* Comment input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
+                placeholder="Post feedback..."
+                className="flex-1 bg-zinc-800 border border-zinc-600/50 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+                disabled={submitting}
+              />
+              <button
+                onClick={handleSubmitComment}
+                disabled={submitting || !commentText.trim()}
+                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {submitting ? '...' : 'Send'}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Actions */}

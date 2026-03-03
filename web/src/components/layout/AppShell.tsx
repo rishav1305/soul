@@ -3,7 +3,7 @@ import { useLayoutStore, autoWidth } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import { useWebSocket } from '../../hooks/useWebSocket.ts';
-import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
 import SoulRail from './SoulRail.tsx';
 import SoulPanel from './SoulPanel.tsx';
 import ChatRail from './ChatRail.tsx';
@@ -193,6 +193,9 @@ export default function AppShell() {
               deleteTask={planner.deleteTask}
               taskActivities={planner.taskActivities}
               taskStreams={planner.taskStreams}
+              taskComments={planner.taskComments}
+              fetchComments={planner.fetchComments}
+              addComment={planner.addComment}
             />
           )}
         </div>
