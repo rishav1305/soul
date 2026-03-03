@@ -6,11 +6,7 @@ interface ChatNavbarProps {
 export default function ChatNavbar({ onCollapse, canCollapse }: ChatNavbarProps) {
   return (
     <div className="glass flex items-center gap-2 h-11 px-4 shrink-0">
-      <span className="font-display text-sm font-semibold text-fg flex items-center gap-2">
-        <span className="relative">
-          <span className="absolute inset-0 -m-1 bg-soul/15 rounded-full blur-md animate-soul-pulse" />
-          <span className="relative text-xl text-soul">&#9670;</span>
-        </span>
+      <span className="font-display text-base font-semibold text-fg">
         Chat
       </span>
 

@@ -3,7 +3,7 @@ import { useLayoutStore, autoWidth } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import { useWebSocket } from '../../hooks/useWebSocket.ts';
-import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
 import SoulRail from './SoulRail.tsx';
 import SoulPanel from './SoulPanel.tsx';
 import ChatRail from './ChatRail.tsx';
@@ -11,6 +11,7 @@ import TaskRail from './TaskRail.tsx';
 import ResizeDivider from './ResizeDivider.tsx';
 import ChatPanel from '../chat/ChatPanel.tsx';
 import TaskPanel from '../planner/TaskPanel.tsx';
+import ScoutPanel from '../panels/ScoutPanel.tsx';
 
 function emptyByStage(): Record<TaskStage, PlannerTask[]> {
   return { backlog: [], brainstorm: [], active: [], blocked: [], validation: [], done: [] };
@@ -23,6 +24,14 @@ export default function AppShell() {
   const { connected } = useWebSocket();
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [scoutOpen, setScoutOpen] = useState(false);
+
+  const handleScoutToggle = useCallback(() => {
+    setScoutOpen((prev) => {
+      if (!prev) layout.setTaskState('open');
+      return !prev;
+    });
+  }, [layout.setTaskState]);
 
   // Derive filtered tasks
   const filteredTasks = useMemo(() => {
@@ -108,7 +117,7 @@ export default function AppShell() {
     <div className="h-screen bg-deep text-fg font-body noise flex overflow-hidden">
       {/* Soul: rail or panel */}
       {layout.soulState === 'rail' ? (
-        <SoulRail onExpand={handleSoulExpand} />
+        <SoulRail onExpand={handleSoulExpand} scoutOpen={scoutOpen} onScoutToggle={handleScoutToggle} />
       ) : (
         <SoulPanel
           onCollapse={handleSoulCollapse}
@@ -117,6 +126,8 @@ export default function AppShell() {
           onSessionSelect={switchSession}
           onNewChat={createSession}
           connected={connected}
+          scoutOpen={scoutOpen}
+          onScoutToggle={handleScoutToggle}
         />
       )}
 
@@ -141,7 +152,7 @@ export default function AppShell() {
       {/* Resize divider — only when both panels open */}
       {bothOpen && <ResizeDivider onResize={handleResize} />}
 
-      {/* Task: rail or panel */}
+      {/* Task / Scout: rail or panel */}
       {layout.taskState === 'rail' ? (
         <TaskRail
           tasksByStage={allByStage}
@@ -157,29 +168,36 @@ export default function AppShell() {
             width: bothOpen ? `${taskPercent}%` : 'calc(100% - 40px)',
           }}
         >
-          <TaskPanel
-            taskView={layout.taskView}
-            gridSubView={layout.gridSubView}
-            panelWidth={layout.panelWidth}
-            filters={layout.filters}
-            setTaskView={layout.setTaskView}
-            setGridSubView={layout.setGridSubView}
-            setPanelWidth={layout.setPanelWidth}
-            setFilters={layout.setFilters}
-            canCollapse={layout.canCollapse('task')}
-            onCollapse={handleTaskCollapse}
-            tasks={planner.tasks}
-            filteredTasks={filteredTasks}
-            tasksByStage={filteredByStage}
-            products={products}
-            loading={planner.loading}
-            createTask={planner.createTask}
-            updateTask={planner.updateTask}
-            moveTask={planner.moveTask}
-            deleteTask={planner.deleteTask}
-            taskActivities={planner.taskActivities}
-            taskStreams={planner.taskStreams}
-          />
+          {scoutOpen ? (
+            <ScoutPanel />
+          ) : (
+            <TaskPanel
+              taskView={layout.taskView}
+              gridSubView={layout.gridSubView}
+              panelWidth={layout.panelWidth}
+              filters={layout.filters}
+              setTaskView={layout.setTaskView}
+              setGridSubView={layout.setGridSubView}
+              setPanelWidth={layout.setPanelWidth}
+              setFilters={layout.setFilters}
+              canCollapse={layout.canCollapse('task')}
+              onCollapse={handleTaskCollapse}
+              tasks={planner.tasks}
+              filteredTasks={filteredTasks}
+              tasksByStage={filteredByStage}
+              products={products}
+              loading={planner.loading}
+              createTask={planner.createTask}
+              updateTask={planner.updateTask}
+              moveTask={planner.moveTask}
+              deleteTask={planner.deleteTask}
+              taskActivities={planner.taskActivities}
+              taskStreams={planner.taskStreams}
+              taskComments={planner.taskComments}
+              fetchComments={planner.fetchComments}
+              addComment={planner.addComment}
+            />
+          )}
         </div>
       )}
     </div>

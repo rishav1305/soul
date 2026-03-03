@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
-import type { PlannerTask, TaskStage, TaskActivity, WSMessage } from '../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment, WSMessage } from '../lib/types.ts';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
@@ -23,6 +23,7 @@ export function usePlanner() {
   const [taskActivities, setTaskActivities] = useState<Record<number, TaskActivity[]>>({});
   // Track streaming output per task (accumulated tokens).
   const [taskStreams, setTaskStreams] = useState<Record<number, string>>({});
+  const [taskComments, setTaskComments] = useState<Record<number, TaskComment[]>>({});
 
   // Fetch all tasks on mount
   useEffect(() => {
@@ -98,6 +99,15 @@ export function usePlanner() {
           }
           break;
         }
+        case 'task.comment.added': {
+          const comment = msg.data as TaskComment;
+          if (!comment?.task_id) break;
+          setTaskComments((prev) => ({
+            ...prev,
+            [comment.task_id]: [...(prev[comment.task_id] || []), comment],
+          }));
+          break;
+        }
       }
     });
 
@@ -158,6 +168,24 @@ export function usePlanner() {
     [],
   );
 
+  const fetchComments = useCallback(async (taskId: number) => {
+    const res = await fetch(`/api/tasks/${taskId}/comments`);
+    if (!res.ok) throw new Error(`Failed to fetch comments: ${res.status}`);
+    const data: TaskComment[] = await res.json();
+    setTaskComments((prev) => ({ ...prev, [taskId]: data }));
+    return data;
+  }, []);
+
+  const addComment = useCallback(async (taskId: number, body: string) => {
+    const res = await fetch(`/api/tasks/${taskId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ author: 'user', type: 'feedback', body }),
+    });
+    if (!res.ok) throw new Error(`Failed to add comment: ${res.status}`);
+    return (await res.json()) as TaskComment;
+  }, []);
+
   return {
     tasks,
     tasksByStage,
@@ -168,5 +196,8 @@ export function usePlanner() {
     updateTask,
     deleteTask,
     moveTask,
+    taskComments,
+    fetchComments,
+    addComment,
   };
 }

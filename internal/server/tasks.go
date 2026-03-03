@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/rishav1305/soul/internal/planner"
 )
@@ -308,4 +310,114 @@ func readJSON(r *http.Request, v any) error {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
+}
+
+// handleCommentCreate handles POST /api/tasks/{id}/comments — adds a comment to a task.
+func (s *Server) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
+	if s.planner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "planner not configured"})
+		return
+	}
+
+	taskID, err := parseTaskID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Verify task exists.
+	if _, err := s.planner.Get(taskID); errors.Is(err, planner.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
+		return
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to get task: %v", err)})
+		return
+	}
+
+	var body struct {
+		Author string `json:"author"`
+		Type   string `json:"type"`
+		Body   string `json:"body"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if body.Author == "" {
+		body.Author = "user"
+	}
+	if body.Type == "" {
+		body.Type = "feedback"
+	}
+	if body.Body == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body is required"})
+		return
+	}
+
+	comment := planner.Comment{
+		TaskID:      taskID,
+		Author:      body.Author,
+		Type:        body.Type,
+		Body:        body.Body,
+		Attachments: []string{},
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	id, err := s.planner.CreateComment(comment)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to create comment: %v", err)})
+		return
+	}
+	comment.ID = id
+
+	s.broadcastTaskEvent("task.comment.added", comment)
+	writeJSON(w, http.StatusCreated, comment)
+}
+
+// handleCommentList handles GET /api/tasks/{id}/comments — lists comments for a task.
+func (s *Server) handleCommentList(w http.ResponseWriter, r *http.Request) {
+	if s.planner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "planner not configured"})
+		return
+	}
+
+	taskID, err := parseTaskID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	comments, err := s.planner.ListComments(taskID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to list comments: %v", err)})
+		return
+	}
+
+	if comments == nil {
+		comments = []planner.Comment{}
+	}
+	writeJSON(w, http.StatusOK, comments)
+}
+
+// handleAttachment proxies attachment requests to MinIO via pre-signed URL.
+func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
+	if s.minioClient == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "attachments not configured"})
+		return
+	}
+
+	key := strings.TrimPrefix(r.URL.Path, "/api/attachments/")
+	if key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing attachment key"})
+		return
+	}
+
+	url, err := s.minioClient.PresignedURL(r.Context(), key)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to get attachment URL: %v", err)})
+		return
+	}
+
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }

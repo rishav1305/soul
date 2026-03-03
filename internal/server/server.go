@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -33,10 +34,12 @@ type Server struct {
 	products    *products.Manager
 	ai          *ai.Client
 	planner     *planner.Store
-	processor   *TaskProcessor
-	projectRoot string           // working directory for code tools
-	worktrees   *WorktreeManager // manages per-task git worktrees
-	webFS       fs.FS            // embedded SPA files (nil = use placeholder)
+	processor      *TaskProcessor
+	commentWatcher *CommentWatcher
+	projectRoot    string           // working directory for code tools
+	worktrees      *WorktreeManager // manages per-task git worktrees
+	webFS          fs.FS            // embedded SPA files (nil = use placeholder)
+	minioClient    *MinIOClient     // optional MinIO client for screenshots/attachments
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -64,8 +67,24 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 		worktrees:   wm,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Try to initialize MinIO client.
+	if minioCfg, err := LoadMinIOConfig(); err == nil {
+		if mc, err := NewMinIOClient(minioCfg); err == nil {
+			s.minioClient = mc
+			log.Println("MinIO client initialized")
+		} else {
+			log.Printf("WARNING: MinIO client init failed: %v", err)
+		}
+	}
+
+	// Start the comment watcher.
+	cw := NewCommentWatcher(s)
+	cw.Start(context.Background())
+	s.commentWatcher = cw
+
 	return s
 }
 
@@ -101,8 +120,24 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		webFS:       webFS,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
-	s.processor = NewTaskProcessor(aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
+
+	// Try to initialize MinIO client.
+	if minioCfg, err := LoadMinIOConfig(); err == nil {
+		if mc, err := NewMinIOClient(minioCfg); err == nil {
+			s.minioClient = mc
+			log.Println("MinIO client initialized")
+		} else {
+			log.Printf("WARNING: MinIO client init failed: %v", err)
+		}
+	}
+
+	// Start the comment watcher.
+	cw := NewCommentWatcher(s)
+	cw.Start(context.Background())
+	s.commentWatcher = cw
+
 	return s
 }
 
@@ -135,6 +170,15 @@ func (s *Server) StartDevServer(devPort int) {
 		}
 	}
 
+	// Symlink web/node_modules from main repo so vite can find dependencies.
+	devNodeModules := filepath.Join(devRoot, "web", "node_modules")
+	mainNodeModules := filepath.Join(s.projectRoot, "web", "node_modules")
+	if _, err := os.Lstat(devNodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, devNodeModules); err != nil {
+			log.Printf("[dev-server] failed to symlink node_modules: %v", err)
+		}
+	}
+
 	// Build frontend in dev worktree.
 	cmd = exec.Command("npx", "vite", "build")
 	cmd.Dir = filepath.Join(devRoot, "web")
@@ -143,23 +187,51 @@ func (s *Server) StartDevServer(devPort int) {
 		return
 	}
 
-	// Serve dev frontend from disk.
+	// Serve dev frontend from disk, but delegate API/WS to the prod mux.
 	devDist := filepath.Join(devRoot, "web", "dist")
-	devMux := http.NewServeMux()
-	devMux.Handle("/", newSPAFileServer(os.DirFS(devDist)))
-
-	// Share API and WS routes with prod.
-	devMux.HandleFunc("GET /api/health", handleHealth)
-	devMux.HandleFunc("GET /api/tasks", s.handleTaskList)
-	devMux.HandleFunc("GET /api/tasks/{id}", s.handleTaskGet)
+	devSPA := newSPAFileServer(os.DirFS(devDist))
+	devHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// API and WebSocket requests go to the prod server's handlers.
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/ws" {
+			s.mux.ServeHTTP(w, r)
+			return
+		}
+		// Everything else served from the dev frontend build.
+		devSPA.ServeHTTP(w, r)
+	})
 
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(devPort))
 	fmt.Printf("◆ Soul dev server listening on %s\n", addr)
 	go func() {
-		if err := http.ListenAndServe(addr, devMux); err != nil {
+		if err := http.ListenAndServe(addr, devHandler); err != nil {
 			log.Printf("[dev-server] error: %v", err)
 		}
 	}()
+}
+
+// RebuildDevFrontend runs vite build in the dev server worktree,
+// updating the dev server's SPA files. Since the dev server serves
+// from disk (not embed), the new build takes effect immediately.
+func (s *Server) RebuildDevFrontend() error {
+	devWeb := filepath.Join(s.projectRoot, ".worktrees", "dev-server", "web")
+
+	// Ensure node_modules symlink exists.
+	devNodeModules := filepath.Join(devWeb, "node_modules")
+	mainNodeModules := filepath.Join(s.projectRoot, "web", "node_modules")
+	if _, err := os.Lstat(devNodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, devNodeModules); err != nil {
+			return fmt.Errorf("symlink node_modules: %w", err)
+		}
+	}
+
+	cmd := exec.Command("npx", "vite", "build")
+	cmd.Dir = devWeb
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("vite build failed: %w\n%s", err, out)
+	}
+	log.Printf("[dev-server] frontend rebuilt successfully")
+	return nil
 }
 
 // registerWSClient adds a WebSocket connection to the tracked clients map.

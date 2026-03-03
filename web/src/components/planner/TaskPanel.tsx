@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters, TaskActivity } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskFilters, TaskActivity, TaskComment } from '../../lib/types.ts';
 import FilterBar from './FilterBar.tsx';
 import TaskContent from './TaskContent.tsx';
 import TaskDetail from './TaskDetail.tsx';
@@ -31,6 +31,10 @@ interface TaskPanelProps {
   // Autonomous activity
   taskActivities: Record<number, TaskActivity[]>;
   taskStreams: Record<number, string>;
+  // Comments
+  taskComments: Record<number, TaskComment[]>;
+  fetchComments: (id: number) => Promise<any>;
+  addComment: (id: number, body: string) => Promise<TaskComment>;
 }
 
 const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
@@ -98,6 +102,9 @@ export default function TaskPanel({
   deleteTask,
   taskActivities,
   taskStreams,
+  taskComments,
+  fetchComments,
+  addComment,
 }: TaskPanelProps) {
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -284,6 +291,9 @@ export default function TaskPanel({
           activities={taskActivities[selectedTask.id] || []}
           streamContent={taskStreams[selectedTask.id] || ''}
           products={products}
+          comments={taskComments[selectedTask.id]}
+          onFetchComments={fetchComments}
+          onAddComment={addComment}
         />
       )}
 

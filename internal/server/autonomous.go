@@ -17,6 +17,7 @@ import (
 
 // TaskProcessor handles autonomous task execution in the background.
 type TaskProcessor struct {
+	server      *Server
 	ai          *ai.Client
 	products    *products.Manager
 	sessions    *session.Store
@@ -31,8 +32,9 @@ type TaskProcessor struct {
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
+func NewTaskProcessor(srv *Server, aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
 	return &TaskProcessor{
+		server:      srv,
 		ai:          aiClient,
 		products:    pm,
 		sessions:    sessions,
@@ -175,25 +177,90 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	tp.planner.Update(taskID, planner.TaskUpdate{Output: &finalOutput})
 
 	// Commit changes in the worktree and merge to dev.
+	hasChanges := false
 	if tp.worktrees != nil && taskRoot != tp.projectRoot {
 		tp.sendActivity(taskID, "status", "Committing changes...")
-		if err := tp.worktrees.CommitInWorktree(taskID, task.Title); err != nil {
-			log.Printf("[autonomous] commit failed for task %d: %v", taskID, err)
-			tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", err))
+		commitErr := tp.worktrees.CommitInWorktree(taskID, task.Title)
+		if commitErr == ErrNothingToCommit {
+			log.Printf("[autonomous] task %d: agent made no file changes", taskID)
+			tp.sendActivity(taskID, "status", "Warning: agent made no file changes")
+		} else if commitErr != nil {
+			log.Printf("[autonomous] commit failed for task %d: %v", taskID, commitErr)
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", commitErr))
+		} else {
+			hasChanges = true
 		}
 
-		tp.sendActivity(taskID, "status", "Merging to dev branch...")
-		if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
-			log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
-			tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
-		} else {
-			tp.sendActivity(taskID, "status", "Changes merged to dev — visible on dev server")
+		if hasChanges {
+			tp.sendActivity(taskID, "status", "Merging to dev branch...")
+			if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
+				log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
+				tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
+			} else {
+				tp.sendActivity(taskID, "status", "Changes merged to dev — rebuilding frontend...")
+				if tp.server != nil {
+					if err := tp.server.RebuildDevFrontend(); err != nil {
+						log.Printf("[autonomous] dev frontend rebuild failed for task %d: %v", taskID, err)
+						tp.sendActivity(taskID, "status", fmt.Sprintf("Dev rebuild warning: %v", err))
+					} else {
+						tp.sendActivity(taskID, "status", "Dev frontend rebuilt — changes visible on dev server")
+					}
+				}
+			}
 		}
 	}
 
+	// Run E2E verification (only if there are changes to verify).
+	verificationPassed := true
+	verificationSkipped := false
+	if tp.server != nil && hasChanges {
+		tp.sendActivity(taskID, "status", "Running E2E verification...")
+		vResult := tp.verifyTask(ctx, task)
+		if vResult == nil {
+			// Verification was skipped (no browser available).
+			verificationSkipped = true
+			tp.sendActivity(taskID, "status", "E2E verification skipped — no browser available")
+			tp.postVerificationComment(taskID, "**E2E Verification: SKIPPED**\n\nNo browser (Chrome/Chromium) available for automated verification. Install Chromium to enable E2E checks.")
+		} else {
+			// Post verification results.
+			var body strings.Builder
+			if vResult.Passed {
+				body.WriteString("**E2E Verification: PASSED**\n\n")
+			} else {
+				body.WriteString("**E2E Verification: FAILED**\n\n")
+				verificationPassed = false
+			}
+			for _, check := range vResult.Checks {
+				if check.Passed {
+					fmt.Fprintf(&body, "- %s: PASS — %s\n", check.Name, check.Detail)
+				} else {
+					fmt.Fprintf(&body, "- %s: FAIL — %s\n", check.Name, check.Detail)
+				}
+			}
+
+			verComment := planner.Comment{
+				TaskID:      taskID,
+				Author:      "soul",
+				Type:        "verification",
+				Body:        body.String(),
+				Attachments: vResult.Screenshots,
+				CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+			}
+			if id, err := tp.planner.CreateComment(verComment); err == nil {
+				verComment.ID = id
+				raw, _ := json.Marshal(verComment)
+				tp.broadcast(WSMessage{Type: "task.comment.added", Data: raw})
+			}
+
+			if !vResult.Passed {
+				tp.sendActivity(taskID, "status", "E2E verification failed — staying in active stage")
+			}
+		}
+	} else if !hasChanges {
+		tp.sendActivity(taskID, "status", "Skipping E2E verification — no changes to verify")
+	}
+
 	// Re-read the task to see what stage the agent left it in.
-	// The agent may have moved it to blocked, done, etc. via task_update.
-	// Only advance to validation if the agent left it in active.
 	updated, err := tp.planner.Get(taskID)
 	if err != nil {
 		log.Printf("[autonomous] failed to re-read task %d: %v", taskID, err)
@@ -203,15 +270,37 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	completedAt := time.Now().UTC().Format(time.RFC3339)
 
 	if updated.Stage == planner.StageActive {
-		// Agent didn't move the task — advance to validation.
-		validation := planner.StageValidation
-		tp.planner.Update(taskID, planner.TaskUpdate{
-			Stage:       &validation,
-			CompletedAt: &completedAt,
-		})
-		tp.broadcastTaskUpdate(taskID)
-		tp.sendActivity(taskID, "stage", "validation")
-		tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
+		if !hasChanges {
+			// Agent ran but made no changes — move to blocked, not validation.
+			blocked := planner.StageBlocked
+			tp.planner.Update(taskID, planner.TaskUpdate{
+				Stage:       &blocked,
+				CompletedAt: &completedAt,
+			})
+			tp.broadcastTaskUpdate(taskID)
+			tp.sendActivity(taskID, "stage", "blocked")
+			tp.sendActivity(taskID, "status", "Moved to blocked — agent produced no file changes")
+			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but made no file changes. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
+		} else if !verificationPassed {
+			// E2E verification failed — stay in active so it can be retried.
+			tp.planner.Update(taskID, planner.TaskUpdate{CompletedAt: &completedAt})
+			tp.broadcastTaskUpdate(taskID)
+			tp.sendActivity(taskID, "status", "Staying in active — E2E verification failed")
+		} else {
+			// Changes made and verification passed (or skipped) — advance to validation.
+			validation := planner.StageValidation
+			tp.planner.Update(taskID, planner.TaskUpdate{
+				Stage:       &validation,
+				CompletedAt: &completedAt,
+			})
+			tp.broadcastTaskUpdate(taskID)
+			tp.sendActivity(taskID, "stage", "validation")
+			if verificationSkipped {
+				tp.sendActivity(taskID, "status", "Processing complete — moved to validation (E2E verification was skipped)")
+			} else {
+				tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
+			}
+		}
 	} else {
 		// Agent already moved the task (e.g., to blocked or done). Respect it.
 		tp.planner.Update(taskID, planner.TaskUpdate{CompletedAt: &completedAt})
@@ -315,6 +404,22 @@ func (tp *TaskProcessor) sendActivity(taskID int64, activityType, content string
 		Type: "task.activity",
 		Data: data,
 	})
+}
+
+func (tp *TaskProcessor) postVerificationComment(taskID int64, body string) {
+	comment := planner.Comment{
+		TaskID:      taskID,
+		Author:      "soul",
+		Type:        "verification",
+		Body:        body,
+		Attachments: []string{},
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	if id, err := tp.planner.CreateComment(comment); err == nil {
+		comment.ID = id
+		raw, _ := json.Marshal(comment)
+		tp.broadcast(WSMessage{Type: "task.comment.added", Data: raw})
+	}
 }
 
 func (tp *TaskProcessor) broadcastTaskUpdate(taskID int64) {

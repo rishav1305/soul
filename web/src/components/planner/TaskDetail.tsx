@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -50,15 +50,21 @@ interface TaskDetailProps {
   activities?: TaskActivity[];
   streamContent?: string;
   products?: string[];
+  comments?: TaskComment[];
+  onFetchComments?: (id: number) => Promise<any>;
+  onAddComment?: (id: number, body: string) => Promise<TaskComment>;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [] }: TaskDetailProps) {
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [], comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
 
   // Sync title draft when task prop changes (e.g., from WebSocket update).
   useEffect(() => {
@@ -95,6 +101,29 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
       streamEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [streamContent]);
+
+  useEffect(() => {
+    if (onFetchComments) {
+      onFetchComments(task.id);
+    }
+  }, [task.id, onFetchComments]);
+
+  useEffect(() => {
+    commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [comments]);
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim() || !onAddComment) return;
+    setSubmitting(true);
+    try {
+      await onAddComment(task.id, commentText.trim());
+      setCommentText('');
+    } catch (err) {
+      console.error('Failed to add comment:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const toggleAutonomous = async () => {
     const next = !autonomous;
@@ -365,8 +394,74 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
               <p className="text-sm text-stage-blocked whitespace-pre-wrap">{task.blocker}</p>
             </Section>
           )}
-        </div>
 
+          {/* Comment Thread */}
+          <div className="border-t border-border-subtle pt-4 mt-4">
+            <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wider mb-3">
+              Comments
+            </h3>
+
+            <div className="space-y-3 max-h-64 overflow-y-auto mb-3">
+              {(comments || []).map((c) => (
+                <div
+                  key={c.id}
+                  className={`rounded-lg p-3 text-sm ${
+                    c.author === 'user'
+                      ? 'bg-blue-500/10 border border-blue-500/20'
+                      : c.type === 'error'
+                        ? 'bg-red-500/10 border border-red-500/20'
+                        : c.type === 'verification'
+                          ? 'bg-emerald-500/10 border border-emerald-500/20'
+                          : 'bg-overlay border border-border-subtle'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-medium ${
+                      c.author === 'user' ? 'text-blue-400' : 'text-fg-muted'
+                    }`}>
+                      {c.author === 'user' ? 'You' : 'Soul'}
+                    </span>
+                    <span className="text-xs text-fg-muted">
+                      {new Date(c.created_at).toLocaleTimeString()}
+                    </span>
+                    {c.type !== 'feedback' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-elevated text-fg-muted">
+                        {c.type}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-fg-secondary whitespace-pre-wrap">{c.body}</p>
+                </div>
+              ))}
+              <div ref={commentsEndRef} />
+            </div>
+
+            {/* Comment input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
+                placeholder="Post feedback..."
+                className="flex-1 bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-fg placeholder-fg-muted focus:outline-none focus:border-soul/50"
+                disabled={submitting}
+              />
+              <button
+                onClick={handleSubmitComment}
+                disabled={submitting || !commentText.trim()}
+                className="px-3 py-2 rounded-lg bg-soul hover:bg-soul/80 text-deep text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                {submitting ? '...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>
