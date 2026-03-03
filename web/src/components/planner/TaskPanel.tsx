@@ -31,9 +31,10 @@ interface TaskPanelProps {
   // Autonomous activity
   taskActivities: Record<number, TaskActivity[]>;
   taskStreams: Record<number, string>;
+  // Comments
   taskComments: Record<number, TaskComment[]>;
-  fetchComments: (taskId: number) => Promise<TaskComment[]>;
-  addComment: (taskId: number, body: string) => Promise<TaskComment>;
+  fetchComments: (id: number) => Promise<any>;
+  addComment: (id: number, body: string) => Promise<TaskComment>;
 }
 
 const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
@@ -289,6 +290,7 @@ export default function TaskPanel({
           onDelete={handleDelete}
           activities={taskActivities[selectedTask.id] || []}
           streamContent={taskStreams[selectedTask.id] || ''}
+          products={products}
           comments={taskComments[selectedTask.id]}
           onFetchComments={fetchComments}
           onAddComment={addComment}

@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
-import { ValidTransitions } from './transitions.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -26,21 +25,14 @@ const STAGE_COLORS: Record<TaskStage, string> = {
   done: 'bg-stage-done/15 text-stage-done',
 };
 
-const TRANSITION_BUTTON_COLORS: Record<TaskStage, string> = {
-  backlog: 'bg-stage-backlog/20 hover:bg-stage-backlog/30 text-stage-backlog',
-  brainstorm: 'bg-stage-brainstorm/20 hover:bg-stage-brainstorm/30 text-stage-brainstorm',
-  active: 'bg-stage-active/20 hover:bg-stage-active/30 text-stage-active',
-  blocked: 'bg-stage-blocked/20 hover:bg-stage-blocked/30 text-stage-blocked',
-  validation: 'bg-stage-validation/20 hover:bg-stage-validation/30 text-stage-validation',
-  done: 'bg-stage-done/20 hover:bg-stage-done/30 text-stage-done',
-};
+const ALL_STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
-const PRIORITY_LABELS: Record<number, string> = {
-  0: 'Low',
-  1: 'Normal',
-  2: 'High',
-  3: 'Critical',
-};
+const PRIORITY_OPTIONS = [
+  { value: 0, label: 'Low' },
+  { value: 1, label: 'Normal' },
+  { value: 2, label: 'High' },
+  { value: 3, label: 'Critical' },
+];
 
 const PRIORITY_COLORS: Record<number, string> = {
   0: 'text-priority-low',
@@ -57,34 +49,51 @@ interface TaskDetailProps {
   onDelete: (id: number) => Promise<void>;
   activities?: TaskActivity[];
   streamContent?: string;
+  products?: string[];
   comments?: TaskComment[];
   onFetchComments?: (id: number) => Promise<any>;
   onAddComment?: (id: number, body: string) => Promise<TaskComment>;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
-  const transitions = ValidTransitions[task.stage];
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [], comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
-  const [editingProduct, setEditingProduct] = useState(false);
-  const [productValue, setProductValue] = useState(task.product || '');
-  const productInputRef = useRef<HTMLInputElement>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync title draft when task prop changes (e.g., from WebSocket update).
+  useEffect(() => {
+    if (!editingTitle) setTitleDraft(task.title);
+  }, [task.title, editingTitle]);
+
+  // Focus title input when entering edit mode.
+  useEffect(() => {
+    if (editingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [editingTitle]);
+
+  const commitTitle = async () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== task.title) {
+      await onUpdate(task.id, { title: trimmed });
+    } else {
+      setTitleDraft(task.title);
+    }
+  };
 
   // Sync autonomous state when task prop changes (e.g., from WebSocket update).
   useEffect(() => {
     const m = parseMetadata(task.metadata);
     setAutonomous(!!m.autonomous);
   }, [task.metadata]);
-
-  useEffect(() => {
-    if (editingProduct && productInputRef.current) {
-      productInputRef.current.focus();
-    }
-  }, [editingProduct]);
 
   // Auto-scroll the stream output as new content arrives.
   useEffect(() => {
@@ -103,21 +112,6 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
     commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [comments]);
 
-  const toggleAutonomous = async () => {
-    const next = !autonomous;
-    setAutonomous(next);
-    const newMeta = { ...meta, autonomous: next };
-    await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
-  };
-
-  const saveProduct = async () => {
-    const trimmed = productValue.trim();
-    if (trimmed !== task.product) {
-      await onUpdate(task.id, { product: trimmed });
-    }
-    setEditingProduct(false);
-  };
-
   const handleSubmitComment = async () => {
     if (!commentText.trim() || !onAddComment) return;
     setSubmitting(true);
@@ -131,8 +125,43 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
     }
   };
 
+  const toggleAutonomous = async () => {
+    const next = !autonomous;
+    setAutonomous(next);
+    const newMeta = { ...meta, autonomous: next };
+    await onUpdate(task.id, { metadata: JSON.stringify(newMeta) });
+  };
+
+  const handleStageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStage = e.target.value as TaskStage;
+    if (newStage !== task.stage) {
+      await onMove(task.id, newStage, '');
+    }
+  };
+
+  const handlePriorityChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPriority = Number(e.target.value);
+    if (newPriority !== task.priority) {
+      await onUpdate(task.id, { priority: newPriority });
+    }
+  };
+
+  const handleProductChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val !== task.product) {
+      await onUpdate(task.id, { product: val });
+    }
+  };
+
   const isProcessing = autonomous && streamContent.length > 0;
   const hasActivities = activities.length > 0;
+
+  // Build product options: existing products list + current task product (if not in list)
+  const productOptions = products.includes(task.product ?? '')
+    ? products
+    : task.product
+    ? [task.product, ...products]
+    : products;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -141,36 +170,69 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
         <div className="px-6 py-4 border-b border-border-subtle shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h3 className="font-display text-lg font-semibold text-fg">{task.title}</h3>
-              <div className="flex items-center gap-2 mt-1">
+              {editingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitTitle();
+                    if (e.key === 'Escape') { setEditingTitle(false); setTitleDraft(task.title); }
+                  }}
+                  className="w-full font-display text-lg font-semibold text-fg bg-transparent border-b border-soul/60 outline-none pb-0.5"
+                />
+              ) : (
+                <h3
+                  className="font-display text-lg font-semibold text-fg cursor-text hover:text-fg/80 transition-colors"
+                  onClick={() => setEditingTitle(true)}
+                  title="Click to edit title"
+                >
+                  {task.title}
+                </h3>
+              )}
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-fg-muted font-mono text-xs">#{task.id}</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STAGE_COLORS[task.stage]}`}>
-                  {STAGE_LABELS[task.stage]}
-                </span>
-                <span className={`text-xs font-medium ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}>
-                  {PRIORITY_LABELS[task.priority] ?? 'Unknown'} priority
-                </span>
-                {/* Editable product badge */}
-                {editingProduct ? (
-                  <input
-                    ref={productInputRef}
-                    type="text"
-                    value={productValue}
-                    onChange={(e) => setProductValue(e.target.value)}
-                    onBlur={saveProduct}
-                    onKeyDown={(e) => { if (e.key === 'Enter') saveProduct(); if (e.key === 'Escape') setEditingProduct(false); }}
-                    placeholder="product"
-                    className="px-2 py-0.5 rounded text-xs bg-elevated border border-soul/50 text-fg outline-none w-24"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingProduct(true)}
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${task.product ? 'bg-overlay text-fg-secondary hover:bg-elevated' : 'border border-dashed border-border-default text-fg-muted hover:border-fg-muted'}`}
-                  >
-                    {task.product || '+ Product'}
-                  </button>
-                )}
+                {/* Stage dropdown */}
+                <select
+                  value={task.stage}
+                  onChange={handleStageChange}
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer border-0 outline-none appearance-none ${STAGE_COLORS[task.stage]} bg-transparent`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  {ALL_STAGES.map((s) => (
+                    <option key={s} value={s} className="bg-surface text-fg">
+                      {STAGE_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                {/* Priority dropdown */}
+                <select
+                  value={task.priority}
+                  onChange={handlePriorityChange}
+                  className={`text-xs font-medium cursor-pointer border-0 outline-none appearance-none bg-transparent ${PRIORITY_COLORS[task.priority] ?? 'text-priority-low'}`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-surface text-fg">
+                      {opt.label} priority
+                    </option>
+                  ))}
+                </select>
+                {/* Product dropdown */}
+                <select
+                  value={task.product ?? ''}
+                  onChange={handleProductChange}
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer border-0 outline-none appearance-none ${task.product ? 'bg-overlay text-fg-secondary' : 'text-fg-muted'} bg-transparent`}
+                  style={{ backgroundImage: 'none' }}
+                >
+                  <option value="" className="bg-surface text-fg">No product</option>
+                  {productOptions.map((p) => (
+                    <option key={p} value={p} className="bg-surface text-fg">
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </option>
+                  ))}
+                </select>
                 {/* Branch info for active/validation tasks */}
                 {(task.stage === 'active' || task.stage === 'validation') && task.agent_id?.startsWith('auto-') && (
                   <span className="text-[10px] text-fg-muted font-mono">
@@ -223,14 +285,25 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-fg-muted hover:text-fg transition-colors cursor-pointer text-xl leading-none"
-              aria-label="Close"
-            >
-              &times;
-            </button>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => onDelete(task.id)}
+                className="flex items-center justify-center w-9 h-9 rounded bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer text-base leading-none"
+                aria-label="Delete task"
+                title="Delete task"
+              >
+                ␡
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center justify-center w-9 h-9 rounded bg-elevated hover:bg-overlay text-fg-muted hover:text-fg transition-colors cursor-pointer text-lg leading-none"
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         </div>
 
@@ -323,8 +396,8 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
           )}
 
           {/* Comment Thread */}
-          <div className="border-t border-zinc-700/50 pt-4 mt-4">
-            <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+          <div className="border-t border-border-subtle pt-4 mt-4">
+            <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wider mb-3">
               Comments
             </h3>
 
@@ -339,25 +412,25 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                         ? 'bg-red-500/10 border border-red-500/20'
                         : c.type === 'verification'
                           ? 'bg-emerald-500/10 border border-emerald-500/20'
-                          : 'bg-zinc-700/30 border border-zinc-600/20'
+                          : 'bg-overlay border border-border-subtle'
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`text-xs font-medium ${
-                      c.author === 'user' ? 'text-blue-400' : 'text-zinc-400'
+                      c.author === 'user' ? 'text-blue-400' : 'text-fg-muted'
                     }`}>
                       {c.author === 'user' ? 'You' : 'Soul'}
                     </span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-fg-muted">
                       {new Date(c.created_at).toLocaleTimeString()}
                     </span>
                     {c.type !== 'feedback' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-600/50 text-zinc-400">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-elevated text-fg-muted">
                         {c.type}
                       </span>
                     )}
                   </div>
-                  <p className="text-zinc-300 whitespace-pre-wrap">{c.body}</p>
+                  <p className="text-fg-secondary whitespace-pre-wrap">{c.body}</p>
                 </div>
               ))}
               <div ref={commentsEndRef} />
@@ -376,13 +449,13 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                   }
                 }}
                 placeholder="Post feedback..."
-                className="flex-1 bg-zinc-800 border border-zinc-600/50 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+                className="flex-1 bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-fg placeholder-fg-muted focus:outline-none focus:border-soul/50"
                 disabled={submitting}
               />
               <button
                 onClick={handleSubmitComment}
                 disabled={submitting || !commentText.trim()}
-                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-2 rounded-lg bg-soul hover:bg-soul/80 text-deep text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 {submitting ? '...' : 'Send'}
               </button>
@@ -390,29 +463,6 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="px-6 py-4 border-t border-border-subtle shrink-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {transitions.map((targetStage) => (
-              <button
-                key={targetStage}
-                type="button"
-                onClick={() => onMove(task.id, targetStage, '')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${TRANSITION_BUTTON_COLORS[targetStage]}`}
-              >
-                Move to {STAGE_LABELS[targetStage]}
-              </button>
-            ))}
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-stage-blocked/15 hover:bg-stage-blocked/25 text-stage-blocked transition-colors cursor-pointer"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
