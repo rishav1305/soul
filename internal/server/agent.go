@@ -52,7 +52,7 @@ const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rish
 - If asked what you are, say you are Soul, powered by the model specified below. Do not say "I don't have information about my model."
 - Soul version: 0.2.0-alpha.`
 
-const maxToolIterations = 10
+const maxToolIterations = 40
 
 // AgentLoop drives the Claude AI conversation with tool routing through the
 // product manager. It streams responses back to the browser via WebSocket events.
@@ -155,15 +155,15 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 	log.Printf("[agent] tools available: %d", len(claudeTools))
 
 	// Determine max tokens and thinking config.
-	maxTokens := 4096
+	maxTokens := 16384
 	var thinkingConfig *ai.ThinkingConfig
 	if thinking && strings.Contains(a.model, "opus") {
-		maxTokens = 16000
+		maxTokens = 32000
 		thinkingConfig = &ai.ThinkingConfig{
 			Type:         "enabled",
-			BudgetTokens: 10000,
+			BudgetTokens: 16000,
 		}
-		log.Printf("[agent] extended thinking enabled: budget_tokens=10000 max_tokens=%d", maxTokens)
+		log.Printf("[agent] extended thinking enabled: budget_tokens=16000 max_tokens=%d", maxTokens)
 	}
 
 	// Run the agent loop — Claude may call multiple tools iteratively.
