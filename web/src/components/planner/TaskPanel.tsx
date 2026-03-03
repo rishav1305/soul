@@ -37,6 +37,7 @@ const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
   { view: 'list', title: 'List view' },
   { view: 'kanban', title: 'Kanban view' },
   { view: 'grid', title: 'Grid view' },
+  { view: 'table', title: 'Table view' },
 ];
 
 function ViewIcon({ view }: { view: TaskView }) {
@@ -63,6 +64,14 @@ function ViewIcon({ view }: { view: TaskView }) {
           <rect x="9" y="2" width="5" height="5" rx="1" />
           <rect x="2" y="9" width="5" height="5" rx="1" />
           <rect x="9" y="9" width="5" height="5" rx="1" />
+        </svg>
+      );
+    case 'table':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="2" width="12" height="12" rx="1" />
+          <path d="M2 5.5h12" />
+          <path d="M6 5.5v8.5" />
         </svg>
       );
   }
