@@ -117,14 +117,6 @@ export interface ChatSession {
   updated_at: string;
 }
 
-export interface ChatMessageRecord {
-  id: number;
-  session_id: number;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  created_at: string;
-}
-
 export interface SendOptions {
   model?: string;
   chatType?: string;

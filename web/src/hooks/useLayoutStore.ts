@@ -105,15 +105,6 @@ function saveV2State(state: LayoutV2State): void {
   } catch {}
 }
 
-/** Returns auto-computed task panel width % based on task count. */
-export function autoWidth(taskCount: number): number {
-  if (taskCount === 0) return 15;
-  if (taskCount <= 3) return 25;
-  if (taskCount <= 10) return 40;
-  if (taskCount <= 20) return 55;
-  return 75;
-}
-
 export function useLayoutStore() {
   const [state, _setState] = useState<LayoutState>(loadState);
   const [v2, _setV2] = useState<LayoutV2State>(loadV2State);

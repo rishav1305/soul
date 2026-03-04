@@ -1,7 +1,7 @@
 import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskActivity } from '../../lib/types.ts';
 import ListView from './ListView.tsx';
 import KanbanBoard from './KanbanBoard.tsx';
-import GridView from './grid/GridView.tsx';
+import CompactGrid from './grid/CompactGrid.tsx';
 import TableView from './grid/TableView.tsx';
 
 interface TaskContentProps {
@@ -44,7 +44,7 @@ export default function TaskContent({
     case 'kanban':
       return <KanbanBoard tasksByStage={tasksByStage} onTaskClick={onTaskClick} taskActivities={taskActivities} />;
     case 'grid':
-      return <GridView tasks={filteredTasks} onTaskClick={onTaskClick} />;
+      return <CompactGrid tasks={filteredTasks} onTaskClick={onTaskClick} />;
     case 'table':
       return <TableView tasks={filteredTasks} onTaskClick={onTaskClick} />;
     default:
