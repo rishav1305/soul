@@ -105,15 +105,19 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		}
 	}
 
-	// Resolve DB session ID — create new or look up existing.
+	// Resolve DB session ID — two-step: look up existing first, then create if needed.
+	// "new" and "" are explicit sentinels meaning "start a fresh session".
 	var dbSessionID int64
-	if id, err := strconv.ParseInt(msg.SessionID, 10, 64); err == nil && id > 0 {
-		// Client provided an existing DB session ID.
-		dbSessionID = id
-		if s.planner != nil {
-			_ = s.planner.UpdateSessionStatus(dbSessionID, "running")
+	if msg.SessionID != "" && msg.SessionID != "new" {
+		if id, err := strconv.ParseInt(msg.SessionID, 10, 64); err == nil && id > 0 {
+			// Client provided an existing DB session ID.
+			dbSessionID = id
+			if s.planner != nil {
+				_ = s.planner.UpdateSessionStatus(dbSessionID, "running")
+			}
 		}
-	} else if s.planner != nil {
+	}
+	if dbSessionID == 0 && s.planner != nil {
 		// New session — create it in the DB.
 		title := msg.Content
 		if len(title) > 100 {
@@ -178,14 +182,16 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model, s.projectRoot)
 	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, priorMessages, sendEvent)
 
-	// Persist assistant response to DB.
+	// Persist assistant response to DB (only if there was text output).
 	if dbSessionID > 0 && s.planner != nil && fullResponse.Len() > 0 {
 		if err := s.planner.AddMessage(dbSessionID, "assistant", fullResponse.String()); err != nil {
 			log.Printf("[ws] failed to persist assistant message: %v", err)
 		}
-		if err := s.planner.UpdateSessionStatus(dbSessionID, "idle"); err != nil {
-			log.Printf("[ws] failed to update session status: %v", err)
-		}
+	}
+	// Always reset status to idle regardless of whether there was text output.
+	// Without this, tool-only responses (no text tokens) would leave the session stuck as "running".
+	if dbSessionID > 0 && s.planner != nil {
+		_ = s.planner.UpdateSessionStatus(dbSessionID, "idle")
 	}
 
 	log.Printf("[ws] chat.send complete session=%s dbSession=%d", inMemorySessionID, dbSessionID)

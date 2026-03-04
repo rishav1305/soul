@@ -31,8 +31,10 @@ export function useChat() {
 
   // When sessionId changes (e.g., session switch from SessionDrawer),
   // load the full message history from the API.
+  // Skip hydration while streaming — session.created fires mid-stream and we
+  // must not overwrite the live in-progress messages with a DB snapshot.
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || isStreaming) return;
     fetch(`/api/sessions/${sessionId}/messages`)
       .then((r) => r.json())
       .then((records: Array<{ id: number; role: string; content: string }>) => {
@@ -46,7 +48,7 @@ export function useChat() {
         setMessages(hydrated);
       })
       .catch(() => {});
-  }, [sessionId]);
+  }, [sessionId, isStreaming]);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg: WSMessage) => {
