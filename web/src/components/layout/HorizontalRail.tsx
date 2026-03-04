@@ -296,6 +296,7 @@ export default function HorizontalRail({
   const expandedPanel = (
     <div
       ref={railContainerRef}
+      data-testid="horizontal-rail"
       className="flex flex-col bg-surface shrink-0"
       style={{
         height: `${heightVh}vh`,

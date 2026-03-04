@@ -20,7 +20,7 @@ export default function ChatPanel({ onUnreadChange, activeSessionId, onSessionCr
   }, [messages.length, onUnreadChange]);
 
   return (
-    <div className="flex flex-col h-full relative bg-surface">
+    <div data-testid="chat-panel" className="flex flex-col h-full relative bg-surface">
       <div className="flex-1 overflow-hidden">
         <ChatView activeSessionId={activeSessionId} onSessionCreated={onSessionCreated} />
       </div>

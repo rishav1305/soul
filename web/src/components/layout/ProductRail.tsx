@@ -61,7 +61,7 @@ export default function ProductRail({
   }
 
   return (
-    <div className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-1 shrink-0 z-10">
+    <div data-testid="product-rail" className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-1 shrink-0 z-10">
       {/* Soul logo — opens sessions drawer */}
       <button
         type="button"
