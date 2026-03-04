@@ -6,9 +6,11 @@ interface ChatPanelProps {
   onCollapse: () => void;
   canCollapse: boolean;
   onUnreadChange: (count: number) => void;
+  activeSessionId: number | null;
+  onSessionCreated?: (id: number) => void;
 }
 
-export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange }: ChatPanelProps) {
+export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange, activeSessionId, onSessionCreated }: ChatPanelProps) {
   const { messages } = useChat();
   const prevCountRef = useRef(messages.length);
 
@@ -24,7 +26,7 @@ export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange }: C
   return (
     <div className="flex flex-col h-full relative bg-surface">
       <div className="flex-1 overflow-hidden">
-        <ChatView />
+        <ChatView activeSessionId={activeSessionId} onSessionCreated={onSessionCreated} />
       </div>
     </div>
   );

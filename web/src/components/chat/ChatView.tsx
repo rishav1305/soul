@@ -3,9 +3,28 @@ import { useChat } from '../../hooks/useChat.ts';
 import Message from './Message.tsx';
 import InputBar from './InputBar.tsx';
 
-export default function ChatView() {
-  const { messages, sendMessage, isStreaming } = useChat();
+interface ChatViewProps {
+  activeSessionId: number | null;
+  onSessionCreated?: (id: number) => void;
+}
+
+export default function ChatView({ activeSessionId, onSessionCreated }: ChatViewProps) {
+  const { messages, sendMessage, isStreaming, sessionId, setSessionId } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Sync external activeSessionId (from sidebar click) into useChat's sessionId.
+  useEffect(() => {
+    if (activeSessionId !== null && activeSessionId !== sessionId) {
+      setSessionId(activeSessionId);
+    }
+  }, [activeSessionId]);
+
+  // Notify parent when useChat creates a new session (from session.created WS event).
+  useEffect(() => {
+    if (sessionId !== null && sessionId !== activeSessionId && onSessionCreated) {
+      onSessionCreated(sessionId);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {
