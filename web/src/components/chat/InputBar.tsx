@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { SendOptions } from '../../lib/types.ts';
 import { useSlashCommands } from '../../hooks/useSlashCommands.ts';
 import type { SlashCommand } from '../../hooks/useSlashCommands.ts';
@@ -124,9 +124,12 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   }, []);
 
   // Filtered commands for the slash palette
-  const filteredCommands = showSlashPalette
-    ? commands.filter(c => c.name.toLowerCase().startsWith(slashQuery))
-    : [];
+  const filteredCommands = useMemo(
+    () => showSlashPalette
+      ? commands.filter(c => c.name.toLowerCase().startsWith(slashQuery))
+      : [],
+    [showSlashPalette, commands, slashQuery]
+  );
 
   const selectCommand = useCallback((cmd: SlashCommand) => {
     setShowSlashPalette(false);
@@ -136,7 +139,6 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
       if (cmd.name === 'think') {
         setThinking(prev => !prev);
       }
-      // 'new' and 'clear' have no prop callbacks available — no-op
       textareaRef.current?.focus();
       return;
     }

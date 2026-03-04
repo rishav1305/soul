@@ -8,8 +8,6 @@ export interface SlashCommand {
 }
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
-  { name: 'new', description: 'Start a new chat session', builtin: true },
-  { name: 'clear', description: 'Clear current chat history', builtin: true },
   { name: 'think', description: 'Toggle extended thinking', builtin: true },
   { name: 'brainstorm', description: 'Brainstorm mode — clarify before implementing', chatType: 'Brainstorm' },
   { name: 'code', description: 'Code generation mode', chatType: 'Code' },
