@@ -54,6 +54,16 @@ const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rish
 - Custom tools appear with a "custom_" prefix in your tool list. You can use them like any other tool.
 - Do NOT say you cannot create tools. You can.
 
+# E2E testing
+- You have built-in E2E testing tools that run Playwright on a remote machine (titan-pc) to verify UI changes.
+- ALWAYS verify your UI changes after implementation using e2e_assert or e2e_dom. Do not claim something is done without testing.
+- e2e_assert: Run assertions against the page (exists, visible, text_contains, count, eval). Use this to verify specific UI elements.
+- e2e_dom: Get a structured DOM snapshot of the page. Use this to understand what's actually rendered.
+- e2e_screenshot: Take a screenshot and save it. Useful for visual verification.
+- e2e_check: Check if a CSS selector exists and get its text content.
+- Default test URL is http://192.168.0.128:3000 (prod). For dev server use http://192.168.0.128:3001.
+- After making ANY UI change (frontend code, vite build), run at least one e2e_assert or e2e_dom to confirm the change is visible.
+
 # Tone and style
 - Be concise and direct. Short responses are better than padded ones.
 - Do not use emojis unless the user uses them first.
@@ -198,6 +208,9 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	if a.planner != nil {
 		claudeTools = append(claudeTools, builtinMemoryTools()...)
 	}
+
+	// Add built-in E2E testing tools.
+	claudeTools = append(claudeTools, builtinE2ETools()...)
 
 	// Add built-in meta-tools for custom tool management.
 	if a.planner != nil {
@@ -553,6 +566,22 @@ func (a *AgentLoop) executeTool(
 	// Handle built-in meta-tools for custom tool management.
 	if strings.HasPrefix(tc.Name, "tool_") {
 		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
+	// Handle built-in E2E testing tools.
+	if strings.HasPrefix(tc.Name, "e2e_") {
+		result := a.executeE2ETool(tc)
+		completeData, _ := json.Marshal(map[string]any{
+			"id":      tc.ID,
+			"success": !strings.HasPrefix(result, "Error"),
+			"output":  result,
+		})
+		sendEvent(WSMessage{
+			Type:      "tool.complete",
+			SessionID: sessionID,
+			Data:      completeData,
+		})
+		return result
 	}
 
 	// Handle custom tools (dynamically created, stored in DB).
@@ -1320,5 +1349,162 @@ func (a *AgentLoop) executeCustomTool(sessionID string, tc toolCall) string {
 	case <-time.After(60 * time.Second):
 		cmd.Process.Kill()
 		return "Error: command timed out after 60 seconds"
+	}
+}
+
+// ── E2E Testing Tools ──
+
+const e2eTestRunner = "ssh titan-pc 'cd ~/soul-e2e && node test-runner.js'"
+const e2eDefaultURL = "http://192.168.0.128:3000"
+
+func builtinE2ETools() []ai.ClaudeTool {
+	return []ai.ClaudeTool{
+		{
+			Name:        "e2e_assert",
+			Description: "Run E2E assertions against the Soul UI via headless browser on titan-pc. Returns pass/fail for each assertion. Use this to verify UI changes are visible.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "Page URL to test (default: http://192.168.0.128:3000)"},
+					"assertions": {
+						"type": "array",
+						"description": "List of assertions to check",
+						"items": {
+							"type": "object",
+							"properties": {
+								"type": {"type": "string", "enum": ["exists", "visible", "text_contains", "count", "eval"], "description": "Assertion type"},
+								"selector": {"type": "string", "description": "CSS selector to check"},
+								"expected": {"type": "string", "description": "Expected text (for text_contains) or count (for count)"},
+								"min": {"type": "integer", "description": "Minimum count (for count assertions)"},
+								"expression": {"type": "string", "description": "JS expression (for eval assertions)"}
+							},
+							"required": ["type"]
+						}
+					}
+				},
+				"required": ["assertions"]
+			}`),
+		},
+		{
+			Name:        "e2e_dom",
+			Description: "Get a structured DOM snapshot of the Soul UI page. Shows tag names, IDs, classes, and text content in a tree format. Use this to understand what is actually rendered.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "Page URL (default: http://192.168.0.128:3000)"},
+					"selector": {"type": "string", "description": "CSS selector to snapshot (default: #root)"}
+				}
+			}`),
+		},
+		{
+			Name:        "e2e_check",
+			Description: "Check if elements matching a CSS selector exist and get their text content.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "Page URL (default: http://192.168.0.128:3000)"},
+					"selector": {"type": "string", "description": "CSS selector to check"}
+				},
+				"required": ["selector"]
+			}`),
+		},
+		{
+			Name:        "e2e_screenshot",
+			Description: "Take a screenshot of the Soul UI page via headless browser. Saves to /tmp/soul-e2e-screenshot.png on titan-pc.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "Page URL (default: http://192.168.0.128:3000)"},
+					"selector": {"type": "string", "description": "CSS selector to screenshot (omit for full page)"}
+				}
+			}`),
+		},
+	}
+}
+
+func (a *AgentLoop) executeE2ETool(tc toolCall) string {
+	var input map[string]any
+	if tc.Input != "" {
+		if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+			return fmt.Sprintf("Error parsing input: %v", err)
+		}
+	}
+
+	url := e2eDefaultURL
+	if u, ok := input["url"].(string); ok && u != "" {
+		url = u
+	}
+
+	toolName := strings.TrimPrefix(tc.Name, "e2e_")
+
+	// Build args for the test runner. We pass them via a temp JSON file
+	// to avoid shell quoting issues with SSH.
+	runnerArgs := map[string]any{
+		"action": toolName,
+		"url":    url,
+	}
+
+	switch toolName {
+	case "assert":
+		assertions, _ := input["assertions"]
+		runnerArgs["assertions"] = assertions
+
+	case "dom":
+		selector := "#root"
+		if s, ok := input["selector"].(string); ok && s != "" {
+			selector = s
+		}
+		runnerArgs["selector"] = selector
+
+	case "check":
+		selector, _ := input["selector"].(string)
+		if selector == "" {
+			return "Error: selector is required"
+		}
+		runnerArgs["selector"] = selector
+
+	case "screenshot":
+		if selector, ok := input["selector"].(string); ok && selector != "" {
+			runnerArgs["selector"] = selector
+		}
+
+	default:
+		return fmt.Sprintf("Error: unknown e2e tool %q", toolName)
+	}
+
+	argsJSON, _ := json.Marshal(runnerArgs)
+	// Write args to a temp file, then SSH to titan-pc and run the test using that file.
+	command := fmt.Sprintf(
+		"echo %s | ssh titan-pc 'cat > /tmp/soul-e2e-args.json && cd ~/soul-e2e && node test-runner.js --json /tmp/soul-e2e-args.json'",
+		shellescape(string(argsJSON)),
+	)
+
+	log.Printf("[e2e] executing: %s %s %s", toolName, url, string(argsJSON))
+
+	cmd := exec.Command("bash", "-c", command)
+	done := make(chan error, 1)
+	var out []byte
+	go func() {
+		var execErr error
+		out, execErr = cmd.CombinedOutput()
+		done <- execErr
+	}()
+
+	select {
+	case execErr := <-done:
+		result := string(out)
+		if len(result) > 10000 {
+			result = result[:10000] + "\n... (output truncated)"
+		}
+		if execErr != nil {
+			return fmt.Sprintf("E2E error: %v\n%s", execErr, result)
+		}
+		if result == "" {
+			return "E2E test completed with no output."
+		}
+		return result
+	case <-time.After(60 * time.Second):
+		cmd.Process.Kill()
+		return "Error: E2E test timed out after 60 seconds"
 	}
 }
