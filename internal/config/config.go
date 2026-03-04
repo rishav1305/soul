@@ -15,6 +15,10 @@ type Config struct {
 	APIKey    string
 	Model     string
 	DataDir   string
+
+	// E2E testing infrastructure.
+	E2EHost       string // SSH host for Playwright tests (default: "titan-pc")
+	E2ERunnerPath string // path to test-runner.js on E2E host (default: "~/soul-e2e")
 }
 
 // Default returns a Config with sensible defaults.
@@ -24,11 +28,13 @@ func Default() Config {
 		home = "/tmp"
 	}
 	return Config{
-		Port:      3000,
-		Host:      "127.0.0.1",
-		DevUIAddr: "http://localhost:5173",
-		Model:     "claude-sonnet-4-6",
-		DataDir:   filepath.Join(home, ".soul"),
+		Port:          3000,
+		Host:          "127.0.0.1",
+		DevUIAddr:     "http://localhost:5173",
+		Model:         "claude-sonnet-4-6",
+		DataDir:       filepath.Join(home, ".soul"),
+		E2EHost:       "titan-pc",
+		E2ERunnerPath: "~/soul-e2e",
 	}
 }
 
@@ -60,6 +66,14 @@ func FromEnv() Config {
 
 	if v := os.Getenv("SOUL_DATA_DIR"); v != "" {
 		cfg.DataDir = v
+	}
+
+	if v := os.Getenv("SOUL_E2E_HOST"); v != "" {
+		cfg.E2EHost = v
+	}
+
+	if v := os.Getenv("SOUL_E2E_RUNNER_PATH"); v != "" {
+		cfg.E2ERunnerPath = v
 	}
 
 	return cfg

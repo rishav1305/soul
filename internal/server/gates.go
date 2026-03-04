@@ -63,9 +63,9 @@ func PreMergeGate(worktreeWeb string) error {
 }
 
 // RunSmokeTest executes the Playwright smoke test against the given server URL
-// via SSH to titan-pc. Returns structured results or error.
-func RunSmokeTest(serverURL string) (*SmokeResult, error) {
-	log.Printf("[gate] running smoke test against %s", serverURL)
+// via SSH to the configured E2E host. Returns structured results or error.
+func RunSmokeTest(serverURL, e2eHost, e2eRunnerPath string) (*SmokeResult, error) {
+	log.Printf("[gate] running smoke test against %s via %s", serverURL, e2eHost)
 
 	argsJSON, _ := json.Marshal(map[string]string{
 		"action": "smoke",
@@ -73,8 +73,8 @@ func RunSmokeTest(serverURL string) (*SmokeResult, error) {
 	})
 
 	command := fmt.Sprintf(
-		"echo %s | ssh titan-pc 'cat > /tmp/soul-e2e-args.json && cd ~/soul-e2e && node test-runner.js --json /tmp/soul-e2e-args.json'",
-		shellescape(string(argsJSON)),
+		"echo %s | ssh %s 'cat > /tmp/soul-e2e-args.json && cd %s && node test-runner.js --json /tmp/soul-e2e-args.json'",
+		shellescape(string(argsJSON)), e2eHost, e2eRunnerPath,
 	)
 
 	cmd := exec.Command("bash", "-c", command)

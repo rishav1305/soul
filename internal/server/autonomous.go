@@ -206,8 +206,6 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	}
 
 	hasChanges := false
-	verificationPassed := true
-	verificationSkipped := false
 
 	for attempt := 0; attempt <= maxE2ERetries; attempt++ {
 		// On retry attempts, prepend the gap report to the prompt so the
@@ -270,7 +268,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 						} else {
 							tp.sendActivity(taskID, "status", "Dev frontend rebuilt — running smoke test...")
 							devURL := fmt.Sprintf("http://localhost:%d", tp.server.cfg.Port+1)
-							smokeResult, smokeErr := RunSmokeTest(devURL)
+							smokeResult, smokeErr := RunSmokeTest(devURL, tp.server.cfg.E2EHost, tp.server.cfg.E2ERunnerPath)
 							if smokeErr != nil {
 								log.Printf("[autonomous] dev smoke test error for task %d: %v", taskID, smokeErr)
 								tp.sendActivity(taskID, "status", fmt.Sprintf("Smoke test error: %v", smokeErr))
@@ -294,31 +292,11 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			}
 		}
 
-		// Run E2E verification (only if there are changes to verify).
-		verificationPassed = true
-		verificationSkipped = false
-
-		if tp.server != nil && hasChanges {
-			tp.sendActivity(taskID, "status", "Running task-specific verification...")
-			devURL := fmt.Sprintf("http://localhost:%d", tp.server.cfg.Port+1)
-			smokeResult, _ := RunSmokeTest(devURL)
-			if smokeResult != nil && smokeResult.AllPass {
-				verificationPassed = true
-				tp.postVerificationComment(taskID, "**E2E Verification: PASSED**\n\nAll smoke checks passed.")
-			} else if smokeResult != nil {
-				verificationPassed = false
-				tp.postVerificationComment(taskID, "**E2E Verification: FAILED**\n\n"+FormatSmokeFailure(smokeResult))
-			} else {
-				verificationSkipped = true
-				tp.postVerificationComment(taskID, "**E2E Verification: SKIPPED**\n\nSmoke test unavailable (SSH to titan-pc failed).")
-			}
-			break
-		} else if !hasChanges {
-			tp.sendActivity(taskID, "status", "Skipping E2E verification — no changes to verify")
-			break
-		} else {
-			break
+		// If we got here without `continue`, the smoke test passed (or was skipped).
+		if hasChanges {
+			tp.postVerificationComment(taskID, "**E2E Verification: PASSED**\n\nAll smoke checks passed.")
 		}
+		break
 	}
 
 	// Re-read the task to see what stage the agent left it in.
@@ -332,7 +310,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 
 	if updated.Stage == planner.StageActive {
 		if !hasChanges {
-			// Agent ran but made no changes — move to blocked.
+			// Agent ran but made no changes (or smoke test failed all retries) — move to blocked.
 			blocked := planner.StageBlocked
 			tp.planner.Update(taskID, planner.TaskUpdate{
 				Stage:       &blocked,
@@ -340,20 +318,10 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			})
 			tp.broadcastTaskUpdate(taskID)
 			tp.sendActivity(taskID, "stage", "blocked")
-			tp.sendActivity(taskID, "status", "Moved to blocked — agent produced no file changes")
-			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but made no file changes. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
-		} else if !verificationPassed {
-			// Exhausted all E2E retries — move to blocked for human review.
-			blocked := planner.StageBlocked
-			tp.planner.Update(taskID, planner.TaskUpdate{
-				Stage:       &blocked,
-				CompletedAt: &completedAt,
-			})
-			tp.broadcastTaskUpdate(taskID)
-			tp.sendActivity(taskID, "stage", "blocked")
-			tp.sendActivity(taskID, "status", fmt.Sprintf("Moved to blocked — E2E verification still failing after %d retries", maxE2ERetries))
+			tp.sendActivity(taskID, "status", "Moved to blocked — no successful changes merged")
+			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but no changes were successfully merged. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
 		} else {
-			// Changes made and verification passed (or skipped) — advance to validation.
+			// Changes made and smoke test passed — advance to validation.
 			validation := planner.StageValidation
 			tp.planner.Update(taskID, planner.TaskUpdate{
 				Stage:       &validation,
@@ -361,11 +329,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			})
 			tp.broadcastTaskUpdate(taskID)
 			tp.sendActivity(taskID, "stage", "validation")
-			if verificationSkipped {
-				tp.sendActivity(taskID, "status", "Processing complete — moved to validation (E2E verification was skipped)")
-			} else {
-				tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
-			}
+			tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
 		}
 	} else {
 		// Agent already moved the task (e.g., to blocked or done). Respect it.

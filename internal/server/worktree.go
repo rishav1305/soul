@@ -244,9 +244,21 @@ func (wm *WorktreeManager) MergeToMaster(taskID int64, title string) error {
 }
 
 // RebuildFrontend runs vite build in the given directory.
+// It ensures node_modules is symlinked from the main project root before building.
 func (wm *WorktreeManager) RebuildFrontend(dir string) error {
+	webDir := filepath.Join(dir, "web")
+
+	// Ensure node_modules symlink exists (worktrees don't have their own).
+	nodeModules := filepath.Join(webDir, "node_modules")
+	mainNodeModules := filepath.Join(wm.repoRoot, "web", "node_modules")
+	if _, err := os.Lstat(nodeModules); os.IsNotExist(err) {
+		if err := os.Symlink(mainNodeModules, nodeModules); err != nil {
+			return fmt.Errorf("symlink node_modules: %w", err)
+		}
+	}
+
 	cmd := exec.Command("npx", "vite", "build")
-	cmd.Dir = filepath.Join(dir, "web")
+	cmd.Dir = webDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("vite build: %s — %w", out, err)

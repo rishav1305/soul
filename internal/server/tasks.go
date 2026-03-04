@@ -268,7 +268,7 @@ func (s *Server) handleTaskMove(w http.ResponseWriter, r *http.Request) {
 			} else {
 				// Prod smoke test gate.
 				prodURL := fmt.Sprintf("http://localhost:%d", s.cfg.Port)
-				smokeResult, smokeErr := RunSmokeTest(prodURL)
+				smokeResult, smokeErr := RunSmokeTest(prodURL, s.cfg.E2EHost, s.cfg.E2ERunnerPath)
 				if smokeErr != nil {
 					log.Printf("[tasks] prod smoke test error for task %d: %v", id, smokeErr)
 				} else if !smokeResult.AllPass {

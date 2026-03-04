@@ -216,29 +216,11 @@ func (s *Server) StartDevServer(devPort int) {
 	}()
 }
 
-// RebuildDevFrontend runs vite build in the dev server worktree,
-// updating the dev server's SPA files. Since the dev server serves
-// from disk (not embed), the new build takes effect immediately.
+// RebuildDevFrontend runs vite build in the dev server worktree.
+// Delegates to WorktreeManager.RebuildFrontend which handles node_modules symlink.
 func (s *Server) RebuildDevFrontend() error {
-	devWeb := filepath.Join(s.projectRoot, ".worktrees", "dev-server", "web")
-
-	// Ensure node_modules symlink exists.
-	devNodeModules := filepath.Join(devWeb, "node_modules")
-	mainNodeModules := filepath.Join(s.projectRoot, "web", "node_modules")
-	if _, err := os.Lstat(devNodeModules); os.IsNotExist(err) {
-		if err := os.Symlink(mainNodeModules, devNodeModules); err != nil {
-			return fmt.Errorf("symlink node_modules: %w", err)
-		}
-	}
-
-	cmd := exec.Command("npx", "vite", "build")
-	cmd.Dir = devWeb
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("vite build failed: %w\n%s", err, out)
-	}
-	log.Printf("[dev-server] frontend rebuilt successfully")
-	return nil
+	devDir := filepath.Join(s.projectRoot, ".worktrees", "dev-server")
+	return s.worktrees.RebuildFrontend(devDir)
 }
 
 // registerWSClient adds a WebSocket connection to the tracked clients map.
