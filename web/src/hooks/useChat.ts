@@ -23,18 +23,23 @@ export function useChat() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   // Keep a ref for stable access in callbacks without triggering re-renders
   const sessionIdRef = useRef<number | null>(null);
+  const isStreamingRef = useRef(false);
 
-  // Keep the ref in sync with the state
+  // Keep refs in sync with state
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   // When sessionId changes (e.g., session switch from SessionDrawer),
   // load the full message history from the API.
   // Skip hydration while streaming — session.created fires mid-stream and we
   // must not overwrite the live in-progress messages with a DB snapshot.
   useEffect(() => {
-    if (!sessionId || isStreaming) return;
+    if (!sessionId || isStreamingRef.current) return;
     fetch(`/api/sessions/${sessionId}/messages`)
       .then((r) => r.json())
       .then((records: Array<{ id: number; role: string; content: string }>) => {
@@ -48,7 +53,7 @@ export function useChat() {
         setMessages(hydrated);
       })
       .catch(() => {});
-  }, [sessionId, isStreaming]);
+  }, [sessionId]);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg: WSMessage) => {
