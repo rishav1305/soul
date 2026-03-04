@@ -88,6 +88,8 @@ type AgentLoop struct {
 	broadcast   func(WSMessage)
 	model       string
 	projectRoot string // when set, enables code_* tools for file operations
+	autonomous  bool   // strips E2E self-verify instructions from prompt
+	maxIter     int    // max tool iterations (0 = use default maxToolIterations)
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
@@ -253,6 +255,15 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	// Append chat-type-specific prompt instructions.
 	sysPrompt += chatTypePrompt(chatType)
 
+	// In autonomous mode, strip E2E self-verify instructions since the pipeline handles verification.
+	if a.autonomous {
+		sysPrompt = strings.Replace(sysPrompt,
+			"- ALWAYS verify your UI changes after implementation using e2e_assert or e2e_dom. Do not claim something is done without testing.\n", "", 1)
+		sysPrompt = strings.Replace(sysPrompt,
+			"- After making ANY UI change (frontend code, vite build), run at least one e2e_assert or e2e_dom to confirm the change is visible.\n",
+			"- Do NOT run E2E verification yourself — the autonomous pipeline handles build and verification automatically after your changes.\n", 1)
+	}
+
 	// Inject active skill content when provided.
 	if skillContent != "" {
 		sysPrompt += "\n\n---\n# Active Skill\n\n" + skillContent
@@ -299,9 +310,18 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	}
 
 	// Run the agent loop — Claude may call multiple tools iteratively.
+	iterLimit := maxToolIterations
+	if a.maxIter > 0 {
+		iterLimit = a.maxIter
+	}
+
+	// Stuck detection: track repeated identical tool calls.
+	type callSig struct{ Name, Input string }
+	callCounts := make(map[callSig]int)
+
 	var fullResponse strings.Builder
-	for iteration := 0; iteration < maxToolIterations; iteration++ {
-		log.Printf("[agent] iteration %d/%d", iteration+1, maxToolIterations)
+	for iteration := 0; iteration < iterLimit; iteration++ {
+		log.Printf("[agent] iteration %d/%d", iteration+1, iterLimit)
 		req := ai.Request{
 			MaxTokens: maxTokens,
 			System:    sysPrompt,
@@ -352,6 +372,27 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 				"tool_use_id": tc.ID,
 				"content":     result,
 			})
+		}
+
+		// Stuck detection: check for repeated identical tool calls.
+		for _, tc := range toolCalls {
+			sig := callSig{tc.Name, tc.Input}
+			callCounts[sig]++
+			if callCounts[sig] >= 3 {
+				log.Printf("[agent] stuck: tool=%s repeated=%d", tc.Name, callCounts[sig])
+				warning := fmt.Sprintf(
+					"\n\nWARNING — STUCK DETECTION: You called `%s` %d times with identical arguments. "+
+						"Stop repeating. Try a different approach or move the task to blocked.",
+					tc.Name, callCounts[sig])
+				if last, ok := toolResults[len(toolResults)-1].(map[string]any); ok {
+					last["content"] = fmt.Sprintf("%s%s", last["content"], warning)
+				}
+				iterLimit -= 2
+				if iterLimit <= iteration+1 {
+					iterLimit = iteration + 2
+				}
+				break
+			}
 		}
 
 		// Add tool results as a user message.

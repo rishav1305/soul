@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -128,8 +131,24 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		taskRoot = tp.projectRoot
 	}
 
+	// Determine workflow mode.
+	workflow := ""
+	var meta map[string]any
+	if task.Metadata != "" {
+		if err := json.Unmarshal([]byte(task.Metadata), &meta); err == nil {
+			if w, ok := meta["workflow"].(string); ok && (w == "micro" || w == "quick" || w == "full") {
+				workflow = w
+			}
+		}
+	}
+	if workflow == "" {
+		workflow = classifyWorkflow(task.Title, task.Description)
+	}
+	log.Printf("[autonomous] task %d workflow=%s", taskID, workflow)
+	tp.sendActivity(taskID, "status", fmt.Sprintf("Workflow: %s", workflow))
+
 	// Build the task prompt.
-	prompt := tp.buildTaskPrompt(task, taskRoot)
+	prompt := tp.buildTaskPrompt(task, taskRoot, workflow)
 
 	// Create a dedicated session for this task.
 	sessionID := fmt.Sprintf("auto-task-%d", taskID)
@@ -165,9 +184,26 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	// Run the agent loop, then E2E verify. Retry up to maxE2ERetries times
 	// if verification fails, feeding the gap report back into the agent each
 	// time so it can fix what it missed.
-	const maxE2ERetries = 3
+	var maxE2ERetries int
+	switch workflow {
+	case "micro":
+		maxE2ERetries = 1
+	case "quick":
+		maxE2ERetries = 2
+	default:
+		maxE2ERetries = 3
+	}
 
 	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
+	agent.autonomous = true
+	switch workflow {
+	case "micro":
+		agent.maxIter = 15
+	case "quick":
+		agent.maxIter = 30
+	default:
+		agent.maxIter = 40
+	}
 
 	hasChanges := false
 	verificationPassed := true
@@ -342,18 +378,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 	log.Printf("[autonomous] === completed task %d (stage=%s) ===", taskID, updated.Stage)
 }
 
-func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) string {
-	// Parse workflow mode from metadata (default: "quick").
-	workflow := "quick"
-	var meta map[string]any
-	if task.Metadata != "" {
-		if err := json.Unmarshal([]byte(task.Metadata), &meta); err == nil {
-			if w, ok := meta["workflow"].(string); ok && (w == "quick" || w == "full") {
-				workflow = w
-			}
-		}
-	}
-
+func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are autonomously working on task #%d.\n\n", task.ID)
 	fmt.Fprintf(&b, "**Title:** %s\n", task.Title)
@@ -382,6 +407,28 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 	b.WriteString("- `web/src/lib/` — Types, WebSocket client, utilities\n")
 	b.WriteString("- `products/` — Product plugins (compliance-go, etc.)\n")
 
+	// Inject CLAUDE.md conventions if present.
+	claudeMDPath := filepath.Join(taskRoot, "CLAUDE.md")
+	if claudeMD, err := os.ReadFile(claudeMDPath); err == nil {
+		b.WriteString("\n## Project Conventions (from CLAUDE.md)\n")
+		content := string(claudeMD)
+		if len(content) > 4000 {
+			content = content[:4000] + "\n...(truncated)"
+		}
+		b.WriteString(content)
+		b.WriteString("\n")
+	}
+
+	// Pre-load relevant files so agent doesn't need to search.
+	files := findRelevantFiles(taskRoot, task.Title, task.Description)
+	if len(files) > 0 {
+		b.WriteString("\n## Pre-loaded Files\n")
+		b.WriteString("These files are relevant to your task — no need to search.\n\n")
+		for path, content := range files {
+			fmt.Fprintf(&b, "### `%s`\n```\n%s\n```\n\n", path, content)
+		}
+	}
+
 	// Workflow-specific instructions.
 	if workflow == "full" {
 		b.WriteString("\n## Workflow: Full (7-step)\n")
@@ -400,6 +447,14 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		b.WriteString("Write a clear summary of what you changed and why in the task output.\n\n")
 		b.WriteString("### Step 7: Update Task\n")
 		b.WriteString("Use `task_update` to move the task to `validation` with your summary. If blocked, move to `blocked` with the reason.\n")
+	} else if workflow == "micro" {
+		b.WriteString("\n## Workflow: Micro (minimal)\n")
+		b.WriteString("This is a trivial change. The pipeline handles builds and verification.\n\n")
+		b.WriteString("### Step 1: Implement\n")
+		b.WriteString("Make the change directly. Use `code_edit` for modifications.\n")
+		b.WriteString("Do NOT run `vite build`, `go build`, or any E2E/verification commands.\n\n")
+		b.WriteString("### Step 2: Update Task\n")
+		b.WriteString("Use `task_update` to move the task to `validation` with a one-line summary.\n")
 	} else {
 		b.WriteString("\n## Workflow: Quick (5-step)\n")
 		b.WriteString("Follow these steps in order:\n\n")
@@ -423,6 +478,99 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 	b.WriteString("- Post all findings, gaps, and status notes as comments using `task_comment`, not `task_update`.\n")
 
 	return b.String()
+}
+
+// findRelevantFiles searches the project for files matching PascalCase component
+// names or explicit file paths mentioned in the task title/description. Returns
+// up to 3 files with their content (capped at 3000 chars each).
+func findRelevantFiles(taskRoot, title, description string) map[string]string {
+	text := title + " " + description
+	results := make(map[string]string)
+
+	// Extract PascalCase component names (e.g., ProductRail, ChatPanel).
+	compRe := regexp.MustCompile(`[A-Z][a-z]+(?:[A-Z][a-z]+)+`)
+	components := compRe.FindAllString(text, -1)
+
+	// Also extract explicit file paths.
+	pathRe := regexp.MustCompile(`[\w/.-]+\.(tsx?|go|css)`)
+	paths := pathRe.FindAllString(text, -1)
+
+	// Search for component files.
+	for _, comp := range components {
+		if len(results) >= 3 {
+			break
+		}
+		filepath.WalkDir(taskRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				if d != nil && d.IsDir() {
+					name := d.Name()
+					if name == "node_modules" || name == ".git" || name == "dist" || name == ".worktrees" {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+			base := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+			if base == comp && len(results) < 3 {
+				rel, _ := filepath.Rel(taskRoot, path)
+				data, err := os.ReadFile(path)
+				if err == nil {
+					content := string(data)
+					if len(content) > 3000 {
+						content = content[:3000] + "\n...(truncated)"
+					}
+					results[rel] = content
+				}
+				return filepath.SkipAll
+			}
+			return nil
+		})
+	}
+
+	// Check explicit paths.
+	for _, p := range paths {
+		if len(results) >= 3 {
+			break
+		}
+		abs := filepath.Join(taskRoot, p)
+		if data, err := os.ReadFile(abs); err == nil {
+			content := string(data)
+			if len(content) > 3000 {
+				content = content[:3000] + "\n...(truncated)"
+			}
+			results[p] = content
+		}
+	}
+
+	return results
+}
+
+// classifyWorkflow auto-classifies a task as micro/quick/full based on keywords.
+func classifyWorkflow(title, description string) string {
+	text := strings.ToLower(title + " " + description)
+	microKW := []string{
+		"add button", "add icon", "change color", "fix typo", "rename",
+		"update text", "update label", "change text", "toggle", "hide",
+		"show", "move button", "add tooltip", "remove button", "add link",
+		"change icon", "fix spacing", "fix padding", "fix margin",
+		"add class", "change style", "update style", "add prop",
+	}
+	for _, kw := range microKW {
+		if strings.Contains(text, kw) {
+			return "micro"
+		}
+	}
+	fullKW := []string{
+		"refactor", "redesign", "new feature", "add api", "add endpoint",
+		"database", "migration", "security", "authentication", "pipeline",
+		"architect",
+	}
+	for _, kw := range fullKW {
+		if strings.Contains(text, kw) {
+			return "full"
+		}
+	}
+	return "quick"
 }
 
 func (tp *TaskProcessor) sendActivity(taskID int64, activityType, content string) {
