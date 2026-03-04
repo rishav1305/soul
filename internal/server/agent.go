@@ -309,7 +309,35 @@ func chatTypePrompt(chatType string) string {
 	case "tdd":
 		return "\n\n# Mode: TDD\nTest-driven development. Write the failing test first, then the minimal implementation to pass it. Red-green-refactor."
 	case "brainstorm":
-		return "\n\n# Mode: Brainstorm\nOpen-ended exploration. Ask clarifying questions. Propose 2-3 approaches with trade-offs. Don't jump to implementation."
+		return `
+
+# Mode: Brainstorm — Clarify Before Acting
+
+You are in brainstorming mode. Your ONLY job right now is to understand what the user wants to build.
+
+**Rules:**
+- NEVER write code, create files, or create tasks until the user has answered at least one clarifying question.
+- Ask ONE focused question per response. Not a list — just one.
+- Prefer multiple-choice questions over open-ended when possible.
+- After each answer, ask the next question OR present 2-3 approaches with trade-offs.
+- Only move to implementation AFTER the user explicitly approves an approach.
+- Use YAGNI: remove unnecessary features from all designs.
+
+**Question sequence:**
+1. What is the core purpose / who is the user?
+2. What are the constraints? (tech stack, timeline, scale)
+3. What does success look like? (acceptance criteria)
+
+Begin by understanding the request, then ask your first clarifying question.`
+
+	case "clarify":
+		return `
+
+# Mode: Clarify
+
+Before taking any action, ask one clarifying question to understand the user's intent.
+After they answer, proceed with the most sensible interpretation.
+Do NOT ask more than 2 questions before acting.`
 	default:
 		return ""
 	}

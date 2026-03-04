@@ -30,6 +30,7 @@ const CHAT_TYPES = [
   { value: 'Review', label: 'Review', group: 'skill' },
   { value: 'TDD', label: 'TDD', group: 'skill' },
   { value: 'Brainstorm', label: 'Brainstorm', group: 'skill' },
+  { value: 'Clarify', label: 'Clarify', group: 'skill' },
 ] as const;
 
 export default function InputBar({ onSend, disabled }: InputBarProps) {
@@ -278,6 +279,10 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
     [handleSend, isListening, stopListening, showSlashPalette, filteredCommands, paletteIndex, selectCommand],
   );
 
+  const placeholder = (chatType === 'Brainstorm' || chatType === 'Clarify')
+    ? 'Describe what you want to build…'
+    : 'Message Soul...';
+
   return (
     <div className="px-5 py-4">
       <div className="relative">
@@ -336,7 +341,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Message Soul..."
+          placeholder={placeholder}
           rows={1}
           className="w-full bg-transparent px-4 pt-3 pb-2 text-fg placeholder:text-fg-muted font-body resize-none overflow-y-hidden focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
         />
