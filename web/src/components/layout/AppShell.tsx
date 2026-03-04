@@ -87,7 +87,7 @@ export default function AppShell() {
   }, [messages]);
 
   // Context
-  const { chipLabel } = useProductContext(planner.tasks, layout.activeProduct);
+  const { chipLabel, contextString } = useProductContext(planner.tasks, layout.activeProduct);
 
   // Show context chip when product switches in existing chat session
   const showContextChipInBar = layout.showContextChip && !contextChipDismissed && !!chipLabel && messages.length > 0;
@@ -176,10 +176,15 @@ export default function AppShell() {
         activeTaskCount={activeTaskCount}
         blockedTaskCount={blockedTaskCount}
         contextChips={contextChips}
+        contextString={layout.autoInjectContext ? contextString : undefined}
         onToggle={() => layout.setRailExpanded(!layout.railExpanded)}
         onHeightChange={layout.setRailHeight}
         onTaskClick={setSelectedTask}
         taskActivities={planner.taskActivities}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onNewSession={createSession}
+        onSessionSelect={switchSession}
       />
 
       {/* Sessions drawer */}
