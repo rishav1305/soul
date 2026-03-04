@@ -102,6 +102,20 @@ export interface SendOptions {
   chatType?: string;
   disabledTools?: string[];
   thinking?: boolean;
+  context?: string;
+}
+
+/* ── Layout redesign types ────────────────────────────── */
+
+export type ChatPosition = 'bottom' | 'top';
+
+export interface StageNotification {
+  id: string;
+  taskId: number;
+  taskTitle: string;
+  fromStage: TaskStage;
+  toStage: TaskStage;
+  time: string;
 }
 
 export interface TaskActivity {
