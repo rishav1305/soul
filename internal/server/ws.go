@@ -191,14 +191,17 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model, s.projectRoot)
 	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, opts.SkillContent, priorMessages, sendEvent)
 
-	// Persist assistant response to DB (only if there was text output).
-	if dbSessionID > 0 && s.planner != nil && fullResponse.Len() > 0 {
-		if err := s.planner.AddMessage(dbSessionID, "assistant", fullResponse.String()); err != nil {
+	// Persist assistant response to DB (always, even for tool-only turns).
+	if dbSessionID > 0 && s.planner != nil {
+		content := fullResponse.String()
+		if content == "" {
+			content = "[tool calls executed]"
+		}
+		if err := s.planner.AddMessage(dbSessionID, "assistant", content); err != nil {
 			log.Printf("[ws] failed to persist assistant message: %v", err)
 		}
 	}
-	// Always reset status to idle regardless of whether there was text output.
-	// Without this, tool-only responses (no text tokens) would leave the session stuck as "running".
+	// Always reset status to idle.
 	if dbSessionID > 0 && s.planner != nil {
 		_ = s.planner.UpdateSessionStatus(dbSessionID, "idle")
 	}

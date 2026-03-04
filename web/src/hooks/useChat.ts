@@ -162,7 +162,7 @@ export function useChat() {
         case 'tool.progress': {
           const data = msg.data as { id: string; progress: number };
           setMessages((prev) =>
-            updateLastAssistantToolCall(prev, data.id, (tc) => ({
+            updateAssistantToolCall(prev, data.id, (tc) => ({
               ...tc,
               progress: data.progress,
             })),
@@ -178,7 +178,7 @@ export function useChat() {
         case 'tool.complete': {
           const data = msg.data as { id: string; output: string };
           setMessages((prev) =>
-            updateLastAssistantToolCall(prev, data.id, (tc) => ({
+            updateAssistantToolCall(prev, data.id, (tc) => ({
               ...tc,
               status: 'complete',
               progress: 100,
@@ -234,20 +234,23 @@ export function useChat() {
   return { messages, setMessages, sendMessage, isStreaming, connected, sessionId, setSessionId };
 }
 
-function updateLastAssistantToolCall(
+function updateAssistantToolCall(
   messages: ChatMessage[],
   toolCallId: string,
   updater: (tc: ToolCallMessage) => ToolCallMessage,
 ): ChatMessage[] {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== 'assistant' || !last.toolCalls) return messages;
-
-  const updatedToolCalls = last.toolCalls.map((tc) =>
-    tc.id === toolCallId ? updater(tc) : tc,
-  );
-
-  return [
-    ...messages.slice(0, -1),
-    { ...last, toolCalls: updatedToolCalls },
-  ];
+  // Search all messages in reverse for the matching tool call
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || !msg.toolCalls) continue;
+    const idx = msg.toolCalls.findIndex(tc => tc.id === toolCallId);
+    if (idx === -1) continue;
+    // Found it — update this message
+    const newToolCalls = [...msg.toolCalls];
+    newToolCalls[idx] = updater(newToolCalls[idx]);
+    const updated = [...messages];
+    updated[i] = { ...msg, toolCalls: newToolCalls };
+    return updated;
+  }
+  return messages; // not found, no change
 }
