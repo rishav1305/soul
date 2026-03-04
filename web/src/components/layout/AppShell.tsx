@@ -87,7 +87,7 @@ export default function AppShell() {
   }, [messages]);
 
   // Context
-  const { contextString, chipLabel } = useProductContext(planner.tasks, layout.activeProduct);
+  const { chipLabel } = useProductContext(planner.tasks, layout.activeProduct);
 
   // Show context chip when product switches in existing chat session
   const showContextChipInBar = layout.showContextChip && !contextChipDismissed && !!chipLabel && messages.length > 0;
@@ -106,14 +106,14 @@ export default function AppShell() {
     setContextChipDismissed(true);
   }, []);
 
-  // Stage-change recent activities for task badge
-  const stageActivities = useMemo(() => {
+  // Stage-change recent activities for task card badges — computed here, ready for TaskPanel threading
+  const _stageActivities = useMemo(() => {
     const result: Record<number, { stage: TaskStage; time: string }> = {};
     for (const [taskIdStr, activities] of Object.entries(planner.taskActivities)) {
       const taskId = Number(taskIdStr);
-      const stageActivities = activities.filter((a) => a.type === 'stage');
-      if (stageActivities.length > 0) {
-        const last = stageActivities[stageActivities.length - 1];
+      const taskStageActivities = activities.filter((a) => a.type === 'stage');
+      if (taskStageActivities.length > 0) {
+        const last = taskStageActivities[taskStageActivities.length - 1];
         // Parse target stage from content like "active → validation"
         const match = last.content.match(/(?:→|->)\s*(\w+)/);
         if (match) {
@@ -193,6 +193,7 @@ export default function AppShell() {
         lastMessageSnippet={lastMessageSnippet}
         activeTaskCount={activeTaskCount}
         blockedTaskCount={blockedTaskCount}
+        contextChips={contextChips}
         onToggle={() => layout.setRailExpanded(!layout.railExpanded)}
         onHeightChange={layout.setRailHeight}
         onTaskClick={setSelectedTask}

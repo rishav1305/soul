@@ -1,10 +1,15 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import type { PlannerTask, TaskActivity, TaskComment } from '../../lib/types.ts';
-import ChatView from '../chat/ChatView.tsx';
+import { useState, useRef, useCallback } from 'react';
+import type { PlannerTask, TaskActivity } from '../lib/types.ts';
+import ChatView from './chat/ChatView.tsx';
 
 const MIN_HEIGHT_PX = 48;
 const MAX_HEIGHT_RATIO = 0.6;
-const DEFAULT_HEIGHT_RATIO = 0.25;
+
+interface ContextChip {
+  label: string;
+  onInject: () => void;
+  onDismiss: () => void;
+}
 
 interface HorizontalRailProps {
   position: 'bottom' | 'top';
@@ -16,6 +21,7 @@ interface HorizontalRailProps {
   lastMessageSnippet: string;
   activeTaskCount: number;
   blockedTaskCount: number;
+  contextChips?: ContextChip[];
   onToggle: () => void;
   onHeightChange: (h: number) => void;
   // Task actions
@@ -27,12 +33,12 @@ export default function HorizontalRail({
   position,
   expanded,
   railHeight,
-  chatSplit,
   tasks,
   activeProduct,
   lastMessageSnippet,
   activeTaskCount,
   blockedTaskCount,
+  contextChips = [],
   onToggle,
   onHeightChange,
   onTaskClick,
@@ -80,10 +86,6 @@ export default function HorizontalRail({
   );
 
   const currentHeight = expanded ? railHeight : collapsedHeight;
-
-  // Chat pane width
-  const chatPct = Math.max(10, Math.min(90, chatSplit));
-  const taskPct = 100 - chatPct;
 
   const positionClass = position === 'bottom'
     ? 'bottom-0 left-0 right-0 border-t'
@@ -187,7 +189,7 @@ export default function HorizontalRail({
             {activeTab === 'chat' ? (
               /* Full-width chat */
               <div className="flex-1 overflow-hidden">
-                <ChatView />
+                <ChatView contextChips={contextChips} />
               </div>
             ) : (
               /* Full-width task list */
