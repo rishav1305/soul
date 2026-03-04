@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { SendOptions } from '../../lib/types.ts';
+import { useSlashCommands } from '../../hooks/useSlashCommands.ts';
+import type { SlashCommand } from '../../hooks/useSlashCommands.ts';
 
 interface ToolInfo {
   name: string;
@@ -42,6 +44,10 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState('');
+  const [slashQuery, setSlashQuery] = useState('');
+  const [showSlashPalette, setShowSlashPalette] = useState(false);
+  const [paletteIndex, setPaletteIndex] = useState(0);
+  const commands = useSlashCommands();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -102,10 +108,42 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   }, [value, disabled, model, chatType, disabledTools, thinking, onSend]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
+    const val = e.target.value;
+    setValue(val);
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    // Slash command palette: show when input starts with / and has no space
+    if (val.startsWith('/') && !val.includes(' ')) {
+      setSlashQuery(val.slice(1).toLowerCase());
+      setShowSlashPalette(true);
+      setPaletteIndex(0);
+    } else {
+      setShowSlashPalette(false);
+    }
+  }, []);
+
+  // Filtered commands for the slash palette
+  const filteredCommands = showSlashPalette
+    ? commands.filter(c => c.name.toLowerCase().startsWith(slashQuery))
+    : [];
+
+  const selectCommand = useCallback((cmd: SlashCommand) => {
+    setShowSlashPalette(false);
+    setValue('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (cmd.builtin) {
+      if (cmd.name === 'think') {
+        setThinking(prev => !prev);
+      }
+      // 'new' and 'clear' have no prop callbacks available — no-op
+      textareaRef.current?.focus();
+      return;
+    }
+    if (cmd.chatType) {
+      setChatType(cmd.chatType);
+    }
+    textareaRef.current?.focus();
   }, []);
 
   const toggleTool = useCallback((qualifiedName: string) => {
@@ -201,6 +239,29 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Slash palette navigation
+      if (showSlashPalette && filteredCommands.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setPaletteIndex(i => Math.min(i + 1, filteredCommands.length - 1));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setPaletteIndex(i => Math.max(i - 1, 0));
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          if (filteredCommands[paletteIndex]) selectCommand(filteredCommands[paletteIndex]);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowSlashPalette(false);
+          return;
+        }
+      }
       if (e.key === 'Escape' && isListening) {
         e.preventDefault();
         stopListening();
@@ -212,12 +273,34 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
         handleSend();
       }
     },
-    [handleSend, isListening, stopListening],
+    [handleSend, isListening, stopListening, showSlashPalette, filteredCommands, paletteIndex, selectCommand],
   );
 
   return (
     <div className="px-5 py-4">
-      <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
+      <div className="relative">
+        {/* Slash command palette — positioned above the input box */}
+        {showSlashPalette && filteredCommands.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 bg-surface border border-border-default rounded-xl shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
+            <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-fg-muted border-b border-border-subtle">
+              Commands
+            </div>
+            {filteredCommands.map((cmd, i) => (
+              <button
+                key={cmd.name}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); selectCommand(cmd); }}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors cursor-pointer ${
+                  i === paletteIndex ? 'bg-elevated' : 'hover:bg-elevated/50'
+                }`}
+              >
+                <span className="font-mono text-soul text-sm">/{cmd.name}</span>
+                <span className="text-xs text-fg-muted flex-1">{cmd.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
         {/* File attachments */}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">
@@ -438,6 +521,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
               </svg>
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

@@ -44,6 +44,9 @@ func (s *Server) registerRoutes() {
 	// Model list endpoint.
 	s.mux.HandleFunc("GET /api/models", s.handleModelsList)
 
+	// Skills list endpoint — returns names of loaded skills.
+	s.mux.HandleFunc("GET /api/skills", s.handleSkillsList)
+
 	// Catch-all for unknown API routes — returns 404 JSON.
 	s.mux.HandleFunc("/api/", handleAPINotFound)
 
