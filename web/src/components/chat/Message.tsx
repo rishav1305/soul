@@ -10,7 +10,7 @@ interface MessageProps {
 }
 
 function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallMessage[] }) {
-  const [groupExpanded, setGroupExpanded] = useState(true);
+  const [groupExpanded, setGroupExpanded] = useState(false);
   const allDone = toolCalls.every(tc => tc.status !== 'running');
   const runningCount = toolCalls.filter(tc => tc.status === 'running').length;
   const errorCount = toolCalls.filter(tc => tc.status === 'error').length;

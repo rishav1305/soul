@@ -39,7 +39,7 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
       <button
         type="button"
         onClick={() => hasDetails && setExpanded(!expanded)}
-        className={`flex items-center gap-1.5 text-left w-full group py-0.5 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`flex items-center gap-1.5 text-left w-full group py-0.5 h-7 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <span className={`${statusColor} ${isRunning ? 'animate-pulse' : ''} shrink-0`}>
           {statusIcon}
@@ -48,7 +48,7 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
         <span className="text-fg-muted">·</span>
         <span className="text-fg-muted truncate flex-1">{summary}</span>
         {hasDetails && (
-          <span className="text-fg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">
+          <span className="text-fg-muted shrink-0 text-[10px]">
             {expanded ? '▾' : '▸'}
           </span>
         )}
