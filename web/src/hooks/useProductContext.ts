@@ -2,8 +2,15 @@ import { useMemo } from 'react';
 import type { PlannerTask, TaskStage } from '../lib/types.ts';
 
 const STAGE_ORDER: TaskStage[] = ['active', 'blocked', 'validation', 'brainstorm', 'backlog', 'done'];
+const ACTIVE_STAGES: TaskStage[] = ['active', 'blocked', 'validation'];
 
-function buildProductSummary(productTasks: PlannerTask[]): string {
+function buildProductSummary(productTasks: PlannerTask[], productName?: string): string {
+  if (productName) {
+    const active = productTasks.filter((t) => t.stage === 'active').length;
+    const blocked = productTasks.filter((t) => t.stage === 'blocked').length;
+    const validation = productTasks.filter((t) => t.stage === 'validation').length;
+    return `${productName}: ${active} active, ${blocked} blocked, ${validation} in validation`;
+  }
   if (productTasks.length === 0) return 'No tasks.';
   const byStage: Partial<Record<TaskStage, PlannerTask[]>> = {};
   for (const t of productTasks) {
@@ -91,5 +98,16 @@ export function useProductContext(
     };
   }, [deepContext, allProductsSummary, activeProduct, tasks]);
 
-  return { deepContext, allProductsSummary, buildContextString };
+  /** Flat context string for use in ChatView */
+  const contextString = useMemo(() => buildContextString(), [buildContextString]);
+
+  /** Light summary for the context chip label */
+  const chipLabel = useMemo(() => {
+    if (!activeProduct) return null;
+    const productTasks = tasks.filter((t) => t.product === activeProduct);
+    const active = productTasks.filter((t) => ACTIVE_STAGES.includes(t.stage)).length;
+    return `⟳ ${activeProduct} context — ${active} active tasks`;
+  }, [tasks, activeProduct]);
+
+  return { deepContext, allProductsSummary, buildContextString, contextString, chipLabel };
 }

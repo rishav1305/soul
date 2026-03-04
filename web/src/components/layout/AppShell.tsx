@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useLayoutStore } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
@@ -13,6 +13,7 @@ import HorizontalRail from './HorizontalRail.tsx';
 import SessionsDrawer from './SessionsDrawer.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
 import ToastStack from './ToastStack.tsx';
+import TaskDetail from '../planner/TaskDetail.tsx';
 
 function emptyByStage(): Record<TaskStage, PlannerTask[]> {
   return { backlog: [], brainstorm: [], active: [], blocked: [], validation: [], done: [] };
@@ -26,6 +27,10 @@ export default function AppShell() {
   const { notifications, dismiss } = useNotifications(planner.tasks);
   const { messages } = useChat();
 
+  const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
+  const [contextChipDismissed, setContextChipDismissed] = useState(false);
+  const prevProductRef = useRef<string | null>(null);
+
   // Derive unique products dynamically from tasks (must be before useProductContext)
   const products = useMemo(() => {
     const set = new Set<string>(['compliance', 'compliance-go', 'scout']);
@@ -36,7 +41,7 @@ export default function AppShell() {
     return Array.from(set).sort();
   }, [planner.tasks]);
 
-  const { buildContextString } = useProductContext(planner.tasks, layout.activeProduct, products);
+  const { buildContextString, chipLabel, contextString } = useProductContext(planner.tasks, layout.activeProduct, products);
 
   // Filtered tasks for the main product view
   const filteredTasks = useMemo(() => {
@@ -60,6 +65,44 @@ export default function AppShell() {
     if (!last?.content) return undefined;
     return last.content.slice(0, 80) + (last.content.length > 80 ? '…' : '');
   }, [messages]);
+
+  // Active/blocked counts for horizontal rail pill
+  const activeTaskCount = useMemo(() => {
+    const tasks = layout.activeProduct
+      ? planner.tasks.filter((t) => t.product === layout.activeProduct)
+      : planner.tasks;
+    return tasks.filter((t) => t.stage === 'active').length;
+  }, [planner.tasks, layout.activeProduct]);
+
+  const blockedTaskCount = useMemo(() => {
+    const tasks = layout.activeProduct
+      ? planner.tasks.filter((t) => t.product === layout.activeProduct)
+      : planner.tasks;
+    return tasks.filter((t) => t.stage === 'blocked').length;
+  }, [planner.tasks, layout.activeProduct]);
+
+  // Show context chip when product switches in existing chat session
+  const showContextChipInBar = layout.showContextChip && !contextChipDismissed && !!chipLabel && messages.length > 0;
+
+  // Reset chip dismissed state on product change
+  useEffect(() => {
+    if (prevProductRef.current !== layout.activeProduct) {
+      setContextChipDismissed(false);
+      prevProductRef.current = layout.activeProduct;
+    }
+  }, [layout.activeProduct]);
+
+  const handleInjectContext = useCallback(() => {
+    setContextChipDismissed(true);
+  }, []);
+
+  const contextChips = showContextChipInBar
+    ? [{
+        label: chipLabel!,
+        onInject: handleInjectContext,
+        onDismiss: () => setContextChipDismissed(true),
+      }]
+    : [];
 
   const handleSessionCreated = useCallback((id: number) => {
     switchSession(id);
@@ -162,6 +205,10 @@ export default function AppShell() {
             activeSessionId={activeSessionId}
             onSessionCreated={handleSessionCreated}
             lastChatSnippet={lastChatSnippet}
+            activeTaskCount={activeTaskCount}
+            blockedTaskCount={blockedTaskCount}
+            contextChips={contextChips}
+            contextString={layout.autoInjectContext ? contextString : undefined}
             tasks={planner.tasks}
             activeProduct={layout.activeProduct}
             taskActivities={planner.taskActivities}
@@ -178,12 +225,40 @@ export default function AppShell() {
             autoInjectContext={layout.autoInjectContext}
             showContextChip={layout.showContextChip}
             inlineBadgesEnabled={layout.inlineBadgesEnabled}
+            onTaskClick={setSelectedTask}
           />
         </div>
       </div>
 
       {/* ── Toast notifications ── */}
       {layout.toastsEnabled && <ToastStack notifications={notifications} onDismiss={dismiss} />}
+
+      {/* Task detail modal */}
+      {selectedTask && (
+        <TaskDetail
+          task={planner.tasks.find((t) => t.id === selectedTask.id) ?? selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onMove={async (id, stage, comment) => {
+            await planner.moveTask(id, stage, comment);
+            setSelectedTask(null);
+          }}
+          onUpdate={async (id, updates) => {
+            const updated = await planner.updateTask(id, updates);
+            setSelectedTask(updated);
+            return updated;
+          }}
+          onDelete={async (id) => {
+            await planner.deleteTask(id);
+            setSelectedTask(null);
+          }}
+          activities={planner.taskActivities[selectedTask.id] || []}
+          streamContent={planner.taskStreams[selectedTask.id] || ''}
+          products={products}
+          comments={planner.taskComments[selectedTask.id]}
+          onFetchComments={planner.fetchComments}
+          onAddComment={planner.addComment}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
-import type { StageNotification, TaskActivity, TaskStage, WSMessage } from '../lib/types.ts';
-import type { PlannerTask } from '../lib/types.ts';
+import type { StageNotification, TaskActivity, WSMessage } from '../lib/types.ts';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -15,32 +14,27 @@ function uuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** Parse "backlog → active" style content from stage activity events */
-function parseStageChange(content: string): { from: TaskStage; to: TaskStage } | null {
-  const match = content.match(/(\w+)\s*[→\->]+\s*(\w+)/);
-  if (!match) return null;
-  const validStages: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
-  const from = match[1] as TaskStage;
-  const to = match[2] as TaskStage;
-  if (!validStages.includes(from) || !validStages.includes(to)) return null;
-  return { from, to };
-}
+const MAX_TOASTS = 5;
+const AUTO_DISMISS_MS = 4000;
 
-const AUTO_DISMISS_MS = 4500;
-const MAX_VISIBLE = 5;
-
-export function useNotifications(tasks: PlannerTask[]) {
+export function useNotifications(tasks: { id: number; title: string }[], enabled: boolean) {
   const { onMessage } = useWebSocket();
-  const [notifications, setNotifications] = useState<StageNotification[]>([]);
+  const [toasts, setToasts] = useState<StageNotification[]>([]);
 
   useEffect(() => {
+    if (!enabled) return;
+
     const unsubscribe = onMessage((msg: WSMessage) => {
       if (msg.type !== 'task.activity') return;
       const activity = msg.data as TaskActivity;
-      if (!activity?.task_id || activity.type !== 'stage') return;
+      if (!activity || activity.type !== 'stage') return;
 
-      const parsed = parseStageChange(activity.content);
-      if (!parsed) return;
+      // Parse "backlog → active" from content
+      const match = activity.content.match(/(\w+)\s*(?:→|->)\s*(\w+)/);
+      if (!match) return;
+
+      const fromStage = match[1] as StageNotification['fromStage'];
+      const toStage = match[2] as StageNotification['toStage'];
 
       const task = tasks.find((t) => t.id === activity.task_id);
       const taskTitle = task?.title ?? `Task #${activity.task_id}`;
@@ -49,25 +43,25 @@ export function useNotifications(tasks: PlannerTask[]) {
         id: uuid(),
         taskId: activity.task_id,
         taskTitle,
-        fromStage: parsed.from,
-        toStage: parsed.to,
-        time: new Date(),
+        fromStage,
+        toStage,
+        time: activity.time || new Date().toISOString(),
       };
 
-      setNotifications((prev) => [notification, ...prev].slice(0, MAX_VISIBLE));
+      setToasts((prev) => [notification, ...prev].slice(0, MAX_TOASTS));
 
-      // Auto-dismiss after 4.5s
+      // Auto-dismiss after 4s
       setTimeout(() => {
-        setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
+        setToasts((prev) => prev.filter((t) => t.id !== notification.id));
       }, AUTO_DISMISS_MS);
     });
 
     return unsubscribe;
-  }, [onMessage, tasks]);
+  }, [onMessage, tasks, enabled]);
 
   const dismiss = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  return { notifications, dismiss };
+  return { toasts, dismiss };
 }

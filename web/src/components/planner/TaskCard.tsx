@@ -1,4 +1,5 @@
-import type { PlannerTask, TaskSubstep, TaskActivity } from '../../lib/types.ts';
+import { useMemo } from 'react';
+import type { PlannerTask, TaskSubstep, TaskStage } from '../../lib/types.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -52,19 +53,24 @@ const SUBSTEP_ORDER: TaskSubstep[] = [
   'security_review',
 ];
 
-const STAGE_DOT_COLORS: Record<string, string> = {
+const STAGE_DOT_COLOR: Record<TaskStage, string> = {
+  backlog: 'bg-stage-backlog',
+  brainstorm: 'bg-stage-brainstorm',
   active: 'bg-stage-active',
   blocked: 'bg-stage-blocked',
   validation: 'bg-stage-validation',
   done: 'bg-stage-done',
-  brainstorm: 'bg-stage-brainstorm',
-  backlog: 'bg-stage-backlog',
 };
+
+interface RecentActivity {
+  stage: TaskStage;
+  time: string; // ISO
+}
 
 interface TaskCardProps {
   task: PlannerTask;
   onClick: (task: PlannerTask) => void;
-  recentActivity?: TaskActivity;
+  recentActivity?: RecentActivity;
   inlineBadgesEnabled?: boolean;
 }
 
@@ -77,13 +83,14 @@ export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEn
   const prio = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[1];
   const timeStr = relativeTime(task.created_at);
 
-  // Show inline badge if activity is recent (within 90s) and badges are enabled
-  const showBadge = inlineBadgesEnabled && recentActivity && recentActivity.type === 'stage' &&
-    (Date.now() - new Date(recentActivity.time).getTime()) < 90_000;
-  const badgeStage = showBadge
-    ? (recentActivity!.content.match(/(\w+)\s*[→\->]+\s*(\w+)/)?.[2] ?? '')
-    : '';
-  const badgeDotColor = STAGE_DOT_COLORS[badgeStage] ?? 'bg-stage-active';
+  // Determine if we should show the pulsing badge (within 60s)
+  const showBadge = useMemo(() => {
+    if (!inlineBadgesEnabled || !recentActivity) return false;
+    const elapsed = Date.now() - new Date(recentActivity.time).getTime();
+    return elapsed < 60_000;
+  }, [inlineBadgesEnabled, recentActivity]);
+
+  const badgeDotClass = recentActivity ? STAGE_DOT_COLOR[recentActivity.stage] : '';
 
   return (
     <button
@@ -93,7 +100,10 @@ export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEn
     >
       {/* Inline stage-change badge */}
       {showBadge && (
-        <span className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full ${badgeDotColor} animate-soul-pulse`} title={`Moved to ${badgeStage}`} />
+        <span
+          className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full animate-soul-pulse ${badgeDotClass}`}
+          title={`Stage changed to ${recentActivity?.stage}`}
+        />
       )}
       <div className="flex items-start justify-between gap-2 mb-1">
         <h4 className="text-sm font-display font-medium text-fg leading-snug line-clamp-2">

@@ -17,12 +17,19 @@ interface ModelInfo {
   description: string;
 }
 
+interface ContextChip {
+  label: string;
+  onInject: () => void;
+  onDismiss: () => void;
+}
+
 interface InputBarProps {
   onSend: (message: string, options?: SendOptions) => void;
   disabled: boolean;
   contextChip?: string | null;
   onInjectContext?: () => void;
   onDismissChip?: () => void;
+  contextChips?: ContextChip[];
 }
 
 const CHAT_TYPES = [
@@ -36,7 +43,7 @@ const CHAT_TYPES = [
   { value: 'Clarify', label: 'Clarify', group: 'skill' },
 ] as const;
 
-export default function InputBar({ onSend, disabled, contextChip, onInjectContext, onDismissChip }: InputBarProps) {
+export default function InputBar({ onSend, disabled, contextChip, onInjectContext, onDismissChip, contextChips = [] }: InputBarProps) {
   const [value, setValue] = useState('');
   const [model, setModel] = useState<string>('');
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -311,7 +318,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           </div>
         )}
         <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
-        {/* Context injection chip */}
+        {/* Context injection chip (single) */}
         {contextChip && (
           <div className="flex items-center gap-2 px-4 pt-2.5">
             <button
@@ -333,6 +340,32 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
             >
               ×
             </button>
+          </div>
+        )}
+        {/* Context chips (array) */}
+        {contextChips.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-4 pt-3">
+            {contextChips.map((chip, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1.5 bg-soul/10 border border-soul/20 rounded-lg px-2.5 py-1 text-xs text-soul"
+              >
+                <button
+                  type="button"
+                  onClick={chip.onInject}
+                  className="hover:underline cursor-pointer truncate max-w-[200px]"
+                >
+                  {chip.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={chip.onDismiss}
+                  className="text-soul/60 hover:text-soul ml-0.5 cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
         {/* File attachments */}
