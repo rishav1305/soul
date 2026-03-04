@@ -261,11 +261,32 @@ func (s *Server) handleTaskMove(w http.ResponseWriter, r *http.Request) {
 
 		if err := s.worktrees.MergeToMaster(id, task.Title); err != nil {
 			log.Printf("[tasks] merge to master failed for task %d: %v", id, err)
-			// Don't fail the move — log the error. User can retry.
 		} else {
 			// Rebuild prod frontend.
 			if err := s.worktrees.RebuildFrontend(s.projectRoot); err != nil {
 				log.Printf("[tasks] prod frontend rebuild failed: %v", err)
+			} else {
+				// Prod smoke test gate.
+				prodURL := fmt.Sprintf("http://localhost:%d", s.cfg.Port)
+				smokeResult, smokeErr := RunSmokeTest(prodURL)
+				if smokeErr != nil {
+					log.Printf("[tasks] prod smoke test error for task %d: %v", id, smokeErr)
+				} else if !smokeResult.AllPass {
+					log.Printf("[tasks] prod smoke test FAILED for task %d — reverting", id)
+					if revErr := RevertLastMerge(s.projectRoot); revErr != nil {
+						log.Printf("[tasks] revert master failed: %v", revErr)
+					}
+					s.worktrees.RebuildFrontend(s.projectRoot)
+					validation := planner.StageValidation
+					s.planner.Update(id, planner.TaskUpdate{Stage: &validation})
+					log.Printf("[tasks] task %d reverted to validation — prod smoke test failed", id)
+					writeJSON(w, http.StatusConflict, map[string]string{
+						"error": "Prod smoke test failed — merge reverted, task moved back to validation. Details: " + FormatSmokeFailure(smokeResult),
+					})
+					return
+				} else {
+					log.Printf("[tasks] prod smoke test PASSED for task %d", id)
+				}
 			}
 		}
 
