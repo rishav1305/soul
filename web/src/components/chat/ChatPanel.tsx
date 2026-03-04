@@ -8,7 +8,7 @@ interface ChatPanelProps {
   onUnreadChange: (count: number) => void;
 }
 
-export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange }: ChatPanelProps) {
+export default function ChatPanel({ onUnreadChange }: ChatPanelProps) {
   const { messages } = useChat();
   const prevCountRef = useRef(messages.length);
 
