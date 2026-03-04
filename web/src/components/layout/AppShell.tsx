@@ -106,24 +106,6 @@ export default function AppShell() {
     setContextChipDismissed(true);
   }, []);
 
-  // Stage-change recent activities for task card badges — computed here, ready for TaskPanel threading
-  const _stageActivities = useMemo(() => {
-    const result: Record<number, { stage: TaskStage; time: string }> = {};
-    for (const [taskIdStr, activities] of Object.entries(planner.taskActivities)) {
-      const taskId = Number(taskIdStr);
-      const taskStageActivities = activities.filter((a) => a.type === 'stage');
-      if (taskStageActivities.length > 0) {
-        const last = taskStageActivities[taskStageActivities.length - 1];
-        // Parse target stage from content like "active → validation"
-        const match = last.content.match(/(?:→|->)\s*(\w+)/);
-        if (match) {
-          result[taskId] = { stage: match[1] as TaskStage, time: last.time };
-        }
-      }
-    }
-    return result;
-  }, [planner.taskActivities]);
-
   const contextChips = showContextChipInBar
     ? [{
         label: chipLabel!,

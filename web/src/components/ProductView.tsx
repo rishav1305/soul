@@ -35,7 +35,7 @@ export default function ProductView({
   activeProduct,
   tasks,
   filteredTasks,
-  tasksByStage,
+  tasksByStage: _tasksByStage,
   products,
   loading,
   taskView,
