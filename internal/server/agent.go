@@ -101,9 +101,55 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 
 	log.Printf("[agent] run session=%s msg=%q chatType=%s thinking=%v", sessionID, userMessage, chatType, thinking)
 
-	// Get or create session.
+	// Get or create session and add the user message.
 	sess := a.sessions.GetOrCreate(sessionID)
 	sess.AddMessage("user", userMessage)
+
+	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, sendEvent)
+}
+
+// RunWithHistory executes the agent loop for a single user message, seeding
+// the in-memory session with DB history first if the session is empty.
+// This enables full context on session resume.
+func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, chatType string, disabledTools []string, thinking bool, history []ai.Message, sendEvent func(WSMessage)) {
+	if a.ai == nil {
+		sendEvent(WSMessage{
+			Type:      "chat.token",
+			SessionID: sessionID,
+			Content:   "AI is not configured. Please set the ANTHROPIC_API_KEY environment variable and restart Soul.",
+		})
+		sendEvent(WSMessage{
+			Type:      "chat.done",
+			SessionID: sessionID,
+		})
+		return
+	}
+
+	log.Printf("[agent] run-with-history session=%s history=%d msg=%q chatType=%s thinking=%v",
+		sessionID, len(history), userMessage, chatType, thinking)
+
+	sess := a.sessions.GetOrCreate(sessionID)
+
+	// Seed the in-memory session from DB history if it is empty.
+	// This handles the case where the server restarted or a session is being resumed.
+	if len(sess.Messages) == 0 && len(history) > 0 {
+		for _, h := range history {
+			if content, ok := h.Content.(string); ok {
+				sess.AddMessage(h.Role, content)
+			}
+		}
+		log.Printf("[agent] seeded session %s with %d history messages", sessionID, len(sess.Messages))
+	}
+
+	sess.AddMessage("user", userMessage)
+
+	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, sendEvent)
+}
+
+// runLoop is the core agentic iteration loop. It assumes the session already
+// has the user message appended (via Run or RunWithHistory).
+func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, disabledTools []string, thinking bool, sendEvent func(WSMessage)) {
+	sess := a.sessions.GetOrCreate(sessionID)
 
 	// Build a set of disabled tool names for fast lookup.
 	disabledSet := make(map[string]bool, len(disabledTools))
@@ -235,7 +281,7 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 		SessionID: sessionID,
 	})
 
-	// Store the assistant response.
+	// Store the assistant response in the in-memory session.
 	if fullResponse.Len() > 0 {
 		sess.AddMessage("assistant", fullResponse.String())
 	}

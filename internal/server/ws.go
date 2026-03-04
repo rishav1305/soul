@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
+
+	"github.com/rishav1305/soul/internal/ai"
 )
 
 // WSMessage is the envelope for all WebSocket messages.
@@ -73,12 +77,7 @@ type chatOptions struct {
 // handleChatSend processes a chat.send message by running the AI agent loop.
 // It streams tokens, tool calls, and progress events back to the browser.
 func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *WSMessage) {
-	sessionID := msg.SessionID
-	if sessionID == "" {
-		sessionID = "default"
-	}
-
-	log.Printf("[ws] chat.send session=%s content=%q", sessionID, msg.Content)
+	log.Printf("[ws] chat.send session=%s content=%q", msg.SessionID, msg.Content)
 
 	// Parse optional chat options from msg.Data.
 	var opts chatOptions
@@ -97,17 +96,99 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	log.Printf("[ws] chat options model=%s chatType=%s disabledTools=%v thinking=%v",
 		model, opts.ChatType, opts.DisabledTools, opts.Thinking)
 
-	// Create a sendEvent callback that writes to the WebSocket.
-	sendEvent := func(wsMsg WSMessage) {
+	// Create a mutable sendEvent callback that writes to the WebSocket.
+	// We use a var so we can wrap it later to capture the full response.
+	var sendEvent func(WSMessage)
+	sendEvent = func(wsMsg WSMessage) {
 		if err := wsjson.Write(ctx, conn, wsMsg); err != nil {
 			log.Printf("[ws] write error type=%s: %v", wsMsg.Type, err)
 		}
 	}
 
-	// Run the AI agent loop.
+	// Resolve DB session ID — create new or look up existing.
+	var dbSessionID int64
+	if id, err := strconv.ParseInt(msg.SessionID, 10, 64); err == nil && id > 0 {
+		// Client provided an existing DB session ID.
+		dbSessionID = id
+		if s.planner != nil {
+			_ = s.planner.UpdateSessionStatus(dbSessionID, "running")
+		}
+	} else if s.planner != nil {
+		// New session — create it in the DB.
+		title := msg.Content
+		if len(title) > 100 {
+			title = title[:100]
+		}
+		if sess, err := s.planner.CreateSession(title); err == nil {
+			dbSessionID = sess.ID
+			// Tell client the new DB session ID so it can resume later.
+			idData, _ := json.Marshal(map[string]any{"session_id": dbSessionID})
+			sendEvent(WSMessage{Type: "session.created", Data: idData})
+		} else {
+			log.Printf("[ws] failed to create DB session: %v", err)
+		}
+	}
+
+	// Load prior history from DB to resume context.
+	var priorMessages []ai.Message
+	if dbSessionID > 0 && s.planner != nil {
+		records, err := s.planner.GetSessionMessages(dbSessionID)
+		if err != nil {
+			log.Printf("[ws] failed to load session messages: %v", err)
+		} else {
+			for _, r := range records {
+				priorMessages = append(priorMessages, ai.Message{Role: r.Role, Content: r.Content})
+			}
+			// Cap history at 50 messages to avoid exceeding context limits.
+			if len(priorMessages) > 50 {
+				priorMessages = priorMessages[len(priorMessages)-50:]
+			}
+			log.Printf("[ws] loaded %d prior messages for session %d", len(priorMessages), dbSessionID)
+		}
+	}
+
+	// Persist user message to DB before running agent.
+	if dbSessionID > 0 && s.planner != nil {
+		if err := s.planner.AddMessage(dbSessionID, "user", msg.Content); err != nil {
+			log.Printf("[ws] failed to persist user message: %v", err)
+		}
+	}
+
+	// Wrap sendEvent to capture the full assistant response for DB persistence.
+	var fullResponse strings.Builder
+	originalSendEvent := sendEvent
+	sendEvent = func(wsMsg WSMessage) {
+		if wsMsg.Type == "chat.token" {
+			fullResponse.WriteString(wsMsg.Content)
+		}
+		originalSendEvent(wsMsg)
+	}
+
+	// Determine the in-memory session ID to use.
+	// Use "db-<id>" for DB-backed sessions so the in-memory store stays isolated.
+	inMemorySessionID := msg.SessionID
+	if inMemorySessionID == "" {
+		inMemorySessionID = "default"
+	}
+	if dbSessionID > 0 {
+		inMemorySessionID = fmt.Sprintf("db-%d", dbSessionID)
+	}
+
+	// Run the AI agent loop with prior history for context.
 	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model, s.projectRoot)
-	agent.Run(ctx, sessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, sendEvent)
-	log.Printf("[ws] chat.send complete session=%s", sessionID)
+	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, priorMessages, sendEvent)
+
+	// Persist assistant response to DB.
+	if dbSessionID > 0 && s.planner != nil && fullResponse.Len() > 0 {
+		if err := s.planner.AddMessage(dbSessionID, "assistant", fullResponse.String()); err != nil {
+			log.Printf("[ws] failed to persist assistant message: %v", err)
+		}
+		if err := s.planner.UpdateSessionStatus(dbSessionID, "idle"); err != nil {
+			log.Printf("[ws] failed to update session status: %v", err)
+		}
+	}
+
+	log.Printf("[ws] chat.send complete session=%s dbSession=%d", inMemorySessionID, dbSessionID)
 }
 
 // sendWSError sends an error message back to the client.

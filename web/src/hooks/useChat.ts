@@ -19,11 +19,45 @@ export function useChat() {
   const { send, onMessage, connected } = useWebSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const sessionIdRef = useRef<string>(uuid());
+  // DB integer session ID — null means no session created yet
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  // Keep a ref for stable access in callbacks without triggering re-renders
+  const sessionIdRef = useRef<number | null>(null);
+
+  // Keep the ref in sync with the state
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  // When sessionId changes (e.g., session switch from SessionDrawer),
+  // load the full message history from the API.
+  useEffect(() => {
+    if (!sessionId) return;
+    fetch(`/api/sessions/${sessionId}/messages`)
+      .then((r) => r.json())
+      .then((records: Array<{ id: number; role: string; content: string }>) => {
+        const hydrated: ChatMessage[] = records.map((r) => ({
+          id: String(r.id),
+          role: r.role as 'user' | 'assistant',
+          content: r.content,
+          toolCalls: [],
+          timestamp: new Date(),
+        }));
+        setMessages(hydrated);
+      })
+      .catch(() => {});
+  }, [sessionId]);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg: WSMessage) => {
       switch (msg.type) {
+        case 'session.created': {
+          // Server assigned a DB session ID to the current conversation.
+          const data = msg.data as { session_id: number };
+          setSessionId(data.session_id);
+          break;
+        }
+
         case 'chat.token': {
           const token = msg.content ?? '';
           setMessages((prev) => {
@@ -154,7 +188,9 @@ export function useChat() {
 
       send({
         type: 'chat.message',
-        session_id: sessionIdRef.current,
+        // Send DB session ID as string if we have one, otherwise 'new' to
+        // signal the server to create a fresh session.
+        session_id: sessionIdRef.current ? String(sessionIdRef.current) : 'new',
         content,
         data: options,
       });
@@ -162,7 +198,7 @@ export function useChat() {
     [send],
   );
 
-  return { messages, sendMessage, isStreaming, connected };
+  return { messages, setMessages, sendMessage, isStreaming, connected, sessionId, setSessionId };
 }
 
 function updateLastAssistantToolCall(
