@@ -231,6 +231,7 @@ export default function HorizontalRail({
   const railBar = (
     <div
       ref={railContainerRef}
+      data-testid="horizontal-rail"
       className="flex items-stretch h-12 bg-surface select-none shrink-0"
       style={{
         borderTopWidth: position === 'bottom' ? 1 : 0,

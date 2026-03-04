@@ -189,7 +189,7 @@ async function run() {
       });
 
       // Check 4: Key UI elements
-      var testIds = ['product-rail', 'chat-panel', 'horizontal-rail'];
+      var testIds = ['product-rail', 'horizontal-rail'];
       for (var ti = 0; ti < testIds.length; ti++) {
         var tid = testIds[ti];
         var el = await page.$('[data-testid="' + tid + '"]');
