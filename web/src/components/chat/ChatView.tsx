@@ -3,7 +3,17 @@ import { useChat } from '../../hooks/useChat.ts';
 import Message from './Message.tsx';
 import InputBar from './InputBar.tsx';
 
-export default function ChatView() {
+interface ContextChip {
+  label: string;
+  onInject: () => void;
+  onDismiss: () => void;
+}
+
+interface ChatViewProps {
+  contextChips?: ContextChip[];
+}
+
+export default function ChatView({ contextChips = [] }: ChatViewProps) {
   const { messages, sendMessage, isStreaming } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -41,7 +51,7 @@ export default function ChatView() {
           )}
         </div>
       </div>
-      <InputBar onSend={sendMessage} disabled={isStreaming} />
+      <InputBar onSend={sendMessage} disabled={isStreaming} contextChips={contextChips} />
     </div>
   );
 }
