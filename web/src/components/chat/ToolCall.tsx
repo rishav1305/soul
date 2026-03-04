@@ -34,25 +34,38 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
   const summary = briefSummary(toolCall);
   const hasDetails = !!(toolCall.output || (toolCall.findings?.length ?? 0) > 0);
 
+  const pillContent = (
+    <>
+      <span className={`${statusColor} ${isRunning ? 'animate-pulse' : ''} shrink-0`}>
+        {statusIcon}
+      </span>
+      <span className="text-fg-secondary">{toolCall.name}</span>
+      <span className="text-fg-muted">·</span>
+      <span className="text-fg-muted truncate flex-1">{summary}</span>
+      {hasDetails && (
+        <span className="text-fg-muted shrink-0 text-[10px]">
+          {expanded ? '▾' : '▸'}
+        </span>
+      )}
+    </>
+  );
+
   return (
     <div className="font-mono text-xs">
-      <button
-        type="button"
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        className={`flex items-center gap-1.5 text-left w-full group py-0.5 h-7 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
-      >
-        <span className={`${statusColor} ${isRunning ? 'animate-pulse' : ''} shrink-0`}>
-          {statusIcon}
-        </span>
-        <span className="text-fg-secondary">{toolCall.name}</span>
-        <span className="text-fg-muted">·</span>
-        <span className="text-fg-muted truncate flex-1">{summary}</span>
-        {hasDetails && (
-          <span className="text-fg-muted shrink-0 text-[10px]">
-            {expanded ? '▾' : '▸'}
-          </span>
-        )}
-      </button>
+      {hasDetails ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 text-left w-full h-7 group cursor-pointer"
+        >
+          {pillContent}
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5 w-full h-7">
+          {pillContent}
+        </div>
+      )}
 
       {expanded && hasDetails && (
         <div className="ml-4 mt-1 mb-1 max-h-60 overflow-y-auto rounded border border-border-subtle">

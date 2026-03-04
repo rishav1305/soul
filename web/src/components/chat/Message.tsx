@@ -53,8 +53,6 @@ function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallMessage[] }) {
 
 export default function Message({ message }: MessageProps) {
   const isUser = message.role === 'user';
-  const hasTools = (message.toolCalls?.length ?? 0) > 0;
-  const hasText = !!message.content;
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
@@ -64,7 +62,7 @@ export default function Message({ message }: MessageProps) {
           : 'text-fg rounded-2xl rounded-bl-md'
       }`}>
         {/* Text content always first */}
-        {hasText && (
+        {message.content && (
           isUser ? (
             <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
               {message.content}
@@ -77,7 +75,9 @@ export default function Message({ message }: MessageProps) {
         )}
 
         {/* Tool calls as compact group below text */}
-        {hasTools && <ToolCallGroup toolCalls={message.toolCalls!} />}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <ToolCallGroup toolCalls={message.toolCalls} />
+        )}
       </div>
     </div>
   );
