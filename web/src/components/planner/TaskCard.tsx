@@ -1,4 +1,5 @@
-import type { PlannerTask, TaskSubstep } from '../../lib/types.ts';
+import { useMemo } from 'react';
+import type { PlannerTask, TaskSubstep, TaskStage } from '../../lib/types.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -52,12 +53,28 @@ const SUBSTEP_ORDER: TaskSubstep[] = [
   'security_review',
 ];
 
+const STAGE_DOT_COLOR: Record<TaskStage, string> = {
+  backlog: 'bg-stage-backlog',
+  brainstorm: 'bg-stage-brainstorm',
+  active: 'bg-stage-active',
+  blocked: 'bg-stage-blocked',
+  validation: 'bg-stage-validation',
+  done: 'bg-stage-done',
+};
+
+interface RecentActivity {
+  stage: TaskStage;
+  time: string; // ISO
+}
+
 interface TaskCardProps {
   task: PlannerTask;
   onClick: (task: PlannerTask) => void;
+  recentActivity?: RecentActivity;
+  inlineBadgesEnabled?: boolean;
 }
 
-export default function TaskCard({ task, onClick }: TaskCardProps) {
+export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEnabled = true }: TaskCardProps) {
   const borderClass = PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low';
   const substepIndex = task.substep ? SUBSTEP_ORDER.indexOf(task.substep) + 1 : 0;
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
@@ -66,12 +83,29 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
   const prio = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[1];
   const timeStr = relativeTime(task.created_at);
 
+  // Determine if we should show the pulsing badge (within 60s)
+  const showBadge = useMemo(() => {
+    if (!inlineBadgesEnabled || !recentActivity) return false;
+    const elapsed = Date.now() - new Date(recentActivity.time).getTime();
+    return elapsed < 60_000;
+  }, [inlineBadgesEnabled, recentActivity]);
+
+  const badgeDotClass = recentActivity ? STAGE_DOT_COLOR[recentActivity.stage] : '';
+
   return (
     <button
       type="button"
       onClick={() => onClick(task)}
-      className={`w-full text-left bg-elevated border-l-[3px] ${borderClass} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
+      className={`relative w-full text-left bg-elevated border-l-[3px] ${borderClass} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
     >
+      {/* Inline stage-change badge */}
+      {showBadge && (
+        <span
+          className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full animate-soul-pulse ${badgeDotClass}`}
+          title={`Stage changed to ${recentActivity?.stage}`}
+        />
+      )}
+
       <div className="flex items-start justify-between gap-2 mb-1">
         <h4 className="text-sm font-display font-medium text-fg leading-snug line-clamp-2">
           {task.title}
