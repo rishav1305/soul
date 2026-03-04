@@ -62,12 +62,10 @@ export interface PlannerTask {
 
 /* ── Layout types ────────────────────────────────────── */
 
-export type PanelState = 'rail' | 'open';
 export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
 export type GridSubView = 'grid' | 'table' | 'grouped';
 export type HorizontalRailPosition = 'bottom' | 'top';
 export type HorizontalRailTab = 'chat' | 'tasks';
-export type ChatPosition = 'bottom' | 'top';
 
 export interface TaskFilters {
   stage: TaskStage | 'all';
@@ -76,15 +74,10 @@ export interface TaskFilters {
 }
 
 export interface LayoutState {
-  // Legacy — kept for compatibility but no longer drives main layout
-  soulState: PanelState;
-  chatState: PanelState;
-  taskState: PanelState;
   taskView: TaskView;
   gridSubView: GridSubView;
   panelWidth: number | null;
   filters: TaskFilters;
-  // New layout
   activeProduct: string | null;         // which product is open in main view
   railPosition: HorizontalRailPosition; // bottom or top
   railExpanded: boolean;                // 48px bar vs expanded panel
@@ -93,7 +86,6 @@ export interface LayoutState {
   chatSplitPct: number;                 // chat % of expanded rail (default 60)
   sessionsOpen: boolean;                // sessions drawer overlay on left rail
   settingsOpen: boolean;                // settings panel overlay
-  // Notification + context preferences
   autoInjectContext: boolean;           // auto-inject product context on new chat
   showContextChip: boolean;             // show "inject?" chip on product switch
   toastsEnabled: boolean;               // stage-change toast notifications
