@@ -4,11 +4,34 @@ function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
 }
 
+function relativeTime(dateStr: string): string {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return '';
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
 const PRIORITY_BORDER: Record<number, string> = {
   0: 'border-l-priority-low',
   1: 'border-l-priority-normal',
   2: 'border-l-priority-high',
   3: 'border-l-priority-critical',
+};
+
+const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
+  0: { label: 'Low', color: 'text-priority-low' },
+  1: { label: 'Norm', color: 'text-priority-normal' },
+  2: { label: 'High', color: 'text-priority-high' },
+  3: { label: 'Crit', color: 'text-priority-critical' },
 };
 
 const SUBSTEP_LABELS: Record<TaskSubstep, string> = {
@@ -40,6 +63,8 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
   const meta = parseMetadata(task.metadata);
   const isAutonomous = !!meta.autonomous;
+  const prio = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[1];
+  const timeStr = relativeTime(task.created_at);
 
   return (
     <button
@@ -67,6 +92,9 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
             Auto
           </span>
         )}
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-overlay ${prio.color}`}>
+          {prio.label}
+        </span>
         {task.product && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-overlay text-fg-secondary">
             {task.product}
@@ -83,6 +111,10 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
           </span>
         )}
       </div>
+
+      {timeStr && (
+        <div className="text-[9px] text-fg-muted mt-1.5">{timeStr}</div>
+      )}
     </button>
   );
 }

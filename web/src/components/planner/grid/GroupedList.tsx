@@ -120,12 +120,18 @@ export default function GroupedList({ tasks, onTaskClick }: GroupedListProps) {
                     onClick={() => onTaskClick(task)}
                     className="flex flex-col gap-0.5 w-full px-3 py-1.5 pl-8 hover:bg-elevated cursor-pointer text-left"
                   >
-                    {/* First line: id, title, priority, substep */}
+                    {/* First line: id, title, priority, substep, product, blocked */}
                     <div className="flex items-center gap-3 text-xs">
                       <span className="text-fg-muted shrink-0 w-8 text-right font-mono">#{task.id}</span>
                       <span className="text-fg truncate flex-1 min-w-0">{task.title}</span>
                       <span className={`shrink-0 ${prio.color}`}>{prio.label}</span>
                       {sub && <span className="text-fg-secondary shrink-0">{sub}</span>}
+                      {task.product && (
+                        <span className="bg-overlay text-fg-secondary shrink-0 truncate max-w-20 px-1.5 py-0.5 rounded text-[10px]">{task.product}</span>
+                      )}
+                      {task.blocker && (
+                        <span className="bg-stage-blocked/15 text-stage-blocked shrink-0 px-1.5 py-0.5 rounded text-[10px]">Blocked</span>
+                      )}
                     </div>
                     {/* Second line: description preview + timestamp */}
                     {(desc || timeStr) && (
