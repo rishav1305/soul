@@ -72,6 +72,7 @@ type chatOptions struct {
 	ChatType      string   `json:"chatType"`
 	DisabledTools []string `json:"disabledTools"`
 	Thinking      bool     `json:"thinking"`
+	SkillContent  string   `json:"skillContent"`
 }
 
 // handleChatSend processes a chat.send message by running the AI agent loop.
@@ -93,8 +94,16 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		model = opts.Model
 	}
 
-	log.Printf("[ws] chat options model=%s chatType=%s disabledTools=%v thinking=%v",
-		model, opts.ChatType, opts.DisabledTools, opts.Thinking)
+	// If client didn't provide skill content, auto-load from chatType name.
+	if opts.SkillContent == "" && s.skillStore != nil && opts.ChatType != "" {
+		chatTypeLower := strings.ToLower(opts.ChatType)
+		if content, ok := s.skillStore.Get(chatTypeLower); ok {
+			opts.SkillContent = content
+		}
+	}
+
+	log.Printf("[ws] chat options model=%s chatType=%s disabledTools=%v thinking=%v skillContent=%d bytes",
+		model, opts.ChatType, opts.DisabledTools, opts.Thinking, len(opts.SkillContent))
 
 	// Create a mutable sendEvent callback that writes to the WebSocket.
 	// We use a var so we can wrap it later to capture the full response.
@@ -180,7 +189,7 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 
 	// Run the AI agent loop with prior history for context.
 	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model, s.projectRoot)
-	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, priorMessages, sendEvent)
+	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, opts.SkillContent, priorMessages, sendEvent)
 
 	// Persist assistant response to DB (only if there was text output).
 	if dbSessionID > 0 && s.planner != nil && fullResponse.Len() > 0 {

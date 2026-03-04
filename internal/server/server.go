@@ -24,6 +24,7 @@ import (
 	"github.com/rishav1305/soul/internal/planner"
 	"github.com/rishav1305/soul/internal/products"
 	"github.com/rishav1305/soul/internal/session"
+	"github.com/rishav1305/soul/internal/skills"
 )
 
 // Server is the core HTTP server for the Soul platform.
@@ -40,6 +41,8 @@ type Server struct {
 	worktrees      *WorktreeManager // manages per-task git worktrees
 	webFS          fs.FS            // embedded SPA files (nil = use placeholder)
 	minioClient    *MinIOClient     // optional MinIO client for screenshots/attachments
+
+	skillStore *skills.Store // loaded from ~/.claude/plugins/cache
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -67,6 +70,8 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 		worktrees:   wm,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
+	s.skillStore = skills.Load()
+	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 
@@ -120,6 +125,8 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		webFS:       webFS,
 		wsClients:   make(map[*websocket.Conn]context.Context),
 	}
+	s.skillStore = skills.Load()
+	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
 	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
 	s.registerRoutes()
 

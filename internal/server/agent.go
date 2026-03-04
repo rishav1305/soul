@@ -105,13 +105,15 @@ func (a *AgentLoop) Run(ctx context.Context, sessionID, userMessage, chatType st
 	sess := a.sessions.GetOrCreate(sessionID)
 	sess.AddMessage("user", userMessage)
 
-	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, sendEvent)
+	// No skill injection for autonomous task execution.
+	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, "", sendEvent)
 }
 
 // RunWithHistory executes the agent loop for a single user message, seeding
 // the in-memory session with DB history first if the session is empty.
 // This enables full context on session resume.
-func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, chatType string, disabledTools []string, thinking bool, history []ai.Message, sendEvent func(WSMessage)) {
+// skillContent is appended to the system prompt when non-empty (skills injection).
+func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, chatType string, disabledTools []string, thinking bool, skillContent string, history []ai.Message, sendEvent func(WSMessage)) {
 	if a.ai == nil {
 		sendEvent(WSMessage{
 			Type:      "chat.token",
@@ -125,8 +127,8 @@ func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, 
 		return
 	}
 
-	log.Printf("[agent] run-with-history session=%s history=%d msg=%q chatType=%s thinking=%v",
-		sessionID, len(history), userMessage, chatType, thinking)
+	log.Printf("[agent] run-with-history session=%s history=%d msg=%q chatType=%s thinking=%v skillContent=%d bytes",
+		sessionID, len(history), userMessage, chatType, thinking, len(skillContent))
 
 	sess := a.sessions.GetOrCreate(sessionID)
 
@@ -143,12 +145,13 @@ func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, 
 
 	sess.AddMessage("user", userMessage)
 
-	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, sendEvent)
+	a.runLoop(ctx, sessionID, chatType, disabledTools, thinking, skillContent, sendEvent)
 }
 
 // runLoop is the core agentic iteration loop. It assumes the session already
 // has the user message appended (via Run or RunWithHistory).
-func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, disabledTools []string, thinking bool, sendEvent func(WSMessage)) {
+// skillContent, when non-empty, is appended to the system prompt as an active skill.
+func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, disabledTools []string, thinking bool, skillContent string, sendEvent func(WSMessage)) {
 	sess := a.sessions.GetOrCreate(sessionID)
 
 	// Build a set of disabled tool names for fast lookup.
@@ -194,6 +197,11 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 
 	// Append chat-type-specific prompt instructions.
 	sysPrompt += chatTypePrompt(chatType)
+
+	// Inject active skill content when provided.
+	if skillContent != "" {
+		sysPrompt += "\n\n---\n# Active Skill\n\n" + skillContent
+	}
 
 	// Convert session messages to AI messages for the request.
 	messages := buildAIMessages(sess)
