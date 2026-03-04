@@ -1,3 +1,4 @@
+// web/src/components/chat/ToolCall.tsx
 import { useState } from 'react';
 import type { ToolCallMessage } from '../../lib/types.ts';
 
@@ -5,107 +6,86 @@ interface ToolCallProps {
   toolCall: ToolCallMessage;
 }
 
+function briefSummary(toolCall: ToolCallMessage): string {
+  if (toolCall.status === 'running') return 'running…';
+  if (toolCall.status === 'error') return 'failed';
+  const findings = toolCall.findings?.length ?? 0;
+  if (findings > 0) return `${findings} issue${findings !== 1 ? 's' : ''}`;
+  // Extract a short summary from output (first non-empty line, max 60 chars)
+  if (toolCall.output) {
+    const first = toolCall.output.split('\n').find(l => l.trim());
+    if (first) return first.length > 60 ? first.slice(0, 57) + '…' : first;
+  }
+  return 'done';
+}
+
 export default function ToolCall({ toolCall }: ToolCallProps) {
   const [expanded, setExpanded] = useState(false);
+  const isRunning = toolCall.status === 'running';
+  const isError = toolCall.status === 'error';
 
-  const statusIcon =
-    toolCall.status === 'running'
-      ? '\u25F3' // spinning clock
-      : toolCall.status === 'complete'
-        ? '\u2713' // checkmark
-        : '\u2717'; // X
+  const statusIcon = isRunning ? '◌' : isError ? '✗' : '✓';
+  const statusColor = isRunning
+    ? 'text-fg-muted'
+    : isError
+    ? 'text-stage-blocked'
+    : 'text-stage-done';
 
-  const statusColor =
-    toolCall.status === 'running'
-      ? 'text-stage-active'
-      : toolCall.status === 'complete'
-        ? 'text-stage-done'
-        : 'text-stage-blocked';
-
-  const findingsCount = toolCall.findings?.length ?? 0;
-  const summary =
-    toolCall.status === 'complete' && findingsCount > 0
-      ? `Found ${findingsCount} issue${findingsCount !== 1 ? 's' : ''}`
-      : toolCall.status === 'complete'
-        ? 'Complete'
-        : toolCall.status === 'error'
-          ? 'Failed'
-          : 'Running...';
+  const summary = briefSummary(toolCall);
+  const hasDetails = !!(toolCall.output || (toolCall.findings?.length ?? 0) > 0);
 
   return (
-    <div className="my-2 border border-border-default rounded-lg overflow-hidden">
+    <div className="font-mono text-xs">
       <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-elevated/60 hover:bg-elevated transition-colors text-left"
+        type="button"
+        onClick={() => hasDetails && setExpanded(!expanded)}
+        className={`flex items-center gap-1.5 text-left w-full group py-0.5 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <span className={`${statusColor} ${toolCall.status === 'running' ? 'animate-spin' : ''}`}>
+        <span className={`${statusColor} ${isRunning ? 'animate-pulse' : ''} shrink-0`}>
           {statusIcon}
         </span>
-        <span className="font-mono text-sm text-fg-secondary">{toolCall.name}</span>
-        <span className="text-xs text-fg-muted ml-auto">{summary}</span>
-        <span className="text-fg-muted text-xs">{expanded ? '\u25B2' : '\u25BC'}</span>
+        <span className="text-fg-secondary">{toolCall.name}</span>
+        <span className="text-fg-muted">·</span>
+        <span className="text-fg-muted truncate flex-1">{summary}</span>
+        {hasDetails && (
+          <span className="text-fg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">
+            {expanded ? '▾' : '▸'}
+          </span>
+        )}
       </button>
 
-      {toolCall.status === 'running' && toolCall.progress != null && toolCall.progress > 0 && (
-        <div className="px-3 pb-2 bg-elevated/60">
-          <div className="h-1 bg-overlay rounded-full overflow-hidden">
-            <div
-              className="h-full bg-soul rounded-full transition-all duration-300"
-              style={{ width: `${toolCall.progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {expanded && (
-        <div className="px-3 py-2 bg-surface/60 text-sm">
+      {expanded && hasDetails && (
+        <div className="ml-4 mt-1 mb-1 max-h-60 overflow-y-auto rounded border border-border-subtle">
           {toolCall.output && (
-            <pre className="text-fg-muted font-mono whitespace-pre-wrap text-xs mb-2">
-              {toolCall.output}
+            <pre className="p-2 text-fg-muted text-[11px] whitespace-pre-wrap leading-relaxed">
+              {toolCall.output.length > 2000
+                ? toolCall.output.slice(0, 2000) + '\n… (truncated)'
+                : toolCall.output}
             </pre>
           )}
-          {findingsCount > 0 && (
-            <div className="space-y-1">
+          {(toolCall.findings?.length ?? 0) > 0 && (
+            <div className="p-2 space-y-0.5">
               {toolCall.findings!.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex items-center gap-2 text-xs text-fg-muted"
-                >
-                  <SeverityBadge severity={f.severity} />
-                  <span className="text-fg">{f.title}</span>
+                <div key={f.id} className="flex items-center gap-2 text-[11px]">
+                  <span className={`shrink-0 px-1 rounded text-[9px] uppercase font-medium ${
+                    f.severity === 'critical' || f.severity === 'high'
+                      ? 'bg-stage-blocked/20 text-stage-blocked'
+                      : f.severity === 'medium'
+                      ? 'bg-stage-validation/20 text-stage-validation'
+                      : 'bg-overlay text-fg-muted'
+                  }`}>{f.severity}</span>
+                  <span className="text-fg flex-1 truncate">{f.title}</span>
                   {f.file && (
-                    <span className="text-fg-muted ml-auto font-mono">
-                      {f.file}
-                      {f.line != null ? `:${f.line}` : ''}
+                    <span className="text-fg-muted shrink-0">
+                      {f.file}{f.line != null ? `:${f.line}` : ''}
                     </span>
                   )}
                 </div>
               ))}
             </div>
           )}
-          {!toolCall.output && findingsCount === 0 && (
-            <span className="text-fg-muted text-xs">No details available</span>
-          )}
         </div>
       )}
     </div>
-  );
-}
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const colors: Record<string, string> = {
-    critical: 'bg-stage-blocked/20 text-stage-blocked',
-    high: 'bg-stage-blocked/20 text-stage-blocked',
-    medium: 'bg-stage-validation/20 text-stage-validation',
-    low: 'bg-stage-active/20 text-stage-active',
-    info: 'bg-overlay text-fg-muted',
-  };
-
-  const cls = colors[severity.toLowerCase()] ?? colors.info;
-
-  return (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${cls}`}>
-      {severity}
-    </span>
   );
 }
