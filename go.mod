@@ -3,7 +3,6 @@ module github.com/rishav1305/soul
 go 1.24.2
 
 require (
-	github.com/go-rod/rod v0.116.2
 	github.com/minio/minio-go/v7 v7.0.98
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
@@ -28,11 +27,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
-	github.com/ysmood/fetchup v0.2.3 // indirect
-	github.com/ysmood/goob v0.4.0 // indirect
-	github.com/ysmood/got v0.40.0 // indirect
-	github.com/ysmood/gson v0.7.3 // indirect
-	github.com/ysmood/leakless v0.9.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect

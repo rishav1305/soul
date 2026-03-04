@@ -392,20 +392,8 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow s
 		fmt.Fprintf(&b, "**Product:** %s\n", task.Product)
 	}
 
-	// Project context.
-	b.WriteString("\n## Project Context\n")
-	fmt.Fprintf(&b, "Project root: `%s`\n", taskRoot)
-	b.WriteString("This is a Go + React/TypeScript monorepo:\n")
-	b.WriteString("- `cmd/soul/` — Go entrypoint\n")
-	b.WriteString("- `internal/server/` — Go HTTP server, WebSocket, agent loop, task APIs\n")
-	b.WriteString("- `internal/planner/` — Task store (SQLite)\n")
-	b.WriteString("- `internal/ai/` — Claude API client\n")
-	b.WriteString("- `internal/session/` — Chat session memory\n")
-	b.WriteString("- `web/src/` — React frontend (Vite + TypeScript + Tailwind)\n")
-	b.WriteString("- `web/src/components/` — React components (chat/, layout/, planner/, panels/)\n")
-	b.WriteString("- `web/src/hooks/` — Custom hooks (useChat, usePlanner, useWebSocket, etc.)\n")
-	b.WriteString("- `web/src/lib/` — Types, WebSocket client, utilities\n")
-	b.WriteString("- `products/` — Product plugins (compliance-go, etc.)\n")
+	// Project context from CLAUDE.md is injected below.
+	fmt.Fprintf(&b, "\n## Project Root\n`%s`\n", taskRoot)
 
 	// Inject CLAUDE.md conventions if present.
 	claudeMDPath := filepath.Join(taskRoot, "CLAUDE.md")
