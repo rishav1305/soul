@@ -161,87 +161,95 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		}
 	}
 
-	// Run the agent loop with code tools enabled.
+	// Run the agent loop, then E2E verify. Retry up to maxE2ERetries times
+	// if verification fails, feeding the gap report back into the agent each
+	// time so it can fix what it missed.
+	const maxE2ERetries = 3
+
 	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
-	agent.Run(ctx, sessionID, prompt, "code", nil, false, sendEvent)
 
-	// Check if cancelled.
-	if ctx.Err() != nil {
-		log.Printf("[autonomous] task %d was cancelled", taskID)
-		tp.sendActivity(taskID, "status", "Autonomous processing cancelled")
-		return
-	}
-
-	// Save the full output.
-	finalOutput := outputBuf.String()
-	tp.planner.Update(taskID, planner.TaskUpdate{Output: &finalOutput})
-
-	// Commit changes in the worktree and merge to dev.
 	hasChanges := false
-	if tp.worktrees != nil && taskRoot != tp.projectRoot {
-		tp.sendActivity(taskID, "status", "Committing changes...")
-		commitErr := tp.worktrees.CommitInWorktree(taskID, task.Title)
-		if commitErr == ErrNothingToCommit {
-			log.Printf("[autonomous] task %d: agent made no file changes", taskID)
-			tp.sendActivity(taskID, "status", "Warning: agent made no file changes")
-		} else if commitErr != nil {
-			log.Printf("[autonomous] commit failed for task %d: %v", taskID, commitErr)
-			tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", commitErr))
-		} else {
-			hasChanges = true
+	verificationPassed := true
+	verificationSkipped := false
 
-			// Post-commit diff review: check for unintended large deletions.
-			if warnings := tp.worktrees.ReviewCommitDiff(taskID); len(warnings) > 0 {
-				var body strings.Builder
-				body.WriteString("**Post-commit review: potential unintended deletions**\n\n")
-				for _, w := range warnings {
-					fmt.Fprintf(&body, "- `%s`: +%d/-%d (net -%d lines removed)\n",
-						w.File, w.LinesAdded, w.LinesRemoved, w.LinesRemoved-w.LinesAdded)
-				}
-				body.WriteString("\nLarge net deletions may indicate the agent accidentally dropped existing code. Please review these files carefully during validation.")
-				tp.postVerificationComment(taskID, body.String())
-				tp.sendActivity(taskID, "status", fmt.Sprintf("Warning: %d file(s) have large net deletions — review recommended", len(warnings)))
-				log.Printf("[autonomous] task %d: diff review flagged %d files with large deletions", taskID, len(warnings))
-			}
+	for attempt := 0; attempt <= maxE2ERetries; attempt++ {
+		// On retry attempts, prepend the gap report to the prompt so the
+		// agent knows exactly what E2E checks are still failing.
+		runPrompt := prompt
+		if attempt > 0 {
+			tp.sendActivity(taskID, "status", fmt.Sprintf("E2E retry %d/%d — re-running agent with gap report...", attempt, maxE2ERetries))
 		}
 
-		if hasChanges {
-			tp.sendActivity(taskID, "status", "Merging to dev branch...")
-			if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
-				log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
-				tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
+		agent.Run(ctx, sessionID, runPrompt, "code", nil, false, sendEvent)
+
+		// Check if cancelled mid-run.
+		if ctx.Err() != nil {
+			log.Printf("[autonomous] task %d was cancelled", taskID)
+			tp.sendActivity(taskID, "status", "Autonomous processing cancelled")
+			return
+		}
+
+		// Save accumulated output after each attempt.
+		finalOutput := outputBuf.String()
+		tp.planner.Update(taskID, planner.TaskUpdate{Output: &finalOutput})
+
+		// Commit and merge changes.
+		hasChanges = false
+		if tp.worktrees != nil && taskRoot != tp.projectRoot {
+			tp.sendActivity(taskID, "status", "Committing changes...")
+			commitErr := tp.worktrees.CommitInWorktree(taskID, task.Title)
+			if commitErr == ErrNothingToCommit {
+				log.Printf("[autonomous] task %d attempt %d: agent made no file changes", taskID, attempt)
+				tp.sendActivity(taskID, "status", "Warning: agent made no file changes")
+			} else if commitErr != nil {
+				log.Printf("[autonomous] commit failed for task %d attempt %d: %v", taskID, attempt, commitErr)
+				tp.sendActivity(taskID, "status", fmt.Sprintf("Commit warning: %v", commitErr))
 			} else {
-				tp.sendActivity(taskID, "status", "Changes merged to dev — rebuilding frontend...")
-				if tp.server != nil {
-					if err := tp.server.RebuildDevFrontend(); err != nil {
-						log.Printf("[autonomous] dev frontend rebuild failed for task %d: %v", taskID, err)
-						tp.sendActivity(taskID, "status", fmt.Sprintf("Dev rebuild warning: %v", err))
-					} else {
-						tp.sendActivity(taskID, "status", "Dev frontend rebuilt — changes visible on dev server")
+				hasChanges = true
+			}
+
+			if hasChanges {
+				tp.sendActivity(taskID, "status", "Merging to dev branch...")
+				if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
+					log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
+					tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
+				} else {
+					tp.sendActivity(taskID, "status", "Changes merged to dev — rebuilding frontend...")
+					if tp.server != nil {
+						if err := tp.server.RebuildDevFrontend(); err != nil {
+							log.Printf("[autonomous] dev frontend rebuild failed for task %d: %v", taskID, err)
+							tp.sendActivity(taskID, "status", fmt.Sprintf("Dev rebuild warning: %v", err))
+						} else {
+							tp.sendActivity(taskID, "status", "Dev frontend rebuilt — changes visible on dev server")
+						}
 					}
 				}
 			}
 		}
-	}
 
-	// Run E2E verification (only if there are changes to verify).
-	verificationPassed := true
-	verificationSkipped := false
-	if tp.server != nil && hasChanges {
-		tp.sendActivity(taskID, "status", "Running E2E verification...")
-		vResult := tp.verifyTask(ctx, task)
-		if vResult == nil {
-			// Verification was skipped (no browser available).
-			verificationSkipped = true
-			tp.sendActivity(taskID, "status", "E2E verification skipped — no browser available")
-			tp.postVerificationComment(taskID, "**E2E Verification: SKIPPED**\n\nNo browser (Chrome/Chromium) available for automated verification. Install Chromium to enable E2E checks.")
-		} else {
-			// Post verification results.
+		// Run E2E verification (only if there are changes to verify).
+		verificationPassed = true
+		verificationSkipped = false
+		var gapReport string
+
+		if tp.server != nil && hasChanges {
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Running E2E verification (attempt %d)...", attempt+1))
+			vResult := tp.verifyTask(ctx, task)
+			if vResult == nil {
+				// No browser available — skip and proceed to validation.
+				verificationSkipped = true
+				tp.sendActivity(taskID, "status", "E2E verification skipped — no browser available")
+				tp.postVerificationComment(taskID, "**E2E Verification: SKIPPED**\n\nNo browser (Chrome/Chromium) available for automated verification. Install Chromium to enable E2E checks.")
+				break
+			}
+
+			// Build the verification comment body and capture failed checks.
 			var body strings.Builder
+			var failedChecks strings.Builder
 			if vResult.Passed {
 				body.WriteString("**E2E Verification: PASSED**\n\n")
 			} else {
-				body.WriteString("**E2E Verification: FAILED**\n\n")
+				fmt.Fprintf(&body, "**E2E Verification: FAILED** (attempt %d/%d)\n\n", attempt+1, maxE2ERetries+1)
 				verificationPassed = false
 			}
 			for _, check := range vResult.Checks {
@@ -249,6 +257,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 					fmt.Fprintf(&body, "- %s: PASS — %s\n", check.Name, check.Detail)
 				} else {
 					fmt.Fprintf(&body, "- %s: FAIL — %s\n", check.Name, check.Detail)
+					fmt.Fprintf(&failedChecks, "- %s: %s\n", check.Name, check.Detail)
 				}
 			}
 
@@ -266,12 +275,32 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 				tp.broadcast(WSMessage{Type: "task.comment.added", Data: raw})
 			}
 
-			if !vResult.Passed {
-				tp.sendActivity(taskID, "status", "E2E verification failed — staying in active stage")
+			if vResult.Passed {
+				break // verification passed — exit retry loop
 			}
+
+			// Build the gap report that will be prepended to the next prompt.
+			gapReport = fmt.Sprintf(
+				"\n\n## E2E Verification Failed (attempt %d/%d)\n\nThe following checks did not pass. Fix only these gaps — do not re-implement already-passing parts:\n\n%s\nRe-run the build and verification steps before finishing.\n",
+				attempt+1, maxE2ERetries+1, failedChecks.String(),
+			)
+
+			if attempt < maxE2ERetries {
+				// Inject gap report as context for the next agent run.
+				prompt = prompt + gapReport
+				tp.sendActivity(taskID, "status", fmt.Sprintf("E2E verification failed — %d gap(s) found, retrying implementation...", strings.Count(failedChecks.String(), "\n")))
+			} else {
+				// Exhausted retries — will fall through to blocked.
+				tp.sendActivity(taskID, "status", fmt.Sprintf("E2E verification failed after %d attempts — moving to blocked", maxE2ERetries+1))
+				_ = gapReport
+			}
+		} else if !hasChanges {
+			tp.sendActivity(taskID, "status", "Skipping E2E verification — no changes to verify")
+			break
+		} else {
+			// tp.server == nil (test mode) — skip verification.
+			break
 		}
-	} else if !hasChanges {
-		tp.sendActivity(taskID, "status", "Skipping E2E verification — no changes to verify")
 	}
 
 	// Re-read the task to see what stage the agent left it in.
@@ -285,7 +314,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 
 	if updated.Stage == planner.StageActive {
 		if !hasChanges {
-			// Agent ran but made no changes — move to blocked, not validation.
+			// Agent ran but made no changes — move to blocked.
 			blocked := planner.StageBlocked
 			tp.planner.Update(taskID, planner.TaskUpdate{
 				Stage:       &blocked,
@@ -296,10 +325,15 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.sendActivity(taskID, "status", "Moved to blocked — agent produced no file changes")
 			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but made no file changes. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
 		} else if !verificationPassed {
-			// E2E verification failed — stay in active so it can be retried.
-			tp.planner.Update(taskID, planner.TaskUpdate{CompletedAt: &completedAt})
+			// Exhausted all E2E retries — move to blocked for human review.
+			blocked := planner.StageBlocked
+			tp.planner.Update(taskID, planner.TaskUpdate{
+				Stage:       &blocked,
+				CompletedAt: &completedAt,
+			})
 			tp.broadcastTaskUpdate(taskID)
-			tp.sendActivity(taskID, "status", "Staying in active — E2E verification failed")
+			tp.sendActivity(taskID, "stage", "blocked")
+			tp.sendActivity(taskID, "status", fmt.Sprintf("Moved to blocked — E2E verification still failing after %d retries", maxE2ERetries))
 		} else {
 			// Changes made and verification passed (or skipped) — advance to validation.
 			validation := planner.StageValidation
@@ -375,7 +409,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		b.WriteString("### Step 2: Write Tests\n")
 		b.WriteString("If test files exist for the affected area, write failing tests first (TDD). Use `code_exec` to run them and confirm they fail.\n\n")
 		b.WriteString("### Step 3: Implement\n")
-		b.WriteString("Make the minimal changes needed. Use `code_edit` for ALL modifications to existing files. Only use `code_write` for brand-new files.\n\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for surgical changes, `code_write` only for new files.\n\n")
 		b.WriteString("### Step 4: Build & Verify\n")
 		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes. Run tests with `code_exec`.\n\n")
 		b.WriteString("### Step 5: Security Review\n")
@@ -390,7 +424,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 		b.WriteString("### Step 1: Search & Understand\n")
 		b.WriteString("Use `code_search` and `code_grep` to find relevant files. Use `code_read` to understand the code.\n\n")
 		b.WriteString("### Step 2: Implement\n")
-		b.WriteString("Make the minimal changes needed. Use `code_edit` for ALL modifications to existing files. Only use `code_write` for brand-new files.\n\n")
+		b.WriteString("Make the minimal changes needed. Use `code_edit` for modifications, `code_write` for new files.\n\n")
 		b.WriteString("### Step 3: Build & Verify\n")
 		b.WriteString("Run `go build ./...` for Go changes. Run `cd web && npx vite build` for frontend changes.\n\n")
 		b.WriteString("### Step 4: Summary\n")
@@ -403,15 +437,8 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot string) str
 	b.WriteString("- Be precise. Make minimal changes. Do not refactor unrelated code.\n")
 	b.WriteString("- Do NOT run git commands — the system handles commits and merges automatically.\n")
 	b.WriteString("- All file paths are relative to the project root shown above.\n")
-	b.WriteString("\n## CRITICAL: Preserving Existing Code\n")
-	b.WriteString("- NEVER use `code_write` on existing files. ALWAYS use `code_edit` for modifications.\n")
-	b.WriteString("- `code_write` is ONLY for creating brand-new files that don't exist yet.\n")
-	b.WriteString("- When editing a file, preserve ALL existing functionality not mentioned in the task:\n")
-	b.WriteString("  - Do not remove imports unrelated to your changes.\n")
-	b.WriteString("  - Do not remove props, state variables, effects, or handlers unrelated to your task.\n")
-	b.WriteString("  - Do not remove UI sections (comment threads, activity feeds, etc.) unrelated to your task.\n")
-	b.WriteString("- Make multiple small `code_edit` calls instead of one large replacement.\n")
-	b.WriteString("- If you need to restructure a section, ensure your new_string includes ALL existing code from old_string that is unrelated to your task.\n")
+	b.WriteString("- Do NOT modify the task description — it is the original plan and must be preserved.\n")
+	b.WriteString("- Post all findings, gaps, and status notes as comments using `task_comment`, not `task_update`.\n")
 
 	return b.String()
 }

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -32,7 +31,7 @@ func builtinCodeTools() []ai.ClaudeTool {
 		},
 		{
 			Name:        "code_write",
-			Description: "Create a NEW file with the given content. Creates parent directories if needed. WARNING: Only use this for brand-new files. For modifying existing files, ALWAYS use code_edit instead — code_write will be rejected if it would remove significant existing content.",
+			Description: "Write or overwrite a file with the given content. Creates parent directories if needed.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
@@ -182,29 +181,6 @@ func toolCodeWrite(root string, input map[string]any) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// Guard: if file already exists, check for significant content loss.
-	if existing, readErr := os.ReadFile(fullPath); readErr == nil {
-		oldContent := string(existing)
-		oldLines := strings.Count(oldContent, "\n") + 1
-		newLines := strings.Count(content, "\n") + 1
-		linesRemoved := oldLines - newLines
-
-		// Block if overwriting would drop >30% of lines from a substantial file.
-		if oldLines > 30 && linesRemoved > oldLines*3/10 {
-			// Find exported symbols in old content that are missing in new content.
-			missing := findMissingSymbols(oldContent, content)
-			msg := fmt.Sprintf(
-				"Error: code_write would remove %d of %d lines (%d%%) from existing file %s. ",
-				linesRemoved, oldLines, linesRemoved*100/oldLines, path)
-			if len(missing) > 0 {
-				msg += fmt.Sprintf("Missing symbols: %s. ", strings.Join(missing, ", "))
-			}
-			msg += "Use code_edit for surgical modifications to existing files. " +
-				"code_write should only be used for NEW files."
-			return msg
-		}
-	}
-
 	// Create parent directories.
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -217,40 +193,6 @@ func toolCodeWrite(root string, input map[string]any) string {
 
 	lines := strings.Count(content, "\n") + 1
 	return fmt.Sprintf("Written %d lines to %s", lines, path)
-}
-
-// findMissingSymbols extracts exported function/component/type names from old
-// content and returns any that are missing in new content. This catches cases
-// where code_write accidentally drops existing functionality.
-func findMissingSymbols(oldContent, newContent string) []string {
-	// Match exported functions, components, types, and interfaces.
-	// Covers: Go (func X, type X), TS/JS (export function/const/class/interface, function X).
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?m)^func\s+(\w+)`),                         // Go functions
-		regexp.MustCompile(`(?m)^func\s+\([^)]+\)\s+(\w+)`),             // Go methods
-		regexp.MustCompile(`(?m)^type\s+(\w+)`),                         // Go types
-		regexp.MustCompile(`(?m)export\s+(?:default\s+)?function\s+(\w+)`), // JS/TS exported functions
-		regexp.MustCompile(`(?m)export\s+(?:default\s+)?class\s+(\w+)`),    // JS/TS exported classes
-		regexp.MustCompile(`(?m)export\s+(?:default\s+)?const\s+(\w+)`),    // JS/TS exported consts
-		regexp.MustCompile(`(?m)^interface\s+(\w+)`),                       // TS interfaces
-	}
-
-	oldSymbols := make(map[string]bool)
-	for _, pat := range patterns {
-		for _, match := range pat.FindAllStringSubmatch(oldContent, -1) {
-			if len(match) > 1 {
-				oldSymbols[match[1]] = true
-			}
-		}
-	}
-
-	var missing []string
-	for sym := range oldSymbols {
-		if !strings.Contains(newContent, sym) {
-			missing = append(missing, sym)
-		}
-	}
-	return missing
 }
 
 func toolCodeEdit(root string, input map[string]any) string {
@@ -283,21 +225,6 @@ func toolCodeEdit(root string, input map[string]any) string {
 	newContent := strings.Replace(content, oldStr, newStr, 1)
 	if err := os.WriteFile(fullPath, []byte(newContent), 0o644); err != nil {
 		return fmt.Sprintf("Error writing file: %v", err)
-	}
-
-	// Warn if the edit removes a significant number of lines.
-	oldLines := strings.Count(oldStr, "\n")
-	newLines := strings.Count(newStr, "\n")
-	netRemoved := oldLines - newLines
-	if netRemoved > 20 {
-		missing := findMissingSymbols(oldStr, newStr)
-		warning := fmt.Sprintf(
-			"WARNING: This edit removed a net %d lines. ", netRemoved)
-		if len(missing) > 0 {
-			warning += fmt.Sprintf("Dropped symbols: %s. ", strings.Join(missing, ", "))
-		}
-		warning += "Verify that no unrelated functionality was accidentally removed."
-		return fmt.Sprintf("Edited %s: replaced 1 occurrence. %s", path, warning)
 	}
 
 	return fmt.Sprintf("Edited %s: replaced 1 occurrence", path)

@@ -180,6 +180,8 @@ func (cw *CommentWatcher) buildFeedbackPrompt(task planner.Task, comment planner
 	b.WriteString("- If the dev server needs a restart or rebuild, the system will handle that\n")
 	b.WriteString("- Write a clear summary of what you found and what you did\n")
 	b.WriteString("- Do NOT run git commands — the system handles commits and merges\n")
+	b.WriteString("- Do NOT modify the task description — it is the original plan and must be preserved\n")
+	b.WriteString("- Post findings, gaps, or analysis as comments using `task_comment`, not `task_update`\n")
 	fmt.Fprintf(&b, "\nProject root: `%s`\n", taskRoot)
 	return b.String()
 }

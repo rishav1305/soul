@@ -20,6 +20,9 @@ interface ModelInfo {
 interface InputBarProps {
   onSend: (message: string, options?: SendOptions) => void;
   disabled: boolean;
+  contextChip?: string | null;
+  onInjectContext?: () => void;
+  onDismissChip?: () => void;
 }
 
 const CHAT_TYPES = [
@@ -33,7 +36,7 @@ const CHAT_TYPES = [
   { value: 'Clarify', label: 'Clarify', group: 'skill' },
 ] as const;
 
-export default function InputBar({ onSend, disabled }: InputBarProps) {
+export default function InputBar({ onSend, disabled, contextChip, onInjectContext, onDismissChip }: InputBarProps) {
   const [value, setValue] = useState('');
   const [model, setModel] = useState<string>('');
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -308,6 +311,30 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           </div>
         )}
         <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
+        {/* Context injection chip */}
+        {contextChip && (
+          <div className="flex items-center gap-2 px-4 pt-2.5">
+            <button
+              type="button"
+              onClick={onInjectContext}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-soul/10 border border-soul/30 text-soul text-[11px] font-display font-semibold hover:bg-soul/20 transition-colors cursor-pointer"
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 4v5h5" /><path d="M15 12V7h-5" />
+                <path d="M14.5 7A6 6 0 0 0 3 5.5" /><path d="M1.5 9A6 6 0 0 0 13 10.5" />
+              </svg>
+              {contextChip} context — inject?
+            </button>
+            <button
+              type="button"
+              onClick={onDismissChip}
+              className="text-fg-muted hover:text-fg text-xs leading-none cursor-pointer"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {/* File attachments */}
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3">

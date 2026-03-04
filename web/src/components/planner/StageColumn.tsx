@@ -1,4 +1,4 @@
-import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
 import TaskCard from './TaskCard.tsx';
 
 const STAGE_COLORS: Record<TaskStage, string> = {
@@ -32,9 +32,11 @@ interface StageColumnProps {
   stage: TaskStage;
   tasks: PlannerTask[];
   onTaskClick: (task: PlannerTask) => void;
+  taskActivities?: Record<number, TaskActivity[]>;
+  inlineBadgesEnabled?: boolean;
 }
 
-export default function StageColumn({ stage, tasks, onTaskClick }: StageColumnProps) {
+export default function StageColumn({ stage, tasks, onTaskClick, taskActivities, inlineBadgesEnabled = true }: StageColumnProps) {
   return (
     <div className="flex flex-col min-w-[220px] w-full bg-surface/30">
       <div className="flex items-center gap-2 px-3 py-2 shrink-0">
@@ -47,9 +49,19 @@ export default function StageColumn({ stage, tasks, onTaskClick }: StageColumnPr
         </span>
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
-        {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onClick={onTaskClick} />
-        ))}
+        {tasks.map((task) => {
+          const activities = taskActivities?.[task.id] ?? [];
+          const lastStageActivity = [...activities].reverse().find((a) => a.type === 'stage');
+          return (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onClick={onTaskClick}
+              recentActivity={lastStageActivity}
+              inlineBadgesEnabled={inlineBadgesEnabled}
+            />
+          );
+        })}
         {tasks.length === 0 && (
           <div className="text-xs text-fg-muted text-center py-8">
             No tasks

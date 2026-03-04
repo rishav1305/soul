@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity } from '../../lib/types.ts';
 import StageColumn from './StageColumn.tsx';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
@@ -7,10 +7,10 @@ const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'vali
 interface KanbanBoardProps {
   tasksByStage: Record<TaskStage, PlannerTask[]>;
   onTaskClick: (task: PlannerTask) => void;
+  taskActivities?: Record<number, TaskActivity[]>;
 }
 
-export default function KanbanBoard({ tasksByStage, onTaskClick }: KanbanBoardProps) {
-  // Only render stages that have tasks; if all empty, fall back to all stages
+export default function KanbanBoard({ tasksByStage, onTaskClick, taskActivities }: KanbanBoardProps) {
   const visibleStages = useMemo(() => {
     const populated = STAGES.filter((s) => tasksByStage[s].length > 0);
     return populated.length > 0 ? populated : STAGES;
@@ -24,6 +24,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick }: KanbanBoardPr
           stage={stage}
           tasks={tasksByStage[stage]}
           onTaskClick={onTaskClick}
+          taskActivities={taskActivities}
         />
       ))}
     </div>

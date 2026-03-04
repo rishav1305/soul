@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/rishav1305/soul/internal/ai"
 	"github.com/rishav1305/soul/internal/planner"
@@ -704,17 +705,29 @@ func builtinTaskTools() []ai.ClaudeTool {
 		},
 		{
 			Name:        "task_update",
-			Description: "Update an existing task. Use this when the user asks to change, move, or edit a task.",
+			Description: "Update an existing task's stage, title, or priority. Use this when the user asks to change, move, or edit a task. Do NOT use this to write findings, gaps, or analysis — post those as comments instead.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
-					"id":          {"type": "integer", "description": "Task ID to update"},
-					"title":       {"type": "string", "description": "New title"},
-					"description": {"type": "string", "description": "New description"},
-					"stage":       {"type": "string", "description": "Move to stage: backlog, brainstorm, active, blocked, validation, done"},
-					"priority":    {"type": "integer", "description": "New priority (1=highest, 5=lowest)"}
+					"id":       {"type": "integer", "description": "Task ID to update"},
+					"title":    {"type": "string", "description": "New title"},
+					"stage":    {"type": "string", "description": "Move to stage: backlog, brainstorm, active, blocked, validation, done"},
+					"priority": {"type": "integer", "description": "New priority (1=highest, 5=lowest)"}
 				},
 				"required": ["id"]
+			}`),
+		},
+		{
+			Name:        "task_comment",
+			Description: "Post a comment on a task. Use this to record findings, implementation gaps, analysis, or status updates — never overwrite the task description for these purposes.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"task_id": {"type": "integer", "description": "Task ID to comment on"},
+					"body":    {"type": "string", "description": "Comment body (markdown supported)"},
+					"type":    {"type": "string", "description": "Comment type: feedback, status, verification, error", "enum": ["feedback", "status", "verification", "error"]}
+				},
+				"required": ["task_id", "body"]
 			}`),
 		},
 	}
@@ -746,6 +759,8 @@ func (a *AgentLoop) executeBuiltinTool(
 		result = a.toolTaskList(input)
 	case "task_update":
 		result = a.toolTaskUpdate(input, sendEvent)
+	case "task_comment":
+		result = a.toolTaskComment(input, sendEvent)
 	default:
 		result = fmt.Sprintf("Error: unknown built-in tool %q", tc.Name)
 	}
@@ -835,9 +850,8 @@ func (a *AgentLoop) toolTaskUpdate(input map[string]any, sendEvent func(WSMessag
 	if title, ok := input["title"].(string); ok {
 		update.Title = &title
 	}
-	if desc, ok := input["description"].(string); ok {
-		update.Description = &desc
-	}
+	// description is intentionally not accepted here — the original plan must
+	// never be overwritten by the agent. Findings and gaps go in comments.
 	if stage, ok := input["stage"].(string); ok {
 		s := planner.Stage(stage)
 		update.Stage = &s
@@ -859,4 +873,44 @@ func (a *AgentLoop) toolTaskUpdate(input map[string]any, sendEvent func(WSMessag
 	}
 
 	return fmt.Sprintf(`{"id":%d,"status":"updated"}`, id)
+}
+
+func (a *AgentLoop) toolTaskComment(input map[string]any, sendEvent func(WSMessage)) string {
+	taskIDFloat, ok := input["task_id"].(float64)
+	if !ok {
+		return "Error: task_id is required"
+	}
+	taskID := int64(taskIDFloat)
+
+	body, _ := input["body"].(string)
+	if body == "" {
+		return "Error: body is required"
+	}
+
+	commentType, _ := input["type"].(string)
+	if commentType == "" {
+		commentType = "feedback"
+	}
+
+	comment := planner.Comment{
+		TaskID:      taskID,
+		Author:      "soul",
+		Type:        commentType,
+		Body:        body,
+		Attachments: []string{},
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	id, err := a.planner.CreateComment(comment)
+	if err != nil {
+		return fmt.Sprintf("Error creating comment: %v", err)
+	}
+	comment.ID = id
+
+	if a.broadcast != nil {
+		raw, _ := json.Marshal(comment)
+		a.broadcast(WSMessage{Type: "task.comment.added", Data: raw})
+	}
+
+	return fmt.Sprintf(`{"id":%d,"task_id":%d,"status":"comment posted"}`, id, taskID)
 }

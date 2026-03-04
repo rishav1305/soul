@@ -1,17 +1,18 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useLayoutStore, autoWidth } from '../../hooks/useLayoutStore.ts';
+import { useMemo, useCallback } from 'react';
+import { useLayoutStore } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
 import { useWebSocket } from '../../hooks/useWebSocket.ts';
-import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
-import SoulRail from './SoulRail.tsx';
-import SoulPanel from './SoulPanel.tsx';
-import ChatRail from './ChatRail.tsx';
-import TaskRail from './TaskRail.tsx';
-import ResizeDivider from './ResizeDivider.tsx';
-import ChatPanel from '../chat/ChatPanel.tsx';
-import TaskPanel from '../planner/TaskPanel.tsx';
-import ScoutPanel from '../panels/ScoutPanel.tsx';
+import { useNotifications } from '../../hooks/useNotifications.ts';
+import { useChat } from '../../hooks/useChat.ts';
+import { useProductContext } from '../../hooks/useProductContext.ts';
+import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import ProductRail from './ProductRail.tsx';
+import ProductView from './ProductView.tsx';
+import HorizontalRail from './HorizontalRail.tsx';
+import SessionsDrawer from './SessionsDrawer.tsx';
+import SettingsPanel from './SettingsPanel.tsx';
+import ToastStack from './ToastStack.tsx';
 
 function emptyByStage(): Record<TaskStage, PlannerTask[]> {
   return { backlog: [], brainstorm: [], active: [], blocked: [], validation: [], done: [] };
@@ -22,18 +23,21 @@ export default function AppShell() {
   const planner = usePlanner();
   const { sessions, activeSessionId, createSession, switchSession } = useSessions();
   const { connected } = useWebSocket();
+  const { notifications, dismiss } = useNotifications(planner.tasks);
+  const { messages } = useChat();
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [scoutOpen, setScoutOpen] = useState(false);
+  // Derive unique products dynamically from tasks (must be before useProductContext)
+  const products = useMemo(() => {
+    const set = new Set<string>(['Soul', 'compliance', 'compliance-go', 'scout']);
+    for (const t of planner.tasks) {
+      if (t.product) set.add(t.product);
+    }
+    return Array.from(set).sort();
+  }, [planner.tasks]);
 
-  const handleScoutToggle = useCallback(() => {
-    setScoutOpen((prev) => {
-      if (!prev) layout.setTaskState('open');
-      return !prev;
-    });
-  }, [layout.setTaskState]);
+  const { buildContextString } = useProductContext(planner.tasks, layout.activeProduct, products);
 
-  // Derive filtered tasks
+  // Filtered tasks for the main product view
   const filteredTasks = useMemo(() => {
     return planner.tasks.filter((t) => {
       if (layout.filters.stage !== 'all' && t.stage !== layout.filters.stage) return false;
@@ -43,165 +47,136 @@ export default function AppShell() {
     });
   }, [planner.tasks, layout.filters]);
 
-  // Derive unique products — always include Soul + products/ dir names, plus any on tasks
-  const products = useMemo(() => {
-    const set = new Set<string>(['Soul', 'compliance', 'compliance-go', 'scout']);
-    for (const t of planner.tasks) {
-      if (t.product) set.add(t.product);
-    }
-    return Array.from(set).sort();
-  }, [planner.tasks]);
-
-  // tasksByStage for filtered tasks
   const filteredByStage = useMemo(() => {
     const grouped = emptyByStage();
-    for (const t of filteredTasks) {
-      grouped[t.stage].push(t);
-    }
+    for (const t of filteredTasks) grouped[t.stage].push(t);
     return grouped;
   }, [filteredTasks]);
 
-  // tasksByStage for ALL tasks (used by TaskRail)
-  const allByStage = useMemo(() => {
-    const grouped = emptyByStage();
-    for (const t of planner.tasks) {
-      grouped[t.stage].push(t);
-    }
-    return grouped;
-  }, [planner.tasks]);
+  // Last chat message snippet for rail bar
+  const lastChatSnippet = useMemo(() => {
+    const last = [...messages].reverse().find((m) => m.role === 'assistant');
+    if (!last?.content) return undefined;
+    return last.content.slice(0, 80) + (last.content.length > 80 ? '…' : '');
+  }, [messages]);
 
-  // Panel width computations
-  const taskPercent = layout.panelWidth ?? autoWidth(filteredTasks.length);
-  const chatPercent = 100 - taskPercent;
-
-  const bothOpen = layout.chatState === 'open' && layout.taskState === 'open';
-
-  const handleResize = useCallback(
-    (chatPct: number) => {
-      layout.setPanelWidth(Math.round(100 - chatPct));
-    },
-    [layout.setPanelWidth],
-  );
-
-  const handleUnreadChange = useCallback((count: number) => {
-    setUnreadCount(count);
-  }, []);
-
-  const handleSoulExpand = useCallback(() => {
-    layout.setSoulState('open');
-  }, [layout.setSoulState]);
-
-  const handleSoulCollapse = useCallback(() => {
-    layout.setSoulState('rail');
-  }, [layout.setSoulState]);
-
-  // When chat collapses, track incoming messages as unread
-  const handleChatCollapse = useCallback(() => {
-    layout.setChatState('rail');
-  }, [layout.setChatState]);
-
-  const handleTaskCollapse = useCallback(() => {
-    layout.setTaskState('rail');
-  }, [layout.setTaskState]);
-
-  const handleChatExpand = useCallback(() => {
-    layout.setChatState('open');
-    setUnreadCount(0);
-  }, [layout.setChatState]);
-
-  const handleTaskExpand = useCallback(() => {
-    layout.setTaskState('open');
-  }, [layout.setTaskState]);
+  const handleSessionCreated = useCallback((id: number) => {
+    switchSession(id);
+  }, [switchSession]);
 
   return (
-    <div className="h-screen bg-deep text-fg font-body noise flex overflow-hidden">
-      {/* Soul: rail or panel */}
-      {layout.soulState === 'rail' ? (
-        <SoulRail onExpand={handleSoulExpand} scoutOpen={scoutOpen} onScoutToggle={handleScoutToggle} />
-      ) : (
-        <SoulPanel
-          onCollapse={handleSoulCollapse}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSessionSelect={switchSession}
-          onNewChat={createSession}
-          connected={connected}
-          scoutOpen={scoutOpen}
-          onScoutToggle={handleScoutToggle}
+    <div
+      className={`h-screen bg-deep text-fg font-body noise overflow-hidden flex ${
+        layout.railPosition === 'bottom' ? 'flex-col' : 'flex-col-reverse'
+      }`}
+    >
+      {/* ── Main area: Left rail + Product view ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+        {/* Left Product Rail — always fixed 56px */}
+        <ProductRail
+          products={products}
+          activeProduct={layout.activeProduct}
+          tasks={planner.tasks}
+          onProductSelect={layout.setActiveProduct}
+          onSessionsToggle={() => layout.setSessionsOpen(!layout.sessionsOpen)}
+          onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
+          sessionsOpen={layout.sessionsOpen}
+          settingsOpen={layout.settingsOpen}
         />
-      )}
 
-      {/* Chat: rail or panel */}
-      {layout.chatState === 'rail' ? (
-        <ChatRail unreadCount={unreadCount} onExpand={handleChatExpand} />
-      ) : (
-        <div
-          className="h-full min-w-0 overflow-hidden transition-[width] duration-200 ease-in-out"
-          style={{
-            width: bothOpen ? `${chatPercent}%` : 'calc(100% - 40px)',
-          }}
-        >
-          <ChatPanel
-            onCollapse={handleChatCollapse}
-            canCollapse={layout.canCollapse('chat')}
-            onUnreadChange={handleUnreadChange}
-            activeSessionId={activeSessionId}
-            onSessionCreated={switchSession}
+        {/* Product content — fills remaining space */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <ProductView
+            activeProduct={layout.activeProduct}
+            taskView={layout.taskView}
+            gridSubView={layout.gridSubView}
+            panelWidth={layout.panelWidth}
+            filters={layout.filters}
+            setTaskView={layout.setTaskView}
+            setGridSubView={layout.setGridSubView}
+            setPanelWidth={layout.setPanelWidth}
+            setFilters={layout.setFilters}
+            tasks={planner.tasks}
+            filteredTasks={filteredTasks}
+            tasksByStage={filteredByStage}
+            products={products}
+            loading={planner.loading}
+            createTask={planner.createTask}
+            updateTask={planner.updateTask}
+            moveTask={planner.moveTask}
+            deleteTask={planner.deleteTask}
+            taskActivities={planner.taskActivities}
+            taskStreams={planner.taskStreams}
+            taskComments={planner.taskComments}
+            fetchComments={planner.fetchComments}
+            addComment={planner.addComment}
           />
         </div>
-      )}
 
-      {/* Resize divider — only when both panels open */}
-      {bothOpen && <ResizeDivider onResize={handleResize} />}
+        {/* Overlay drawers — rendered inside the main area */}
+        {layout.sessionsOpen && (
+          <SessionsDrawer
+            onClose={() => layout.setSessionsOpen(false)}
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSessionSelect={switchSession}
+            onNewChat={createSession}
+            connected={connected}
+          />
+        )}
 
-      {/* Task / Scout: rail or panel */}
-      {layout.taskState === 'rail' ? (
-        <TaskRail
-          tasksByStage={allByStage}
-          onExpand={handleTaskExpand}
-          onNewTask={async (title, desc, priority, product) => {
-            await planner.createTask(title, desc, priority, product);
-          }}
-        />
-      ) : (
-        <div
-          className="h-full overflow-hidden transition-[width] duration-200 ease-in-out"
-          style={{
-            width: bothOpen ? `${taskPercent}%` : 'calc(100% - 40px)',
-          }}
-        >
-          {scoutOpen ? (
-            <ScoutPanel />
-          ) : (
-            <TaskPanel
-              taskView={layout.taskView}
-              gridSubView={layout.gridSubView}
-              panelWidth={layout.panelWidth}
-              filters={layout.filters}
-              setTaskView={layout.setTaskView}
-              setGridSubView={layout.setGridSubView}
-              setPanelWidth={layout.setPanelWidth}
-              setFilters={layout.setFilters}
-              canCollapse={layout.canCollapse('task')}
-              onCollapse={handleTaskCollapse}
-              tasks={planner.tasks}
-              filteredTasks={filteredTasks}
-              tasksByStage={filteredByStage}
-              products={products}
-              loading={planner.loading}
-              createTask={planner.createTask}
-              updateTask={planner.updateTask}
-              moveTask={planner.moveTask}
-              deleteTask={planner.deleteTask}
-              taskActivities={planner.taskActivities}
-              taskStreams={planner.taskStreams}
-              taskComments={planner.taskComments}
-              fetchComments={planner.fetchComments}
-              addComment={planner.addComment}
-            />
-          )}
-        </div>
-      )}
+        {layout.settingsOpen && (
+          <SettingsPanel
+            onClose={() => layout.setSettingsOpen(false)}
+            railPosition={layout.railPosition}
+            setRailPosition={layout.setRailPosition}
+            chatSplitPct={layout.chatSplitPct}
+            setChatSplitPct={layout.setChatSplitPct}
+            autoInjectContext={layout.autoInjectContext}
+            setAutoInjectContext={layout.setAutoInjectContext}
+            showContextChip={layout.showContextChip}
+            setShowContextChip={layout.setShowContextChip}
+            toastsEnabled={layout.toastsEnabled}
+            setToastsEnabled={layout.setToastsEnabled}
+            inlineBadgesEnabled={layout.inlineBadgesEnabled}
+            setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
+          />
+        )}
+      </div>
+
+      {/* ── Horizontal Rail: Chat + Tasks (bottom or top) ── */}
+      <HorizontalRail
+        expanded={layout.railExpanded}
+        heightVh={layout.railHeightVh}
+        tab={layout.railTab}
+        chatSplitPct={layout.chatSplitPct}
+        position={layout.railPosition}
+        onToggleExpand={() => layout.setRailExpanded(!layout.railExpanded)}
+        onSetTab={layout.setRailTab}
+        onHeightChange={layout.setRailHeightVh}
+        activeSessionId={activeSessionId}
+        onSessionCreated={handleSessionCreated}
+        lastChatSnippet={lastChatSnippet}
+        tasks={planner.tasks}
+        activeProduct={layout.activeProduct}
+        taskActivities={planner.taskActivities}
+        taskStreams={planner.taskStreams}
+        taskComments={planner.taskComments}
+        updateTask={planner.updateTask}
+        moveTask={planner.moveTask}
+        deleteTask={planner.deleteTask}
+        fetchComments={planner.fetchComments}
+        addComment={planner.addComment}
+        products={products}
+        createTask={planner.createTask}
+        buildContextString={buildContextString}
+        autoInjectContext={layout.autoInjectContext}
+        showContextChip={layout.showContextChip}
+        inlineBadgesEnabled={layout.inlineBadgesEnabled}
+      />
+
+      {/* ── Toast notifications ── */}
+      {layout.toastsEnabled && <ToastStack notifications={notifications} onDismiss={dismiss} />}
     </div>
   );
 }

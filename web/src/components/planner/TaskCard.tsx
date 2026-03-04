@@ -1,7 +1,23 @@
-import type { PlannerTask, TaskSubstep } from '../../lib/types.ts';
+import type { PlannerTask, TaskSubstep, TaskActivity } from '../../lib/types.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
+}
+
+function relativeTime(dateStr: string): string {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return '';
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
 }
 
 const PRIORITY_BORDER: Record<number, string> = {
@@ -9,6 +25,13 @@ const PRIORITY_BORDER: Record<number, string> = {
   1: 'border-l-priority-normal',
   2: 'border-l-priority-high',
   3: 'border-l-priority-critical',
+};
+
+const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
+  0: { label: 'Low', color: 'text-priority-low' },
+  1: { label: 'Norm', color: 'text-priority-normal' },
+  2: { label: 'High', color: 'text-priority-high' },
+  3: { label: 'Crit', color: 'text-priority-critical' },
 };
 
 const SUBSTEP_LABELS: Record<TaskSubstep, string> = {
@@ -29,24 +52,49 @@ const SUBSTEP_ORDER: TaskSubstep[] = [
   'security_review',
 ];
 
+const STAGE_DOT_COLORS: Record<string, string> = {
+  active: 'bg-stage-active',
+  blocked: 'bg-stage-blocked',
+  validation: 'bg-stage-validation',
+  done: 'bg-stage-done',
+  brainstorm: 'bg-stage-brainstorm',
+  backlog: 'bg-stage-backlog',
+};
+
 interface TaskCardProps {
   task: PlannerTask;
   onClick: (task: PlannerTask) => void;
+  recentActivity?: TaskActivity;
+  inlineBadgesEnabled?: boolean;
 }
 
-export default function TaskCard({ task, onClick }: TaskCardProps) {
+export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEnabled = true }: TaskCardProps) {
   const borderClass = PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low';
   const substepIndex = task.substep ? SUBSTEP_ORDER.indexOf(task.substep) + 1 : 0;
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
   const meta = parseMetadata(task.metadata);
   const isAutonomous = !!meta.autonomous;
+  const prio = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[1];
+  const timeStr = relativeTime(task.created_at);
+
+  // Show inline badge if activity is recent (within 90s) and badges are enabled
+  const showBadge = inlineBadgesEnabled && recentActivity && recentActivity.type === 'stage' &&
+    (Date.now() - new Date(recentActivity.time).getTime()) < 90_000;
+  const badgeStage = showBadge
+    ? (recentActivity!.content.match(/(\w+)\s*[→\->]+\s*(\w+)/)?.[2] ?? '')
+    : '';
+  const badgeDotColor = STAGE_DOT_COLORS[badgeStage] ?? 'bg-stage-active';
 
   return (
     <button
       type="button"
       onClick={() => onClick(task)}
-      className={`w-full text-left bg-elevated border-l-[3px] ${borderClass} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
+      className={`relative w-full text-left bg-elevated border-l-[3px] ${borderClass} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
     >
+      {/* Inline stage-change badge */}
+      {showBadge && (
+        <span className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full ${badgeDotColor} animate-soul-pulse`} title={`Moved to ${badgeStage}`} />
+      )}
       <div className="flex items-start justify-between gap-2 mb-1">
         <h4 className="text-sm font-display font-medium text-fg leading-snug line-clamp-2">
           {task.title}
@@ -67,6 +115,9 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
             Auto
           </span>
         )}
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-overlay ${prio.color}`}>
+          {prio.label}
+        </span>
         {task.product && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-overlay text-fg-secondary">
             {task.product}
@@ -83,6 +134,10 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
           </span>
         )}
       </div>
+
+      {timeStr && (
+        <div className="text-[9px] text-fg-muted mt-1.5">{timeStr}</div>
+      )}
     </button>
   );
 }

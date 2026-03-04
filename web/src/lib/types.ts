@@ -65,6 +65,8 @@ export interface PlannerTask {
 export type PanelState = 'rail' | 'open';
 export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
 export type GridSubView = 'grid' | 'table' | 'grouped';
+export type HorizontalRailPosition = 'bottom' | 'top';
+export type HorizontalRailTab = 'chat' | 'tasks';
 
 export interface TaskFilters {
   stage: TaskStage | 'all';
@@ -73,6 +75,7 @@ export interface TaskFilters {
 }
 
 export interface LayoutState {
+  // Legacy — kept for compatibility but no longer drives main layout
   soulState: PanelState;
   chatState: PanelState;
   taskState: PanelState;
@@ -80,6 +83,29 @@ export interface LayoutState {
   gridSubView: GridSubView;
   panelWidth: number | null;
   filters: TaskFilters;
+  // New layout
+  activeProduct: string | null;         // which product is open in main view
+  railPosition: HorizontalRailPosition; // bottom or top
+  railExpanded: boolean;                // 48px bar vs expanded panel
+  railHeightVh: number;                 // expanded height 25–60vh
+  railTab: HorizontalRailTab;           // which tab is focused when expanded
+  chatSplitPct: number;                 // chat % of expanded rail (default 60)
+  sessionsOpen: boolean;                // sessions drawer overlay on left rail
+  settingsOpen: boolean;                // settings panel overlay
+  // Notification + context preferences
+  autoInjectContext: boolean;           // auto-inject product context on new chat
+  showContextChip: boolean;             // show "inject?" chip on product switch
+  toastsEnabled: boolean;               // stage-change toast notifications
+  inlineBadgesEnabled: boolean;         // pulsing dot badge on task cards
+}
+
+export interface StageNotification {
+  id: string;
+  taskId: number;
+  taskTitle: string;
+  fromStage: TaskStage;
+  toStage: TaskStage;
+  time: Date;
 }
 
 export interface ChatSession {
@@ -103,6 +129,7 @@ export interface SendOptions {
   chatType?: string;
   disabledTools?: string[];
   thinking?: boolean;
+  context?: string; // injected product context
 }
 
 export interface TaskActivity {

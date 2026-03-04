@@ -6,7 +6,7 @@ interface TableViewProps {
   onTaskClick: (task: PlannerTask) => void;
 }
 
-type SortKey = 'id' | 'title' | 'stage' | 'priority' | 'product' | 'substep';
+type SortKey = 'id' | 'title' | 'stage' | 'priority' | 'product' | 'substep' | 'created_at';
 type SortDir = 'asc' | 'desc';
 
 const STAGE_COLORS: Record<TaskStage, string> = {
@@ -37,17 +37,34 @@ const SUBSTEP_LABELS: Record<TaskSubstep, string> = {
 const SUBSTEP_ORDER: TaskSubstep[] = ['tdd', 'implementing', 'reviewing', 'qa_test', 'e2e_test', 'security_review'];
 
 const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
-  { key: 'id', label: 'ID', className: 'w-16' },
+  { key: 'id', label: 'ID', className: 'w-14' },
   { key: 'title', label: 'Title' },
   { key: 'stage', label: 'Stage', className: 'w-24' },
   { key: 'priority', label: 'Priority', className: 'w-20' },
   { key: 'product', label: 'Product', className: 'w-28' },
   { key: 'substep', label: 'Substep', className: 'w-24' },
+  { key: 'created_at', label: 'Created', className: 'w-24' },
 ];
 
 function substepIndex(substep: TaskSubstep | ''): number {
   if (!substep) return -1;
   return SUBSTEP_ORDER.indexOf(substep);
+}
+
+function relativeTime(dateStr: string): string {
+  if (!dateStr) return '\u2014';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return '\u2014';
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
 }
 
 export default function TableView({ tasks, onTaskClick }: TableViewProps) {
@@ -75,6 +92,9 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
           break;
         case 'substep':
           cmp = substepIndex(a.substep) - substepIndex(b.substep);
+          break;
+        case 'created_at':
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -125,11 +145,17 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
                 className="border-b border-border-subtle hover:bg-elevated/60 cursor-pointer transition-colors"
               >
                 <td className="px-3 py-1.5 text-fg-muted font-mono">#{task.id}</td>
-                <td className="px-3 py-1.5 text-fg truncate max-w-0">{task.title}</td>
+                <td className="px-3 py-1.5 text-fg truncate max-w-0">
+                  <div className="truncate">{task.title}</div>
+                  {task.description && (
+                    <div className="text-[10px] text-fg-muted truncate mt-0.5">{task.description}</div>
+                  )}
+                </td>
                 <td className={`px-3 py-1.5 uppercase ${STAGE_COLORS[task.stage]}`}>{task.stage}</td>
                 <td className={`px-3 py-1.5 ${prio.color}`}>{prio.label}</td>
                 <td className="px-3 py-1.5 text-fg-muted truncate max-w-0">{task.product || '\u2014'}</td>
                 <td className="px-3 py-1.5 text-fg-muted">{subLabel}</td>
+                <td className="px-3 py-1.5 text-fg-muted whitespace-nowrap">{relativeTime(task.created_at)}</td>
               </tr>
             );
           })}

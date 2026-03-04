@@ -272,6 +272,7 @@ export default function TaskPanel({
             onGridSubViewChange={setGridSubView}
             onTaskClick={setSelectedTask}
             onClearFilters={handleClearFilters}
+            taskActivities={taskActivities}
           />
         )}
       </div>

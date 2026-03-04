@@ -187,58 +187,6 @@ func (wm *WorktreeManager) CommitInWorktree(taskID int64, title string) error {
 	return nil
 }
 
-// DiffWarning holds info about a file with suspiciously large deletions.
-type DiffWarning struct {
-	File         string
-	LinesAdded   int
-	LinesRemoved int
-}
-
-// ReviewCommitDiff analyzes the latest commit in a worktree for unintended
-// large deletions. Returns warnings for files where >30 lines were removed
-// net, which may indicate the agent accidentally dropped existing code.
-func (wm *WorktreeManager) ReviewCommitDiff(taskID int64) []DiffWarning {
-	wtPath := wm.worktreePath(taskID)
-
-	cmd := exec.Command("git", "diff", "HEAD~1", "--numstat")
-	cmd.Dir = wtPath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("[worktree] review diff failed for task %d: %v", taskID, err)
-		return nil
-	}
-
-	var warnings []DiffWarning
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 3 {
-			continue
-		}
-		// Binary files show as "-" for added/removed.
-		if parts[0] == "-" || parts[1] == "-" {
-			continue
-		}
-		var added, removed int
-		fmt.Sscanf(parts[0], "%d", &added)
-		fmt.Sscanf(parts[1], "%d", &removed)
-		file := parts[2]
-
-		netRemoved := removed - added
-		if netRemoved > 30 {
-			warnings = append(warnings, DiffWarning{
-				File:         file,
-				LinesAdded:   added,
-				LinesRemoved: removed,
-			})
-		}
-	}
-
-	return warnings
-}
-
 // MergeToDev merges a task branch into the dev branch.
 // Uses the dev-server worktree (which has dev checked out) to avoid
 // conflicts with the main repo's checked-out branch.

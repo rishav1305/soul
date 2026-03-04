@@ -98,16 +98,26 @@ export default function ListView({ tasks, onTaskClick }: ListViewProps) {
                     key={task.id}
                     type="button"
                     onClick={() => onTaskClick(task)}
-                    className="flex items-center gap-3 w-full px-3 py-1 pl-8 text-xs hover:bg-elevated cursor-pointer text-left"
+                    className="flex flex-col gap-0.5 w-full px-3 py-1.5 pl-8 hover:bg-elevated cursor-pointer text-left"
                   >
-                    <span className="text-fg-muted font-mono shrink-0 w-8 text-right">#{task.id}</span>
-                    <span className="text-fg truncate flex-1 min-w-0">{task.title}</span>
-                    <span className={`shrink-0 ${prio.color}`}>{prio.label}</span>
-                    {task.product && (
-                      <span className="bg-overlay text-fg-secondary shrink-0 truncate max-w-20 px-1.5 py-0.5 rounded text-[10px]">{task.product}</span>
-                    )}
-                    {sub && (
-                      <span className="bg-stage-active/15 text-stage-active shrink-0 px-1.5 py-0.5 rounded text-[10px]">{sub}</span>
+                    {/* First line: id, title, priority, product, substep */}
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="text-fg-muted font-mono shrink-0 w-8 text-right">#{task.id}</span>
+                      <span className="text-fg truncate flex-1 min-w-0">{task.title}</span>
+                      <span className={`shrink-0 ${prio.color}`}>{prio.label}</span>
+                      {task.product && (
+                        <span className="bg-overlay text-fg-secondary shrink-0 truncate max-w-20 px-1.5 py-0.5 rounded text-[10px]">{task.product}</span>
+                      )}
+                      {sub && (
+                        <span className="bg-stage-active/15 text-stage-active shrink-0 px-1.5 py-0.5 rounded text-[10px]">{sub}</span>
+                      )}
+                      {task.blocker && (
+                        <span className="bg-stage-blocked/15 text-stage-blocked shrink-0 px-1.5 py-0.5 rounded text-[10px]">Blocked</span>
+                      )}
+                    </div>
+                    {/* Second line: description preview */}
+                    {task.description && (
+                      <div className="text-[10px] text-fg-secondary truncate pl-11">{task.description}</div>
                     )}
                   </button>
                 );

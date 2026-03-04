@@ -1,4 +1,4 @@
-import type { PlannerTask, TaskStage, TaskView, GridSubView } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskView, GridSubView, TaskActivity } from '../../lib/types.ts';
 import ListView from './ListView.tsx';
 import KanbanBoard from './KanbanBoard.tsx';
 import GridView from './grid/GridView.tsx';
@@ -12,6 +12,7 @@ interface TaskContentProps {
   onGridSubViewChange: (v: GridSubView) => void;
   onTaskClick: (task: PlannerTask) => void;
   onClearFilters: () => void;
+  taskActivities?: Record<number, TaskActivity[]>;
 }
 
 export default function TaskContent({
@@ -20,8 +21,8 @@ export default function TaskContent({
   tasksByStage,
   onTaskClick,
   onClearFilters,
+  taskActivities,
 }: TaskContentProps) {
-  // Empty state
   if (filteredTasks.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center h-full gap-2">
@@ -41,7 +42,7 @@ export default function TaskContent({
     case 'list':
       return <ListView tasks={filteredTasks} onTaskClick={onTaskClick} />;
     case 'kanban':
-      return <KanbanBoard tasksByStage={tasksByStage} onTaskClick={onTaskClick} />;
+      return <KanbanBoard tasksByStage={tasksByStage} onTaskClick={onTaskClick} taskActivities={taskActivities} />;
     case 'grid':
       return <GridView tasks={filteredTasks} onTaskClick={onTaskClick} />;
     case 'table':

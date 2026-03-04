@@ -3,22 +3,18 @@ import ChatView from './ChatView.tsx';
 import { useChat } from '../../hooks/useChat.ts';
 
 interface ChatPanelProps {
-  onCollapse: () => void;
-  canCollapse: boolean;
-  onUnreadChange: (count: number) => void;
+  onUnreadChange?: (count: number) => void;
   activeSessionId: number | null;
   onSessionCreated?: (id: number) => void;
 }
 
-export default function ChatPanel({ onCollapse, canCollapse, onUnreadChange, activeSessionId, onSessionCreated }: ChatPanelProps) {
+export default function ChatPanel({ onUnreadChange, activeSessionId, onSessionCreated }: ChatPanelProps) {
   const { messages } = useChat();
   const prevCountRef = useRef(messages.length);
 
-  // Track unread: when panel is mounted, new messages reset to 0.
-  // But we notify parent of incoming messages for when the panel is collapsed.
   useEffect(() => {
     if (messages.length > prevCountRef.current) {
-      onUnreadChange(0);
+      onUnreadChange?.(0);
     }
     prevCountRef.current = messages.length;
   }, [messages.length, onUnreadChange]);

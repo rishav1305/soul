@@ -4,18 +4,34 @@ function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
 }
 
+function relativeTime(dateStr: string): string {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return '';
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
 interface CompactGridProps {
   tasks: PlannerTask[];
   onTaskClick: (task: PlannerTask) => void;
 }
 
-const STAGE_COLORS: Record<TaskStage, string> = {
-  active: 'bg-stage-active',
-  backlog: 'bg-stage-backlog',
-  brainstorm: 'bg-stage-brainstorm',
-  blocked: 'bg-stage-blocked',
-  validation: 'bg-stage-validation',
-  done: 'bg-stage-done',
+const STAGE_BORDER_COLOR: Record<TaskStage, string> = {
+  active: 'var(--color-stage-active)',
+  backlog: 'var(--color-stage-backlog)',
+  brainstorm: 'var(--color-stage-brainstorm)',
+  blocked: 'var(--color-stage-blocked)',
+  validation: 'var(--color-stage-validation)',
+  done: 'var(--color-stage-done)',
 };
 
 const PRIORITY_BORDER: Record<number, string> = {
@@ -25,6 +41,13 @@ const PRIORITY_BORDER: Record<number, string> = {
   3: 'border-l-priority-critical',
 };
 
+const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
+  0: { label: 'Low', color: 'text-priority-low' },
+  1: { label: 'Norm', color: 'text-priority-normal' },
+  2: { label: 'High', color: 'text-priority-high' },
+  3: { label: 'Crit', color: 'text-priority-critical' },
+};
+
 export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
   // Sort by priority descending
   const sorted = [...tasks].sort((a, b) => b.priority - a.priority);
@@ -32,33 +55,58 @@ export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
   return (
     <div
       className="h-full overflow-y-auto p-3"
-      style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', alignContent: 'start' }}
+      style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', alignContent: 'start' }}
     >
       {sorted.map((task) => {
         const meta = parseMetadata(task.metadata);
         const isAutonomous = !!meta.autonomous;
+        const prio = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[1];
+        const desc = task.description
+          ? task.description.length > 80
+            ? task.description.slice(0, 80) + '\u2026'
+            : task.description
+          : '';
+        const timeStr = relativeTime(task.created_at);
+
         return (
           <button
             key={task.id}
             type="button"
             onClick={() => onTaskClick(task)}
-            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
+            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border rounded-lg p-3 hover:bg-overlay transition-all duration-150 cursor-pointer flex flex-col gap-1.5`}
+            style={{ borderColor: STAGE_BORDER_COLOR[task.stage] }}
           >
-            <div className="font-display text-xs font-medium text-fg truncate">{task.title}</div>
-            <div className="flex items-center gap-1.5 mt-1.5">
+            {/* Title row */}
+            <div className="font-display text-xs font-medium text-fg line-clamp-2 leading-snug">{task.title}</div>
+
+            {/* Description preview */}
+            {desc && (
+              <div className="text-[10px] text-fg-secondary leading-snug line-clamp-2">{desc}</div>
+            )}
+
+            {/* Meta row */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-auto">
               <span className="text-[10px] text-fg-muted font-mono">#{task.id}</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${STAGE_COLORS[task.stage]} shrink-0`} />
-              <span className="text-[10px] text-fg-secondary uppercase">{task.stage}</span>
+              <span className={`text-[10px] font-medium ${prio.color}`}>{prio.label}</span>
+              <span className="text-[10px] text-fg-muted uppercase tracking-wide">{task.stage}</span>
               {isAutonomous && (
                 <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium bg-soul/15 text-soul ml-auto">
                   <svg width="8" height="8" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2.5 5 5.5.8-4 3.9.9 5.3L8 13.3 3.1 16l.9-5.3-4-3.9L5.5 6z"/></svg>
                   Auto
                 </span>
               )}
-              {task.product && !isAutonomous && (
-                <span className="text-[9px] text-fg-muted ml-auto truncate max-w-[60px]">{task.product}</span>
+              {task.product && (
+                <span className={`text-[9px] text-fg-muted ${isAutonomous ? '' : 'ml-auto'} truncate max-w-[70px]`}>{task.product}</span>
+              )}
+              {task.blocker && (
+                <span className="text-[9px] font-medium text-stage-blocked">Blocked</span>
               )}
             </div>
+
+            {/* Date */}
+            {timeStr && (
+              <div className="text-[9px] text-fg-muted">{timeStr}</div>
+            )}
           </button>
         );
       })}
