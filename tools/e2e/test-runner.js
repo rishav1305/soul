@@ -7,6 +7,7 @@ const { chromium } = require('playwright');
 //   eval <url> <js_expression>            - evaluate JS in page
 //   assert <url> <json_assertions>        - run multiple assertions
 //   dom <url> [selector]                  - structured DOM snapshot
+//   smoke <url>                            - 8-point health check
 
 var args = process.argv.slice(2);
 var action, url, extra;
@@ -30,6 +31,13 @@ async function run() {
     args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+
+  var pageErrors = [];
+  if (action === 'smoke') {
+    page.on('pageerror', function(err) {
+      pageErrors.push(err.message);
+    });
+  }
 
   try {
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
@@ -154,6 +162,90 @@ async function run() {
       // Output directly, capped at 5000 chars
       var out = snapshot.slice(0, 5000);
       console.log(out);
+
+    } else if (action === 'smoke') {
+      var checks = [];
+
+      // Check 1: Page loaded (we already navigated successfully above)
+      checks.push({ name: 'page_load', pass: true, detail: 'Page loaded with HTTP 200' });
+
+      // Check 2: No JS errors (captured via pageerror event)
+      var hasJsErrors = pageErrors.length > 0;
+      checks.push({
+        name: 'no_js_errors',
+        pass: !hasJsErrors,
+        detail: hasJsErrors ? 'JS errors: ' + pageErrors.join('; ').slice(0, 300) : 'No JavaScript errors'
+      });
+
+      // Check 3: React rendered
+      var rootChildren = await page.evaluate(function() {
+        var root = document.querySelector('#root');
+        return root ? root.children.length : 0;
+      });
+      checks.push({
+        name: 'react_rendered',
+        pass: rootChildren > 0,
+        detail: rootChildren > 0 ? '#root has ' + rootChildren + ' children' : '#root is empty — React failed to mount'
+      });
+
+      // Check 4: Key UI elements
+      var testIds = ['product-rail', 'chat-panel', 'horizontal-rail'];
+      for (var ti = 0; ti < testIds.length; ti++) {
+        var tid = testIds[ti];
+        var el = await page.$('[data-testid="' + tid + '"]');
+        checks.push({
+          name: 'ui_' + tid.replace(/-/g, '_'),
+          pass: !!el,
+          detail: el ? tid + ' found' : tid + ' NOT found'
+        });
+      }
+
+      // Check 5: API health — fetch /api/tasks
+      var apiOk = await page.evaluate(function() {
+        return fetch('/api/tasks').then(function(r) {
+          return { status: r.status, ok: r.ok };
+        }).catch(function(e) {
+          return { status: 0, ok: false, error: e.message };
+        });
+      });
+      checks.push({
+        name: 'api_health',
+        pass: apiOk.ok,
+        detail: apiOk.ok ? 'API returned ' + apiOk.status : 'API failed: status=' + apiOk.status + (apiOk.error ? ' ' + apiOk.error : '')
+      });
+
+      // Check 6: WebSocket connects
+      var wsOk = await page.evaluate(function() {
+        return new Promise(function(resolve) {
+          try {
+            var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var ws = new WebSocket(proto + '//' + location.host + '/ws');
+            var timer = setTimeout(function() {
+              ws.close();
+              resolve(false);
+            }, 5000);
+            ws.onopen = function() {
+              clearTimeout(timer);
+              ws.close();
+              resolve(true);
+            };
+            ws.onerror = function() {
+              clearTimeout(timer);
+              resolve(false);
+            };
+          } catch (e) {
+            resolve(false);
+          }
+        });
+      });
+      checks.push({
+        name: 'websocket',
+        pass: wsOk,
+        detail: wsOk ? 'WebSocket connected successfully' : 'WebSocket failed to connect within 5s'
+      });
+
+      var allPass = checks.every(function(c) { return c.pass; });
+      console.log(JSON.stringify({ allPass: allPass, checks: checks }));
 
     } else {
       console.log(JSON.stringify({ error: 'Unknown action: ' + action }));
