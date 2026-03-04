@@ -126,6 +126,24 @@ export default function ProductRail({
         </svg>
       </button>
 
+      {/* Conversation History */}
+      <button
+        type="button"
+        onClick={onSessionsToggle}
+        className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
+          sessionsOpen ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+        }`}
+        title="Conversation History"
+        data-testid="conversation-history-btn"
+      >
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 5v3.5l2.5 1.5" />
+          <path d="M2.5 2.5 Q1 5 2 8" strokeWidth="1.3" />
+          <path d="M2 5.5l0 2.5 2.5 0" strokeWidth="1.3" />
+        </svg>
+      </button>
+
       {/* Settings */}
       <button
         type="button"

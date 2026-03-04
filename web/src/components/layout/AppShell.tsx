@@ -24,7 +24,7 @@ export default function AppShell() {
   const planner = usePlanner();
   const { sessions, activeSessionId, createSession, switchSession } = useSessions();
   const { connected } = useWebSocket();
-  const { notifications, dismiss } = useNotifications(planner.tasks);
+  const { toasts: notifications, dismiss } = useNotifications(planner.tasks, layout.toastsEnabled);
   const { messages } = useChat();
 
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
