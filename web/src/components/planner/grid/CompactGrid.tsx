@@ -42,8 +42,8 @@ export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
             key={task.id}
             type="button"
             onClick={() => onTaskClick(task)}
-            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
-            style={{ borderTopColor: STAGE_BORDER_COLOR[task.stage], borderTopWidth: '2px' }}
+            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border rounded-lg p-3 hover:bg-overlay transition-all duration-150 cursor-pointer`}
+            style={{ borderColor: STAGE_BORDER_COLOR[task.stage] }}
           >
             <div className="font-display text-xs font-medium text-fg truncate">{task.title}</div>
             <div className="flex items-center gap-1.5 mt-1.5">
