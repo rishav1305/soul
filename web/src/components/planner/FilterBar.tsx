@@ -4,6 +4,8 @@ interface FilterBarProps {
   filters: TaskFilters;
   products: string[];
   onChange: (f: Partial<TaskFilters>) => void;
+  /** When true, hides the product dropdown (used inside a product-scoped dashboard) */
+  hideProduct?: boolean;
 }
 
 const STAGE_OPTIONS: { value: TaskStage | 'all'; label: string }[] = [
@@ -24,7 +26,7 @@ const PRIORITY_OPTIONS: { value: number | 'all'; label: string }[] = [
   { value: 0, label: 'Low (0)' },
 ];
 
-export default function FilterBar({ filters, products, onChange }: FilterBarProps) {
+export default function FilterBar({ filters, products, onChange, hideProduct }: FilterBarProps) {
   return (
     <div className="flex items-center gap-2 text-xs">
       {/* Stage filter */}
@@ -56,19 +58,21 @@ export default function FilterBar({ filters, products, onChange }: FilterBarProp
         ))}
       </select>
 
-      {/* Product filter */}
-      <select
-        className="soul-select"
-        value={filters.product}
-        onChange={(e) => onChange({ product: e.target.value as string | 'all' })}
-      >
-        <option value="all">All Products</option>
-        {products.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
+      {/* Product filter — hidden when inside a product-scoped dashboard */}
+      {!hideProduct && (
+        <select
+          className="soul-select"
+          value={filters.product}
+          onChange={(e) => onChange({ product: e.target.value as string | 'all' })}
+        >
+          <option value="all">All Products</option>
+          {products.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

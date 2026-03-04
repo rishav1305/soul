@@ -28,9 +28,10 @@ export default function AppShell() {
 
   // Derive unique products dynamically from tasks (must be before useProductContext)
   const products = useMemo(() => {
-    const set = new Set<string>(['Soul', 'compliance', 'compliance-go', 'scout']);
+    const set = new Set<string>(['compliance', 'compliance-go', 'scout']);
     for (const t of planner.tasks) {
-      if (t.product) set.add(t.product);
+      // Exclude 'soul' — that's the platform itself, not a product
+      if (t.product && t.product !== 'soul') set.add(t.product);
     }
     return Array.from(set).sort();
   }, [planner.tasks]);
@@ -145,35 +146,41 @@ export default function AppShell() {
       </div>
 
       {/* ── Horizontal Rail: Chat + Tasks (bottom or top) ── */}
-      <HorizontalRail
-        expanded={layout.railExpanded}
-        heightVh={layout.railHeightVh}
-        tab={layout.railTab}
-        chatSplitPct={layout.chatSplitPct}
-        position={layout.railPosition}
-        onToggleExpand={() => layout.setRailExpanded(!layout.railExpanded)}
-        onSetTab={layout.setRailTab}
-        onHeightChange={layout.setRailHeightVh}
-        activeSessionId={activeSessionId}
-        onSessionCreated={handleSessionCreated}
-        lastChatSnippet={lastChatSnippet}
-        tasks={planner.tasks}
-        activeProduct={layout.activeProduct}
-        taskActivities={planner.taskActivities}
-        taskStreams={planner.taskStreams}
-        taskComments={planner.taskComments}
-        updateTask={planner.updateTask}
-        moveTask={planner.moveTask}
-        deleteTask={planner.deleteTask}
-        fetchComments={planner.fetchComments}
-        addComment={planner.addComment}
-        products={products}
-        createTask={planner.createTask}
-        buildContextString={buildContextString}
-        autoInjectContext={layout.autoInjectContext}
-        showContextChip={layout.showContextChip}
-        inlineBadgesEnabled={layout.inlineBadgesEnabled}
-      />
+      {/* w-14 spacer aligns the rail with the right edge of the left ProductRail */}
+      <div className="flex min-w-0">
+        <div className="w-14 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <HorizontalRail
+            expanded={layout.railExpanded}
+            heightVh={layout.railHeightVh}
+            tab={layout.railTab}
+            chatSplitPct={layout.chatSplitPct}
+            position={layout.railPosition}
+            onToggleExpand={() => layout.setRailExpanded(!layout.railExpanded)}
+            onSetTab={layout.setRailTab}
+            onHeightChange={layout.setRailHeightVh}
+            activeSessionId={activeSessionId}
+            onSessionCreated={handleSessionCreated}
+            lastChatSnippet={lastChatSnippet}
+            tasks={planner.tasks}
+            activeProduct={layout.activeProduct}
+            taskActivities={planner.taskActivities}
+            taskStreams={planner.taskStreams}
+            taskComments={planner.taskComments}
+            updateTask={planner.updateTask}
+            moveTask={planner.moveTask}
+            deleteTask={planner.deleteTask}
+            fetchComments={planner.fetchComments}
+            addComment={planner.addComment}
+            products={products}
+            createTask={planner.createTask}
+            buildContextString={buildContextString}
+            autoInjectContext={layout.autoInjectContext}
+            showContextChip={layout.showContextChip}
+            inlineBadgesEnabled={layout.inlineBadgesEnabled}
+          />
+        </div>
+      </div>
 
       {/* ── Toast notifications ── */}
       {layout.toastsEnabled && <ToastStack notifications={notifications} onDismiss={dismiss} />}

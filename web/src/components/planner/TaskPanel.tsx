@@ -35,6 +35,12 @@ interface TaskPanelProps {
   taskComments: Record<number, TaskComment[]>;
   fetchComments: (id: number) => Promise<any>;
   addComment: (id: number, body: string) => Promise<TaskComment>;
+  /**
+   * When set, the panel is a product-scoped dashboard.
+   * The header shows the product name, the product filter is hidden,
+   * and task data is already pre-scoped to this product by the caller.
+   */
+  productScope?: string;
 }
 
 const VIEW_BUTTONS: { view: TaskView; title: string }[] = [
@@ -105,6 +111,7 @@ export default function TaskPanel({
   taskComments,
   fetchComments,
   addComment,
+  productScope,
 }: TaskPanelProps) {
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -165,7 +172,14 @@ export default function TaskPanel({
     <div ref={panelRef} className="flex flex-col h-full bg-surface">
       {/* Navbar */}
       <div className="glass flex items-center gap-2 px-4 shrink-0 h-11">
-        <span className="font-display text-sm font-semibold text-fg">Tasks</span>
+        {productScope ? (
+          <>
+            <span className="font-display text-sm font-semibold text-fg">{productScope}</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-elevated text-fg-muted font-medium">Tasks</span>
+          </>
+        ) : (
+          <span className="font-display text-sm font-semibold text-fg">Tasks</span>
+        )}
 
         {/* View mode buttons */}
         <div className="flex items-center gap-0.5 ml-2">
@@ -206,12 +220,12 @@ export default function TaskPanel({
             </button>
             {showFilterPopover && (
               <div className="absolute top-full right-0 mt-1 bg-surface border border-border-default rounded-xl shadow-xl z-40 p-3 min-w-[200px]">
-                <FilterBar filters={filters} products={products} onChange={setFilters} />
+                <FilterBar filters={filters} products={products} onChange={setFilters} hideProduct={!!productScope} />
               </div>
             )}
           </div>
         ) : (
-          <FilterBar filters={filters} products={products} onChange={setFilters} />
+          <FilterBar filters={filters} products={products} onChange={setFilters} hideProduct={!!productScope} />
         )}
 
         <div className="flex-1" />
