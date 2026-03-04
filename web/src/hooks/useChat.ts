@@ -90,6 +90,32 @@ export function useChat() {
           break;
         }
 
+        case 'chat.thinking': {
+          const token = msg.content ?? '';
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant') {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, thinking: (last.thinking ?? '') + token },
+              ];
+            }
+            // Create a new assistant message shell for thinking content
+            return [
+              ...prev,
+              {
+                id: uuid(),
+                role: 'assistant' as const,
+                content: '',
+                thinking: token,
+                toolCalls: [],
+                timestamp: new Date(),
+              },
+            ];
+          });
+          break;
+        }
+
         case 'chat.done': {
           setIsStreaming(false);
           break;

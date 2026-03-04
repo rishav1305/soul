@@ -9,6 +9,32 @@ interface MessageProps {
   message: ChatMessage;
 }
 
+function ThinkingBlock({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split('\n').length;
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors cursor-pointer font-mono"
+      >
+        <span>💭</span>
+        <span>Thinking ({lines} lines)</span>
+        <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && (
+        <div className="mt-1 p-3 rounded border border-border-subtle bg-elevated/40 max-h-48 overflow-y-auto">
+          <pre className="text-xs text-fg-muted font-mono whitespace-pre-wrap leading-relaxed">
+            {content}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallMessage[] }) {
   const [groupExpanded, setGroupExpanded] = useState(false);
   const allDone = toolCalls.every(tc => tc.status !== 'running');
@@ -61,6 +87,9 @@ export default function Message({ message }: MessageProps) {
           ? 'bg-elevated border-l-2 border-soul/40 text-fg rounded-2xl rounded-br-md'
           : 'text-fg rounded-2xl rounded-bl-md'
       }`}>
+        {/* Thinking block above text content for assistant messages */}
+        {!isUser && message.thinking && <ThinkingBlock content={message.thinking} />}
+
         {/* Text content always first */}
         {message.content && (
           isUser ? (

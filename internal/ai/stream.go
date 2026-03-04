@@ -28,10 +28,13 @@ type ContentBlockStart struct {
 // For text deltas, Type is "text_delta" and Text contains the text chunk.
 // For tool_use deltas, Type is "input_json_delta" and PartialJSON contains
 // the partial JSON fragment.
+// For thinking deltas, Type is "thinking_delta" and Thinking contains the
+// thinking text chunk.
 type ContentBlockDelta struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`
 	PartialJSON string `json:"partial_json,omitempty"`
+	Thinking    string `json:"thinking,omitempty"`
 }
 
 // ParseSSEStream reads Server-Sent Events from a reader and sends parsed

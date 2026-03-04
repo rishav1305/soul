@@ -329,10 +329,11 @@ func (a *AgentLoop) processStream(
 		stopReason    string
 		toolCalls     []toolCall
 		textContent   strings.Builder
-		currentBlock  string // "text" or "tool_use"
+		currentBlock  string // "text", "tool_use", or "thinking"
 		currentToolID string
 		currentTool   string
 		toolInputBuf  strings.Builder
+		thinkingBuf   strings.Builder
 	)
 
 	for ev := range events {
@@ -350,6 +351,8 @@ func (a *AgentLoop) processStream(
 				currentToolID = wrapper.ContentBlock.ID
 				currentTool = wrapper.ContentBlock.Name
 				toolInputBuf.Reset()
+			} else if currentBlock == "thinking" {
+				thinkingBuf.Reset()
 			}
 
 		case "content_block_delta":
@@ -372,6 +375,13 @@ func (a *AgentLoop) processStream(
 				})
 			case "input_json_delta":
 				toolInputBuf.WriteString(wrapper.Delta.PartialJSON)
+			case "thinking_delta":
+				thinkingBuf.WriteString(wrapper.Delta.Thinking)
+				sendEvent(WSMessage{
+					Type:      "chat.thinking",
+					SessionID: sessionID,
+					Content:   wrapper.Delta.Thinking,
+				})
 			}
 
 		case "content_block_stop":
