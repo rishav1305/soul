@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -40,6 +41,18 @@ const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rish
 - When the user asks to update, move, or change a task — use the task_update tool.
 - Tasks are created in the "backlog" stage by default. The user can ask to move them to other stages.
 - Always confirm what you did after creating or updating tasks.
+
+# Persistent memory
+- You have persistent memory that survives across conversations: memory_store, memory_search, memory_list, memory_delete.
+- When the user asks you to remember something, use memory_store. When asked to recall, use memory_search or memory_list.
+- Your memories are automatically loaded into your context at the start of each conversation (shown below in the Persistent Memory section if any exist).
+- Do NOT say you cannot remember things or that you lose context between sessions. You have persistent memory.
+
+# Custom tools
+- You can create new tools using tool_create. Custom tools persist across sessions and execute shell commands with parameter substitution.
+- When the user asks you to create a tool, use tool_create with a name, description, input schema, and a bash command template with {{param}} placeholders.
+- Custom tools appear with a "custom_" prefix in your tool list. You can use them like any other tool.
+- Do NOT say you cannot create tools. You can.
 
 # Tone and style
 - Be concise and direct. Short responses are better than padded ones.
@@ -181,6 +194,34 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		claudeTools = append(claudeTools, builtinTaskTools()...)
 	}
 
+	// Add built-in memory tools.
+	if a.planner != nil {
+		claudeTools = append(claudeTools, builtinMemoryTools()...)
+	}
+
+	// Add built-in meta-tools for custom tool management.
+	if a.planner != nil {
+		claudeTools = append(claudeTools, builtinMetaTools()...)
+	}
+
+	// Load custom tools from the database.
+	if a.planner != nil {
+		customTools, err := a.planner.ListCustomTools()
+		if err == nil {
+			for _, ct := range customTools {
+				schema := json.RawMessage(ct.InputSchema)
+				if !json.Valid(schema) {
+					schema = json.RawMessage(`{"type":"object","properties":{}}`)
+				}
+				claudeTools = append(claudeTools, ai.ClaudeTool{
+					Name:        "custom_" + ct.Name,
+					Description: ct.Description,
+					InputSchema: schema,
+				})
+			}
+		}
+	}
+
 	// Add code tools when project root is configured.
 	if a.projectRoot != "" {
 		claudeTools = append(claudeTools, builtinCodeTools()...)
@@ -202,6 +243,29 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	// Inject active skill content when provided.
 	if skillContent != "" {
 		sysPrompt += "\n\n---\n# Active Skill\n\n" + skillContent
+	}
+
+	// Inject persistent memories into system prompt.
+	if a.planner != nil {
+		memories, err := a.planner.ListMemories(50)
+		if err == nil && len(memories) > 0 {
+			memSection := "\n\n# Persistent Memory\nThese are facts you have remembered from previous conversations. Use memory_store to add new memories, memory_search to find specific ones.\n"
+			totalLen := len(memSection)
+			for _, m := range memories {
+				entry := fmt.Sprintf("- **%s**: %s", m.Key, m.Content)
+				if m.Tags != "" {
+					entry += fmt.Sprintf(" (tags: %s)", m.Tags)
+				}
+				entry += "\n"
+				if totalLen+len(entry) > 8000 {
+					memSection += "- ... (more memories available — use memory_search to find specific ones)\n"
+					break
+				}
+				memSection += entry
+				totalLen += len(entry)
+			}
+			sysPrompt += memSection
+		}
 	}
 
 	// Convert session messages to AI messages for the request.
@@ -479,6 +543,32 @@ func (a *AgentLoop) executeTool(
 	// Handle built-in task tools.
 	if strings.HasPrefix(tc.Name, "task_") {
 		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
+	// Handle built-in memory tools.
+	if strings.HasPrefix(tc.Name, "memory_") {
+		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
+	// Handle built-in meta-tools for custom tool management.
+	if strings.HasPrefix(tc.Name, "tool_") {
+		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
+	}
+
+	// Handle custom tools (dynamically created, stored in DB).
+	if strings.HasPrefix(tc.Name, "custom_") && a.planner != nil {
+		result := a.executeCustomTool(sessionID, tc)
+		completeData, _ := json.Marshal(map[string]any{
+			"id":      tc.ID,
+			"success": !strings.HasPrefix(result, "Error"),
+			"output":  result,
+		})
+		sendEvent(WSMessage{
+			Type:      "tool.complete",
+			SessionID: sessionID,
+			Data:      completeData,
+		})
+		return result
 	}
 
 	// Handle built-in code tools.
@@ -761,6 +851,20 @@ func (a *AgentLoop) executeBuiltinTool(
 		result = a.toolTaskUpdate(input, sendEvent)
 	case "task_comment":
 		result = a.toolTaskComment(input, sendEvent)
+	case "memory_store":
+		result = a.toolMemoryStore(input)
+	case "memory_search":
+		result = a.toolMemorySearch(input)
+	case "memory_list":
+		result = a.toolMemoryList(input)
+	case "memory_delete":
+		result = a.toolMemoryDelete(input)
+	case "tool_create":
+		result = a.toolToolCreate(input)
+	case "tool_list":
+		result = a.toolToolList(input)
+	case "tool_delete":
+		result = a.toolToolDelete(input)
 	default:
 		result = fmt.Sprintf("Error: unknown built-in tool %q", tc.Name)
 	}
@@ -913,4 +1017,308 @@ func (a *AgentLoop) toolTaskComment(input map[string]any, sendEvent func(WSMessa
 	}
 
 	return fmt.Sprintf(`{"id":%d,"task_id":%d,"status":"comment posted"}`, id, taskID)
+}
+
+// ── Memory Tools ──
+
+func builtinMemoryTools() []ai.ClaudeTool {
+	return []ai.ClaudeTool{
+		{
+			Name:        "memory_store",
+			Description: "Save or update a persistent memory that survives across conversations. Use this to remember important facts, preferences, project conventions, or context. If a memory with this key already exists, it will be updated.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"key":     {"type": "string", "description": "Unique identifier for this memory (e.g., 'project_stack', 'user_preference_timezone')"},
+					"content": {"type": "string", "description": "The information to remember"},
+					"tags":    {"type": "string", "description": "Comma-separated tags for categorization (e.g., 'project,config')"}
+				},
+				"required": ["key", "content"]
+			}`),
+		},
+		{
+			Name:        "memory_search",
+			Description: "Search persistent memories by keyword. Searches across keys, content, and tags.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {"type": "string", "description": "Search keyword to find in memory keys, content, or tags"}
+				},
+				"required": ["query"]
+			}`),
+		},
+		{
+			Name:        "memory_list",
+			Description: "List all persistent memories.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		{
+			Name:        "memory_delete",
+			Description: "Delete a persistent memory by key.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"key": {"type": "string", "description": "Key of the memory to delete"}
+				},
+				"required": ["key"]
+			}`),
+		},
+	}
+}
+
+func (a *AgentLoop) toolMemoryStore(input map[string]any) string {
+	key, _ := input["key"].(string)
+	if key == "" {
+		return "Error: key is required"
+	}
+	content, _ := input["content"].(string)
+	if content == "" {
+		return "Error: content is required"
+	}
+	tags, _ := input["tags"].(string)
+
+	mem, err := a.planner.UpsertMemory(key, content, tags)
+	if err != nil {
+		return fmt.Sprintf("Error storing memory: %v", err)
+	}
+	result, _ := json.Marshal(map[string]any{
+		"key":    mem.Key,
+		"status": "stored",
+	})
+	return string(result)
+}
+
+func (a *AgentLoop) toolMemorySearch(input map[string]any) string {
+	query, _ := input["query"].(string)
+	if query == "" {
+		return "Error: query is required"
+	}
+	memories, err := a.planner.SearchMemories(query)
+	if err != nil {
+		return fmt.Sprintf("Error searching memories: %v", err)
+	}
+	if len(memories) == 0 {
+		return "No memories found matching query."
+	}
+	result, _ := json.Marshal(memories)
+	return string(result)
+}
+
+func (a *AgentLoop) toolMemoryList(input map[string]any) string {
+	memories, err := a.planner.ListMemories(50)
+	if err != nil {
+		return fmt.Sprintf("Error listing memories: %v", err)
+	}
+	if len(memories) == 0 {
+		return "No memories stored yet."
+	}
+	result, _ := json.Marshal(memories)
+	return string(result)
+}
+
+func (a *AgentLoop) toolMemoryDelete(input map[string]any) string {
+	key, _ := input["key"].(string)
+	if key == "" {
+		return "Error: key is required"
+	}
+	err := a.planner.DeleteMemory(key)
+	if err != nil {
+		return fmt.Sprintf("Error deleting memory: %v", err)
+	}
+	return fmt.Sprintf(`{"key":%q,"status":"deleted"}`, key)
+}
+
+// ── Meta-Tools for Custom Tool Management ──
+
+func builtinMetaTools() []ai.ClaudeTool {
+	return []ai.ClaudeTool{
+		{
+			Name:        "tool_create",
+			Description: "Create a new custom tool that persists across sessions. The tool executes a shell command template with parameter substitution. Use {{param_name}} placeholders in the command template that will be replaced with actual values when the tool is called.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"name":             {"type": "string", "description": "Tool name (alphanumeric and underscores only, e.g., 'fetch_history')"},
+					"description":      {"type": "string", "description": "What the tool does (shown to the AI in future sessions)"},
+					"input_schema":     {"type": "string", "description": "JSON Schema string defining the tool's parameters"},
+					"command_template": {"type": "string", "description": "Bash command with {{param}} placeholders (e.g., 'sqlite3 ~/.soul/planner.db \"SELECT * FROM chat_messages WHERE session_id={{session_id}}\"')"}
+				},
+				"required": ["name", "description", "input_schema", "command_template"]
+			}`),
+		},
+		{
+			Name:        "tool_list",
+			Description: "List all custom tools that have been created.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+		{
+			Name:        "tool_delete",
+			Description: "Delete a custom tool by name.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"name": {"type": "string", "description": "Name of the custom tool to delete"}
+				},
+				"required": ["name"]
+			}`),
+		},
+	}
+}
+
+func (a *AgentLoop) toolToolCreate(input map[string]any) string {
+	name, _ := input["name"].(string)
+	if name == "" {
+		return "Error: name is required"
+	}
+	// Validate name: alphanumeric and underscores only.
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return "Error: name must be alphanumeric with underscores only"
+		}
+	}
+	// Prevent collisions with built-in prefixes.
+	for _, prefix := range []string{"task_", "memory_", "code_", "tool_", "custom_"} {
+		if strings.HasPrefix(name, prefix) {
+			return fmt.Sprintf("Error: name cannot start with reserved prefix %q", prefix)
+		}
+	}
+
+	description, _ := input["description"].(string)
+	if description == "" {
+		return "Error: description is required"
+	}
+	inputSchema, _ := input["input_schema"].(string)
+	if inputSchema == "" {
+		return "Error: input_schema is required"
+	}
+	if !json.Valid([]byte(inputSchema)) {
+		return "Error: input_schema must be valid JSON"
+	}
+	commandTemplate, _ := input["command_template"].(string)
+	if commandTemplate == "" {
+		return "Error: command_template is required"
+	}
+
+	ct, err := a.planner.CreateCustomTool(name, description, inputSchema, commandTemplate)
+	if err != nil {
+		return fmt.Sprintf("Error creating tool: %v", err)
+	}
+	result, _ := json.Marshal(map[string]any{
+		"name":   ct.Name,
+		"status": "created",
+		"note":   "Tool is now available as custom_" + ct.Name,
+	})
+	return string(result)
+}
+
+func (a *AgentLoop) toolToolList(input map[string]any) string {
+	tools, err := a.planner.ListCustomTools()
+	if err != nil {
+		return fmt.Sprintf("Error listing tools: %v", err)
+	}
+	if len(tools) == 0 {
+		return "No custom tools defined yet."
+	}
+	result, _ := json.Marshal(tools)
+	return string(result)
+}
+
+func (a *AgentLoop) toolToolDelete(input map[string]any) string {
+	name, _ := input["name"].(string)
+	if name == "" {
+		return "Error: name is required"
+	}
+	err := a.planner.DeleteCustomTool(name)
+	if err != nil {
+		return fmt.Sprintf("Error deleting tool: %v", err)
+	}
+	return fmt.Sprintf(`{"name":%q,"status":"deleted"}`, name)
+}
+
+// ── Custom Tool Execution ──
+
+// shellescape wraps a string in single quotes for safe shell interpolation.
+func shellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+func (a *AgentLoop) executeCustomTool(sessionID string, tc toolCall) string {
+	toolName := strings.TrimPrefix(tc.Name, "custom_")
+
+	ct, err := a.planner.GetCustomTool(toolName)
+	if err != nil {
+		return fmt.Sprintf("Error: custom tool %q not found", toolName)
+	}
+
+	// Parse input parameters.
+	var params map[string]any
+	if tc.Input != "" {
+		if err := json.Unmarshal([]byte(tc.Input), &params); err != nil {
+			return fmt.Sprintf("Error parsing input: %v", err)
+		}
+	}
+
+	// Substitute {{param}} placeholders in the command template.
+	command := ct.CommandTemplate
+	for key, val := range params {
+		var strVal string
+		switch v := val.(type) {
+		case string:
+			strVal = v
+		case float64:
+			strVal = fmt.Sprintf("%v", v)
+		case bool:
+			strVal = fmt.Sprintf("%v", v)
+		default:
+			b, _ := json.Marshal(v)
+			strVal = string(b)
+		}
+		strVal = shellescape(strVal)
+		command = strings.ReplaceAll(command, "{{"+key+"}}", strVal)
+	}
+
+	// Check for unresolved placeholders.
+	if strings.Contains(command, "{{") {
+		return "Error: unresolved placeholders in command template. Provide all required parameters."
+	}
+
+	log.Printf("[custom_tool] executing %q: %s", toolName, command)
+
+	// Execute via bash -c with timeout (same pattern as code_exec).
+	cmd := exec.Command("bash", "-c", command)
+	if a.projectRoot != "" {
+		cmd.Dir = a.projectRoot
+	}
+
+	done := make(chan error, 1)
+	var out []byte
+	go func() {
+		var execErr error
+		out, execErr = cmd.CombinedOutput()
+		done <- execErr
+	}()
+
+	select {
+	case execErr := <-done:
+		result := string(out)
+		if len(result) > 5000 {
+			result = result[:5000] + "\n... (output truncated)"
+		}
+		if execErr != nil {
+			return fmt.Sprintf("Exit error: %v\n%s", execErr, result)
+		}
+		if result == "" {
+			result = "Command completed with no output."
+		}
+		return result
+	case <-time.After(60 * time.Second):
+		cmd.Process.Kill()
+		return "Error: command timed out after 60 seconds"
+	}
 }

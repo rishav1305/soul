@@ -6,7 +6,7 @@ import { useWebSocket } from '../../hooks/useWebSocket.ts';
 import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useChat } from '../../hooks/useChat.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
-import type { PlannerTask, TaskStage } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskFilters } from '../../lib/types.ts';
 import ProductRail from './ProductRail.tsx';
 import ProductView from './ProductView.tsx';
 import HorizontalRail from './HorizontalRail.tsx';
@@ -202,8 +202,12 @@ export default function AppShell() {
             onToggleExpand={() => layout.setRailExpanded(!layout.railExpanded)}
             onSetTab={layout.setRailTab}
             onHeightChange={layout.setRailHeightVh}
+            onChatSplitChange={layout.setChatSplitPct}
             activeSessionId={activeSessionId}
+            sessions={sessions}
             onSessionCreated={handleSessionCreated}
+            onSessionSelect={switchSession}
+            onNewSession={createSession}
             lastChatSnippet={lastChatSnippet}
             activeTaskCount={activeTaskCount}
             blockedTaskCount={blockedTaskCount}
@@ -221,6 +225,12 @@ export default function AppShell() {
             addComment={planner.addComment}
             products={products}
             createTask={planner.createTask}
+            taskView={layout.taskView}
+            gridSubView={layout.gridSubView}
+            filters={layout.filters}
+            setTaskView={layout.setTaskView}
+            setGridSubView={layout.setGridSubView}
+            setFilters={(partial: Partial<TaskFilters>) => layout.setFilters(partial)}
             buildContextString={buildContextString}
             autoInjectContext={layout.autoInjectContext}
             showContextChip={layout.showContextChip}
