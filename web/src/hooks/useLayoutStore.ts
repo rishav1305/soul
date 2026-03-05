@@ -21,6 +21,7 @@ const DEFAULT_STATE: LayoutState = {
   railHeightVh: 35,
   railTab: 'chat',
   chatSplitPct: 60,
+  panelExpanded: false,
   sessionsOpen: false,
   settingsOpen: false,
   autoInjectContext: true,
@@ -39,6 +40,7 @@ function loadState(): LayoutState {
       ...parsed,
       filters: { ...DEFAULT_STATE.filters, ...parsed.filters },
       // Always reset ephemeral UI state
+      panelExpanded: false,
       sessionsOpen: false,
       settingsOpen: false,
     };
@@ -121,6 +123,11 @@ export function useLayoutStore() {
     [setState],
   );
 
+  const setPanelExpanded = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, panelExpanded: v })),
+    [setState],
+  );
+
   const setSessionsOpen = useCallback(
     (open: boolean) => setState((prev) => ({ ...prev, sessionsOpen: open })),
     [setState],
@@ -164,6 +171,7 @@ export function useLayoutStore() {
       setRailHeightVh,
       setRailTab,
       setChatSplitPct,
+      setPanelExpanded,
       setSessionsOpen,
       setSettingsOpen,
       setAutoInjectContext,
@@ -175,7 +183,7 @@ export function useLayoutStore() {
       state,
       setTaskView, setGridSubView, setPanelWidth, setFilters,
       setActiveProduct, setRailPosition, setRailExpanded, setRailHeightVh,
-      setRailTab, setChatSplitPct, setSessionsOpen, setSettingsOpen,
+      setRailTab, setChatSplitPct, setPanelExpanded, setSessionsOpen, setSettingsOpen,
       setAutoInjectContext, setShowContextChip, setToastsEnabled, setInlineBadgesEnabled,
     ],
   );

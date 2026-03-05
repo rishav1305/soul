@@ -7,11 +7,10 @@ import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useChat } from '../../hooks/useChat.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
 import type { PlannerTask, TaskStage, TaskFilters } from '../../lib/types.ts';
-import ProductRail from './ProductRail.tsx';
+import ProductRail, { RAIL_WIDTH, PANEL_WIDTH } from './ProductRail.tsx';
 import ProductView from './ProductView.tsx';
 import HorizontalRail from './HorizontalRail.tsx';
 import SessionsDrawer from './SessionsDrawer.tsx';
-import SettingsPanel from './SettingsPanel.tsx';
 import ToastStack from './ToastStack.tsx';
 import TaskDetail from '../planner/TaskDetail.tsx';
 
@@ -36,7 +35,7 @@ export default function AppShell() {
     const set = new Set<string>(['compliance', 'compliance-go', 'scout']);
     for (const t of planner.tasks) {
       // Exclude 'soul' — that's the platform itself, not a product
-      if (t.product && t.product !== 'soul') set.add(t.product);
+      if (t.product && t.product.toLowerCase() !== 'soul') set.add(t.product);
     }
     return Array.from(set).sort();
   }, [planner.tasks]);
@@ -114,20 +113,30 @@ export default function AppShell() {
         layout.railPosition === 'bottom' ? 'flex-col' : 'flex-col-reverse'
       }`}
     >
-      {/* ── Main area: Left rail + Product view ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        {/* Left Product Rail — always fixed 56px */}
-        <ProductRail
+      {/* ── Left Product Rail (fixed position) ── */}
+      <ProductRail
           products={products}
           activeProduct={layout.activeProduct}
           tasks={planner.tasks}
           onProductSelect={layout.setActiveProduct}
-          onSessionsToggle={() => layout.setSessionsOpen(!layout.sessionsOpen)}
-          onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
-          sessionsOpen={layout.sessionsOpen}
+          expanded={layout.panelExpanded}
+          onToggleExpanded={() => layout.setPanelExpanded(!layout.panelExpanded)}
           settingsOpen={layout.settingsOpen}
-        />
+          onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
+          railPosition={layout.railPosition}
+          setRailPosition={layout.setRailPosition}
+          autoInjectContext={layout.autoInjectContext}
+          setAutoInjectContext={layout.setAutoInjectContext}
+          showContextChip={layout.showContextChip}
+          setShowContextChip={layout.setShowContextChip}
+          toastsEnabled={layout.toastsEnabled}
+          setToastsEnabled={layout.setToastsEnabled}
+          inlineBadgesEnabled={layout.inlineBadgesEnabled}
+          setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
+      />
 
+      {/* ── Main area ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden relative" style={{ marginLeft: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }}>
         {/* Product content — fills remaining space */}
         <div className="flex-1 min-w-0 overflow-hidden">
           <ProductView
@@ -169,29 +178,11 @@ export default function AppShell() {
           />
         )}
 
-        {layout.settingsOpen && (
-          <SettingsPanel
-            onClose={() => layout.setSettingsOpen(false)}
-            railPosition={layout.railPosition}
-            setRailPosition={layout.setRailPosition}
-            chatSplitPct={layout.chatSplitPct}
-            setChatSplitPct={layout.setChatSplitPct}
-            autoInjectContext={layout.autoInjectContext}
-            setAutoInjectContext={layout.setAutoInjectContext}
-            showContextChip={layout.showContextChip}
-            setShowContextChip={layout.setShowContextChip}
-            toastsEnabled={layout.toastsEnabled}
-            setToastsEnabled={layout.setToastsEnabled}
-            inlineBadgesEnabled={layout.inlineBadgesEnabled}
-            setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
-          />
-        )}
       </div>
 
       {/* ── Horizontal Rail: Chat + Tasks (bottom or top) ── */}
-      {/* w-14 spacer aligns the rail with the right edge of the left ProductRail */}
       <div className="flex min-w-0">
-        <div className="w-14 shrink-0" />
+        <div className="shrink-0" style={{ width: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }} />
         <div className="flex-1 min-w-0">
           <HorizontalRail
             expanded={layout.railExpanded}

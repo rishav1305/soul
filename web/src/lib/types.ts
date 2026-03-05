@@ -84,6 +84,7 @@ export interface LayoutState {
   railHeightVh: number;                 // expanded height 25–60vh
   railTab: HorizontalRailTab;           // which tab is focused when expanded
   chatSplitPct: number;                 // chat % of expanded rail (default 60)
+  panelExpanded: boolean;               // left rail expanded (220px vs 56px)
   sessionsOpen: boolean;                // sessions drawer overlay on left rail
   settingsOpen: boolean;                // settings panel overlay
   autoInjectContext: boolean;           // auto-inject product context on new chat
