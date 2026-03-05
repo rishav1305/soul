@@ -24,13 +24,13 @@
 
   /* Text */
   --color-fg: #ededf0;
-  --color-fg-secondary: #8888a0;
-  --color-fg-muted: #4a4a60;
+  --color-fg-secondary: #9494ac;
+  --color-fg-muted: #6a6a82;
 
   /* Borders */
-  --color-border-subtle: #ffffff0f;
-  --color-border-default: #ffffff1a;
-  --color-border-active: #ffffff28;
+  --color-border-subtle: #ffffff1a;
+  --color-border-default: #ffffff28;
+  --color-border-active: #ffffff38;
 
   /* Stage colors — refined */
   --color-stage-backlog: #7c7c8a;
@@ -245,7 +245,7 @@ select.soul-select {
   font-family: var(--font-body);
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%234a4a60' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%239494ac' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 6px center;
   transition: border-color 0.15s, background-color 0.15s;

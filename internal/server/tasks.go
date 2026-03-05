@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -356,9 +358,10 @@ func (s *Server) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Author string `json:"author"`
-		Type   string `json:"type"`
-		Body   string `json:"body"`
+		Author      string   `json:"author"`
+		Type        string   `json:"type"`
+		Body        string   `json:"body"`
+		Attachments []string `json:"attachments"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -375,13 +378,16 @@ func (s *Server) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body is required"})
 		return
 	}
+	if body.Attachments == nil {
+		body.Attachments = []string{}
+	}
 
 	comment := planner.Comment{
 		TaskID:      taskID,
 		Author:      body.Author,
 		Type:        body.Type,
 		Body:        body.Body,
-		Attachments: []string{},
+		Attachments: body.Attachments,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -419,6 +425,39 @@ func (s *Server) handleCommentList(w http.ResponseWriter, r *http.Request) {
 		comments = []planner.Comment{}
 	}
 	writeJSON(w, http.StatusOK, comments)
+}
+
+// handleScreenshot serves E2E screenshot files from ~/.soul/screenshots/.
+func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
+	filename := strings.TrimPrefix(r.URL.Path, "/api/screenshots/")
+	if filename == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing filename"})
+		return
+	}
+
+	// Sanitize: only allow alphanumeric, dash, underscore, dot — no path traversal.
+	for _, c := range filename {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+			return
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve home dir"})
+		return
+	}
+
+	filePath := filepath.Join(home, ".soul", "screenshots", filename)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "screenshot not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeFile(w, r, filePath)
 }
 
 // handleAttachment proxies attachment requests to MinIO via pre-signed URL.

@@ -9,14 +9,40 @@ import type {
   TaskComment,
   HorizontalRailTab,
   ChatSession,
+  SendOptions,
 } from '../../lib/types.ts';
+import { useChat } from '../../hooks/useChat.ts';
 import ChatView from '../chat/ChatView.tsx';
 import SessionDrawer from '../chat/SessionDrawer.tsx';
 import TaskContent from '../planner/TaskContent.tsx';
 import TaskDetail from '../planner/TaskDetail.tsx';
 import NewTaskForm from '../planner/NewTaskForm.tsx';
 
-// ── Vertical split divider (shared between collapsed bar and expanded panel) ──
+interface ModelInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
+const CHAT_TYPES = [
+  { value: 'Chat', label: 'Chat' },
+  { value: 'Code', label: 'Code' },
+  { value: 'Architect', label: 'Arch' },
+  { value: 'Debug', label: 'Debug' },
+  { value: 'Review', label: 'Review' },
+] as const;
+
+// ── Stage colors for pills ──
+const STAGE_COLORS: Record<TaskStage, string> = {
+  backlog: 'bg-stage-backlog/15 text-stage-backlog',
+  brainstorm: 'bg-stage-brainstorm/15 text-stage-brainstorm',
+  active: 'bg-stage-active/15 text-stage-active',
+  blocked: 'bg-stage-blocked/15 text-stage-blocked',
+  validation: 'bg-stage-validation/15 text-stage-validation',
+  done: 'bg-stage-done/15 text-stage-done',
+};
+
+// ── Vertical split divider ──
 interface SplitDividerProps {
   onSplitChange: (pct: number) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -93,13 +119,16 @@ interface HorizontalRailProps {
   addComment: (id: number, body: string) => Promise<TaskComment>;
   products: string[];
   createTask: (title: string, description: string, priority: number, product: string) => Promise<PlannerTask>;
-  // Task view/filter state (mirrors TaskPanel)
+  // Task view/filter state
   taskView: TaskView;
   gridSubView: GridSubView;
   filters: TaskFilters;
   setTaskView: (v: TaskView) => void;
   setGridSubView: (v: GridSubView) => void;
   setFilters: (partial: Partial<TaskFilters>) => void;
+  // Sync filter
+  syncProductFilter: boolean;
+  onSyncProductFilterToggle: () => void;
   // Context injection
   buildContextString?: () => string;
   autoInjectContext?: boolean;
@@ -141,34 +170,67 @@ export default function HorizontalRail({
   setTaskView,
   setGridSubView,
   setFilters,
+  syncProductFilter,
+  onSyncProductFilterToggle,
   buildContextString,
   autoInjectContext,
   showContextChip,
   inlineBadgesEnabled,
 }: HorizontalRailProps) {
   const dragRef = useRef<{ startY: number; startVh: number } | null>(null);
-  // Ref attached to the full-width container so SplitDivider can measure it
   const railContainerRef = useRef<HTMLDivElement | null>(null);
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [showFilterPopover, setShowFilterPopover] = useState(false);
-  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [reauthStatus, setReauthStatus] = useState<'idle' | 'ok' | 'error'>('idle');
 
-  // Close filter popover on outside click
+  // Inline rail chat
+  const { sendMessage, isStreaming } = useChat();
+  const railInputRef = useRef<HTMLInputElement>(null);
+  const [railInput, setRailInput] = useState('');
+  const [railModel, setRailModel] = useState('');
+  const [railModels, setRailModels] = useState<ModelInfo[]>([]);
+  const [railChatType, setRailChatType] = useState('Chat');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const speechSupported = typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
+
+  // Fetch models on mount
   useEffect(() => {
-    if (!showFilterPopover) return;
-    const handler = (e: MouseEvent) => {
-      if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
-        setShowFilterPopover(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showFilterPopover]);
+    fetch('/api/models')
+      .then((r) => r.json())
+      .then((data: ModelInfo[]) => {
+        setRailModels(data);
+        if (data.length > 0) setRailModel(data[0].id);
+      })
+      .catch(() => {});
+  }, []);
 
-  // Filter tasks for active product
-  const visibleTasks = activeProduct
+  const startListening = useCallback(() => {
+    if (!speechSupported) return;
+    const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0]?.[0]?.transcript ?? '';
+      if (transcript) setRailInput((prev) => prev + transcript);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [speechSupported]);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
+    setIsListening(false);
+  }, []);
+
+  // Filter tasks — respect sync filter toggle
+  const visibleTasks = syncProductFilter && activeProduct
     ? tasks.filter((t) => t.product === activeProduct)
     : tasks;
 
@@ -188,17 +250,15 @@ export default function HorizontalRail({
     return grouped;
   })();
 
-  // Count active filters (product excluded — already scoped via activeProduct)
-  const activeFilterCount = [
-    filters.stage !== 'all',
-    filters.priority !== 'all',
-  ].filter(Boolean).length;
+  // Stage counts for rail bar (unfiltered visible tasks)
+  const stageCounts: { stage: TaskStage; count: number }[] = [];
+  const stageOrder: TaskStage[] = ['active', 'blocked', 'brainstorm', 'validation', 'backlog', 'done'];
+  for (const stage of stageOrder) {
+    const count = visibleTasks.filter((t) => t.stage === stage).length;
+    if (count > 0) stageCounts.push({ stage, count });
+  }
 
-  // Counts for rail bar (unfiltered — show true picture in collapsed state)
-  const activeTasks = visibleTasks.filter((t) => t.stage === 'active').length;
-  const blockedTasks = visibleTasks.filter((t) => t.stage === 'blocked').length;
-
-  // ── Drag-to-resize handle ────────────────────────────────
+  // ── Drag-to-resize handle ──
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current = { startY: e.clientY, startVh: heightVh };
@@ -228,6 +288,7 @@ export default function HorizontalRail({
     if (updated && updated !== selectedTask) setSelectedTask(updated);
   }, [tasks, selectedTask]);
 
+  // ── Rail bar (collapsed) ──
   const railBar = (
     <div
       ref={railContainerRef}
@@ -240,60 +301,175 @@ export default function HorizontalRail({
         borderStyle: 'solid',
       }}
     >
-      {/* ── Left half: Chat snippet ── */}
-      <div
-        className="flex items-center px-4 gap-2 min-w-0 cursor-pointer"
-        style={{ width: `${chatSplitPct}%` }}
+      {/* ── Left: Chat input with model/type/send/voice ── */}
+      <div className="flex items-center px-2 gap-1.5 min-w-0 flex-1">
+        {/* Model selector */}
+        {railModels.length > 0 && (
+          <select
+            value={railModel}
+            onChange={(e) => setRailModel(e.target.value)}
+            className="soul-select text-[10px] h-7 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer max-w-[90px]"
+            title="Model"
+          >
+            {railModels.map((m) => (
+              <option key={m.id} value={m.id}>◆ {m.name}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Chat type selector */}
+        <select
+          value={railChatType}
+          onChange={(e) => setRailChatType(e.target.value)}
+          className="soul-select text-[10px] h-7 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer"
+          title="Chat mode"
+        >
+          {CHAT_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+
+        {/* Input */}
+        <form
+          className="flex-1 flex items-center min-w-0 bg-elevated rounded-lg px-2 h-7 border border-border-default"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (railInput.trim() && !isStreaming) {
+              const opts: SendOptions = {};
+              if (railModel) opts.model = railModel;
+              if (railChatType !== 'Chat') opts.chatType = railChatType.toLowerCase();
+              sendMessage(railInput.trim(), Object.keys(opts).length > 0 ? opts : undefined);
+              setRailInput('');
+            }
+          }}
+        >
+          <input
+            ref={railInputRef}
+            type="text"
+            value={railInput}
+            onChange={(e) => setRailInput(e.target.value)}
+            placeholder={lastChatSnippet ?? 'Message Soul...'}
+            disabled={isStreaming}
+            className="flex-1 bg-transparent text-xs text-fg placeholder:text-fg-muted outline-none min-w-0 disabled:opacity-50"
+          />
+          {/* Send or Voice button */}
+          {railInput.trim() ? (
+            <button
+              type="submit"
+              disabled={isStreaming}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+              title="Send"
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 3l-1 1 3.3 3.3H3v1.4h7.3L7 12l1 1 5-5-5-5z" />
+              </svg>
+            </button>
+          ) : speechSupported ? (
+            <button
+              type="button"
+              onClick={isListening ? stopListening : startListening}
+              className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors cursor-pointer shrink-0 ${
+                isListening
+                  ? 'bg-stage-blocked text-white animate-pulse'
+                  : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+              }`}
+              title={isListening ? 'Stop listening' : 'Voice input'}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="1" width="6" height="8" rx="3" />
+                <path d="M3 7v1a5 5 0 0 0 10 0V7" />
+                <path d="M8 13v2" />
+              </svg>
+            </button>
+          ) : null}
+        </form>
+      </div>
+
+      {/* ── Center: Gold expand button ── */}
+      <button
+        type="button"
         onClick={onToggleExpand}
+        className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm"
+        title={expanded ? 'Collapse drawer' : 'Expand drawer'}
       >
-        <span className="text-soul text-base leading-none shrink-0">&#9670;</span>
-        <span className="text-xs text-fg-muted truncate">
-          {lastChatSnippet ?? 'Message Soul...'}
-        </span>
-        {/* Expand arrow */}
         <svg
           width="14"
           height="14"
           viewBox="0 0 14 14"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="2"
           strokeLinecap="round"
-          className="text-fg-muted shrink-0 ml-auto"
-          style={{ transform: expanded ? 'rotate(0deg)' : (position === 'bottom' ? 'rotate(180deg)' : 'rotate(0deg)') }}
+          strokeLinejoin="round"
+          style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
         >
-          <path d="M2 10l5-5 5 5" />
+          <path d="M3 9l4-4 4 4" />
         </svg>
-      </div>
+      </button>
 
-      {/* ── Movable split divider ── */}
-      <SplitDivider onSplitChange={onChatSplitChange} containerRef={railContainerRef} />
+      {/* ── Right: Stage pills + New Task + Sync ── */}
+      <div className="flex items-center px-2 gap-1.5 min-w-0 overflow-x-auto flex-1 justify-end">
+        {/* Stage count pills */}
+        {stageCounts.map(({ stage, count }) => (
+          <span
+            key={stage}
+            className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0 ${STAGE_COLORS[stage]}`}
+          >
+            {count} {stage}
+          </span>
+        ))}
+        {stageCounts.length === 0 && (
+          <span className="text-[10px] text-fg-muted shrink-0">No tasks</span>
+        )}
 
-      {/* ── Right half: Task counts ── */}
-      <div
-        className="flex items-center px-4 gap-2 min-w-0 cursor-pointer"
-        style={{ width: `${100 - chatSplitPct}%` }}
-        onClick={(e) => { e.stopPropagation(); onSetTab('tasks'); if (!expanded) onToggleExpand(); }}
-      >
-        {activeTasks > 0 && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-stage-active/15 text-stage-active font-medium">
-            · {activeTasks} active
-          </span>
-        )}
-        {blockedTasks > 0 && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-stage-blocked/15 text-stage-blocked font-medium">
-            · {blockedTasks} blocked
-          </span>
-        )}
-        {activeTasks === 0 && blockedTasks === 0 && (
-          <span className="text-[11px] text-fg-muted">
-            {visibleTasks.length} tasks
-          </span>
-        )}
+        {/* Divider */}
+        <div className="w-px h-4 bg-border-subtle shrink-0" />
+
+        {/* New Task button */}
+        <button
+          type="button"
+          onClick={() => setShowNewForm(true)}
+          className="w-6 h-6 flex items-center justify-center rounded bg-soul/10 text-soul hover:bg-soul/20 transition-colors cursor-pointer shrink-0"
+          title="New task"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M6 2v8M2 6h8" />
+          </svg>
+        </button>
+
+        {/* Sync Filter toggle */}
+        <button
+          type="button"
+          onClick={onSyncProductFilterToggle}
+          title={syncProductFilter ? 'Sync ON — showing active product tasks' : 'Sync OFF — showing all tasks'}
+          className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
+            syncProductFilter
+              ? 'bg-soul/15 text-soul'
+              : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+          }`}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            {syncProductFilter ? (
+              <>
+                <path d="M8 2v12" />
+                <path d="M3 5l3-3 3 3" />
+                <path d="M7 11l3 3 3-3" />
+              </>
+            ) : (
+              <>
+                <path d="M4 2v12" />
+                <path d="M1 5l3-3 3 3" />
+                <path d="M12 14V2" />
+                <path d="M9 11l3 3 3-3" />
+              </>
+            )}
+          </svg>
+        </button>
       </div>
     </div>
   );
 
+  // ── Expanded panel ──
   const expandedPanel = (
     <div
       ref={railContainerRef}
@@ -317,9 +493,7 @@ export default function HorizontalRail({
       )}
 
       {/* Split tab bar — left half = Chat, right half = Tasks */}
-      <div
-        className="flex items-stretch border-b border-border-subtle shrink-0 h-10"
-      >
+      <div className="flex items-stretch border-b border-border-subtle shrink-0 h-10">
         {/* Chat tab header */}
         <div
           className="flex items-center px-4 gap-0 min-w-0"
@@ -331,13 +505,35 @@ export default function HorizontalRail({
             className={`flex items-center gap-1.5 px-3 h-full text-xs font-display font-semibold border-b-2 transition-colors cursor-pointer ${
               tab === 'chat'
                 ? 'text-soul border-soul'
-                : 'text-fg-muted border-transparent hover:text-fg'
+                : 'text-fg-secondary border-transparent hover:text-fg'
             }`}
           >
             <span className="text-base leading-none">&#9670;</span>
             Chat
           </button>
           <div className="flex-1" />
+          {/* Refresh OAuth button */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/reauth', { method: 'POST' });
+                setReauthStatus(res.ok ? 'ok' : 'error');
+              } catch {
+                setReauthStatus('error');
+              }
+              setTimeout(() => setReauthStatus('idle'), 2000);
+            }}
+            className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
+              reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+            }`}
+            title="Refresh AI credentials"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" />
+              <path d="M1 1v3h3M13 13v-3h-3" />
+            </svg>
+          </button>
           {/* History button */}
           <button
             type="button"
@@ -345,7 +541,7 @@ export default function HorizontalRail({
             className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
               historyOpen
                 ? 'bg-soul/15 text-soul'
-                : 'hover:bg-elevated text-fg-muted hover:text-fg'
+                : 'hover:bg-elevated text-fg-secondary hover:text-fg'
             }`}
             title="Chat history"
           >
@@ -354,20 +550,20 @@ export default function HorizontalRail({
               <path d="M8 4.5V8l2.5 2" />
             </svg>
           </button>
-          {/* Collapse button */}
+          {/* Collapse button — gold circle */}
           <button
             type="button"
             onClick={() => { setHistoryOpen(false); onToggleExpand(); }}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer"
             title="Collapse"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M2 4l5 5 5-5" />
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 5l4 4 4-4" />
             </svg>
           </button>
         </div>
 
-        {/* Movable divider — lines up with content split below */}
+        {/* Movable divider */}
         <SplitDivider onSplitChange={onChatSplitChange} containerRef={railContainerRef} />
 
         {/* Tasks tab header */}
@@ -382,7 +578,7 @@ export default function HorizontalRail({
             className={`flex items-center gap-1.5 px-2 h-full text-xs font-display font-semibold border-b-2 transition-colors cursor-pointer shrink-0 ${
               tab === 'tasks'
                 ? 'text-soul border-soul'
-                : 'text-fg-muted border-transparent hover:text-fg'
+                : 'text-fg-secondary border-transparent hover:text-fg'
             }`}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -390,11 +586,6 @@ export default function HorizontalRail({
               <path d="M3 10l2 2 4-4" />
             </svg>
             Tasks
-            {visibleTasks.length > 0 && (
-              <span className="text-[10px] bg-overlay px-1.5 py-0.5 rounded-full text-fg-muted">
-                {visibleTasks.length}
-              </span>
-            )}
           </button>
 
           {/* Divider */}
@@ -454,7 +645,7 @@ export default function HorizontalRail({
               className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
                 taskView === view
                   ? 'bg-overlay text-fg'
-                  : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                  : 'text-fg-secondary hover:text-fg hover:bg-elevated'
               }`}
             >
               {icon}
@@ -464,83 +655,70 @@ export default function HorizontalRail({
           {/* Divider */}
           <div className="w-px h-4 bg-border-subtle mx-1 shrink-0" />
 
-          {/* Filter popover button */}
-          <div className="relative shrink-0" ref={filterPopoverRef}>
-            <button
-              type="button"
-              onClick={() => setShowFilterPopover((o) => !o)}
-              title="Filters"
-              className={`relative w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors ${
-                showFilterPopover
-                  ? 'bg-soul/15 text-soul'
-                  : activeFilterCount > 0
-                  ? 'text-soul hover:bg-soul/10'
-                  : 'text-fg-muted hover:text-fg hover:bg-elevated'
-              }`}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M2 3h12M4 8h8M6 13h4" />
-              </svg>
-              {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-soul text-deep text-[8px] font-bold rounded-full flex items-center justify-center leading-none">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
+          {/* Inline Stage filter */}
+          <select
+            className="soul-select text-[11px] h-6 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer"
+            value={filters.stage}
+            onChange={(e) => setFilters({ stage: e.target.value as TaskStage | 'all' })}
+            title="Filter by stage"
+          >
+            <option value="all">All Stages</option>
+            <option value="backlog">Backlog</option>
+            <option value="brainstorm">Brainstorm</option>
+            <option value="active">Active</option>
+            <option value="blocked">Blocked</option>
+            <option value="validation">Validation</option>
+            <option value="done">Done</option>
+          </select>
 
-            {/* Filter popover */}
-            {showFilterPopover && (
-              <div className="absolute top-full left-0 mt-1 bg-surface border border-border-default rounded-xl shadow-xl z-50 p-3 min-w-[200px]">
-                <div className="flex flex-col gap-2 text-xs">
-                  {/* Stage */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-display font-semibold text-fg-muted uppercase tracking-wider">Stage</span>
-                    <select
-                      className="soul-select text-xs"
-                      value={filters.stage}
-                      onChange={(e) => setFilters({ stage: e.target.value as TaskStage | 'all' })}
-                    >
-                      <option value="all">All Stages</option>
-                      <option value="backlog">Backlog</option>
-                      <option value="brainstorm">Brainstorm</option>
-                      <option value="active">Active</option>
-                      <option value="blocked">Blocked</option>
-                      <option value="validation">Validation</option>
-                      <option value="done">Done</option>
-                    </select>
-                  </div>
-                  {/* Priority */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-display font-semibold text-fg-muted uppercase tracking-wider">Priority</span>
-                    <select
-                      className="soul-select text-xs"
-                      value={filters.priority === 'all' ? 'all' : String(filters.priority)}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setFilters({ priority: val === 'all' ? 'all' : Number(val) });
-                      }}
-                    >
-                      <option value="all">All Priorities</option>
-                      <option value="3">Critical (3)</option>
-                      <option value="2">High (2)</option>
-                      <option value="1">Normal (1)</option>
-                      <option value="0">Low (0)</option>
-                    </select>
-                  </div>
-                  {/* Clear */}
-                  {activeFilterCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => { setFilters({ stage: 'all', priority: 'all' }); setShowFilterPopover(false); }}
-                      className="text-soul hover:text-soul/80 text-[10px] underline cursor-pointer text-left mt-0.5"
-                    >
-                      Clear filters
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Inline Priority filter */}
+          <select
+            className="soul-select text-[11px] h-6 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer ml-1"
+            value={filters.priority === 'all' ? 'all' : String(filters.priority)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setFilters({ priority: val === 'all' ? 'all' : Number(val) });
+            }}
+            title="Filter by priority"
+          >
+            <option value="all">All Priority</option>
+            <option value="3">Critical</option>
+            <option value="2">High</option>
+            <option value="1">Normal</option>
+            <option value="0">Low</option>
+          </select>
+
+          {/* Divider */}
+          <div className="w-px h-4 bg-border-subtle mx-1 shrink-0" />
+
+          {/* Sync Filter toggle */}
+          <button
+            type="button"
+            onClick={onSyncProductFilterToggle}
+            title={syncProductFilter ? 'Sync filter ON — showing tasks for active product' : 'Sync filter OFF — showing all products'}
+            className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
+              syncProductFilter
+                ? 'bg-soul/15 text-soul'
+                : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              {syncProductFilter ? (
+                <>
+                  <path d="M8 2v12" />
+                  <path d="M3 5l3-3 3 3" />
+                  <path d="M7 11l3 3 3-3" />
+                </>
+              ) : (
+                <>
+                  <path d="M4 2v12" />
+                  <path d="M1 5l3-3 3 3" />
+                  <path d="M12 14V2" />
+                  <path d="M9 11l3 3 3-3" />
+                </>
+              )}
+            </svg>
+          </button>
 
           <div className="flex-1" />
 

@@ -454,7 +454,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
               type="button"
               onClick={() => setThinking(!thinking)}
               className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
-                thinking ? 'bg-soul/20 text-soul' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                thinking ? 'bg-soul/20 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
               }`}
               title={thinking ? 'Extended thinking ON' : 'Extended thinking OFF'}
             >
@@ -470,7 +470,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
             <button
               type="button"
               onClick={() => setShowToolPopover(!showToolPopover)}
-              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
               title="Tool permissions"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -531,7 +531,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
             title="Attach file"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -544,7 +544,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
             title="Attach image"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -566,7 +566,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
                 isListening
                   ? 'bg-stage-blocked text-white animate-soul-pulse'
-                  : 'bg-elevated text-fg-muted hover:text-fg hover:bg-overlay'
+                  : 'bg-elevated text-fg-secondary hover:text-fg hover:bg-overlay'
               }`}
               title={isListening ? 'Stop listening' : 'Voice input'}
             >

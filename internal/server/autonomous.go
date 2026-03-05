@@ -7,13 +7,14 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul/internal/ai"
 	"github.com/rishav1305/soul/internal/planner"
 	"github.com/rishav1305/soul/internal/products"
 	"github.com/rishav1305/soul/internal/session"
@@ -22,7 +23,6 @@ import (
 // TaskProcessor handles autonomous task execution in the background.
 type TaskProcessor struct {
 	server      *Server
-	ai          *ai.Client
 	products    *products.Manager
 	sessions    *session.Store
 	planner     *planner.Store
@@ -30,16 +30,16 @@ type TaskProcessor struct {
 	model       string
 	projectRoot string
 	worktrees   *WorktreeManager
+	hooks       *HookRunner
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(srv *Server, aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
+func NewTaskProcessor(srv *Server, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
 	return &TaskProcessor{
 		server:      srv,
-		ai:          aiClient,
 		products:    pm,
 		sessions:    sessions,
 		planner:     plannerStore,
@@ -47,6 +47,7 @@ func NewTaskProcessor(srv *Server, aiClient *ai.Client, pm *products.Manager, se
 		model:       model,
 		projectRoot: projectRoot,
 		worktrees:   worktrees,
+		hooks:       NewHookRunner(),
 		running:     make(map[int64]context.CancelFunc),
 	}
 }
@@ -101,6 +102,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 
 	log.Printf("[autonomous] === starting task %d: %s ===", taskID, task.Title)
 	tp.sendActivity(taskID, "status", "Starting autonomous processing...")
+	tp.hooks.RunWorkflowHook("before:task_start", map[string]string{"task_id": fmt.Sprintf("%d", taskID)})
 
 	// Move to active stage.
 	active := planner.StageActive
@@ -194,7 +196,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		maxE2ERetries = 3
 	}
 
-	agent := NewAgentLoop(tp.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
+	agent := NewAgentLoop(tp.server.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
 	agent.autonomous = true
 	switch workflow {
 	case "micro":
@@ -260,6 +262,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 					log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
 					tp.sendActivity(taskID, "status", fmt.Sprintf("Merge to dev warning: %v", err))
 				} else {
+					tp.hooks.RunWorkflowHook("after:merge_to_dev", map[string]string{"task_id": fmt.Sprintf("%d", taskID)})
 					tp.sendActivity(taskID, "status", "Changes merged to dev — rebuilding frontend...")
 					if tp.server != nil {
 						if err := tp.server.RebuildDevFrontend(); err != nil {
@@ -319,9 +322,11 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.broadcastTaskUpdate(taskID)
 			tp.sendActivity(taskID, "stage", "blocked")
 			tp.sendActivity(taskID, "status", "Moved to blocked — no successful changes merged")
+			tp.hooks.RunWorkflowHook("after:task_blocked", map[string]string{"task_id": fmt.Sprintf("%d", taskID)})
 			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but no changes were successfully merged. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
 		} else {
-			// Changes made and smoke test passed — advance to validation.
+			// Changes made and smoke test passed — extract fingerprint and advance to validation.
+			tp.extractFingerprint(task, taskRoot, workflow)
 			validation := planner.StageValidation
 			tp.planner.Update(taskID, planner.TaskUpdate{
 				Stage:       &validation,
@@ -330,6 +335,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.broadcastTaskUpdate(taskID)
 			tp.sendActivity(taskID, "stage", "validation")
 			tp.sendActivity(taskID, "status", "Processing complete — moved to validation")
+			tp.hooks.RunWorkflowHook("after:task_done", map[string]string{"task_id": fmt.Sprintf("%d", taskID)})
 		}
 	} else {
 		// Agent already moved the task (e.g., to blocked or done). Respect it.
@@ -381,6 +387,30 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow s
 		}
 	}
 
+	// Cross-task learning: suggest files from similar past tasks.
+	if tp.planner != nil {
+		fingerprints := tp.matchFingerprints(task.Title, task.Description)
+		if len(fingerprints) > 0 {
+			b.WriteString("\n## Similar Past Tasks\n")
+			b.WriteString("These past tasks had similar scope — their files may be relevant:\n\n")
+			for _, fp := range fingerprints {
+				fmt.Fprintf(&b, "- **Task #%d**: %s\n  Files: %s\n", fp.TaskID, fp.Title, strings.Join(fp.Files, ", "))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	// Mandatory planning instruction for all workflows.
+	b.WriteString("\n## MANDATORY: Plan First\n")
+	b.WriteString("Before making ANY code changes, you MUST output a plan as your FIRST response:\n\n")
+	b.WriteString("```\n## Plan\n")
+	b.WriteString("- Files to modify: [list specific file paths]\n")
+	b.WriteString("- Files to read first: [list files for context]\n")
+	b.WriteString("- Approach: [1-2 sentences describing your strategy]\n")
+	b.WriteString("- Estimated changes: [N files, ~M lines]\n")
+	b.WriteString("```\n\n")
+	b.WriteString("Do NOT call any code tools before outputting this plan. If you skip the plan, you will be warned.\n\n")
+
 	// Workflow-specific instructions.
 	if workflow == "full" {
 		b.WriteString("\n## Workflow: Full (7-step)\n")
@@ -428,6 +458,7 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow s
 	b.WriteString("- All file paths are relative to the project root shown above.\n")
 	b.WriteString("- Do NOT modify the task description — it is the original plan and must be preserved.\n")
 	b.WriteString("- Post all findings, gaps, and status notes as comments using `task_comment`, not `task_update`.\n")
+	b.WriteString("- Use task_memory to store key facts you discover (file locations, patterns, conventions). Check task_memory before re-searching.\n")
 
 	return b.String()
 }
@@ -561,4 +592,154 @@ func (tp *TaskProcessor) broadcastTaskUpdate(taskID int64) {
 	}
 	raw, _ := json.Marshal(task)
 	tp.broadcast(WSMessage{Type: "task.updated", Data: raw})
+}
+
+// extractFingerprint captures what the agent learned from a completed task.
+func (tp *TaskProcessor) extractFingerprint(task planner.Task, taskRoot, workflow string) {
+	modifiedFiles := getModifiedFiles(taskRoot)
+	if len(modifiedFiles) == 0 {
+		return
+	}
+
+	keywords := extractKeywords(task.Title + " " + task.Description)
+
+	fingerprint := map[string]any{
+		"task_id":        task.ID,
+		"title":          task.Title,
+		"files_modified": modifiedFiles,
+		"keywords":       keywords,
+		"workflow":       workflow,
+	}
+
+	data, err := json.Marshal(fingerprint)
+	if err != nil {
+		return
+	}
+
+	key := fmt.Sprintf("task_fp_%d", task.ID)
+	tp.planner.UpsertMemory(key, string(data), "task_fingerprint")
+	log.Printf("[autonomous] stored fingerprint for task %d: %d files, %d keywords", task.ID, len(modifiedFiles), len(keywords))
+}
+
+// getModifiedFiles returns files changed in the worktree vs its base.
+func getModifiedFiles(taskRoot string) []string {
+	cmd := exec.Command("git", "diff", "--name-only", "HEAD~1")
+	cmd.Dir = taskRoot
+	out, err := cmd.Output()
+	if err != nil {
+		// Fallback: get all tracked files that are different from dev.
+		cmd2 := exec.Command("git", "diff", "--name-only", "dev")
+		cmd2.Dir = taskRoot
+		out, err = cmd2.Output()
+		if err != nil {
+			return nil
+		}
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files
+}
+
+// extractKeywords extracts meaningful words from text (lowercased, deduped, no stopwords).
+func extractKeywords(text string) []string {
+	stopwords := map[string]bool{
+		"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
+		"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
+		"with": true, "by": true, "from": true, "is": true, "are": true, "was": true,
+		"be": true, "has": true, "have": true, "had": true, "do": true, "does": true,
+		"this": true, "that": true, "it": true, "not": true, "no": true,
+	}
+
+	words := regexp.MustCompile(`[a-zA-Z]+`).FindAllString(strings.ToLower(text), -1)
+	seen := make(map[string]bool)
+	var result []string
+	for _, w := range words {
+		if len(w) < 3 || stopwords[w] || seen[w] {
+			continue
+		}
+		seen[w] = true
+		result = append(result, w)
+	}
+	return result
+}
+
+type taskFingerprint struct {
+	TaskID int64
+	Title  string
+	Files  []string
+}
+
+// matchFingerprints finds past task fingerprints with keyword overlap.
+func (tp *TaskProcessor) matchFingerprints(title, description string) []taskFingerprint {
+	memories, err := tp.planner.SearchMemories("task_fingerprint")
+	if err != nil {
+		return nil
+	}
+
+	newKeywords := extractKeywords(title + " " + description)
+	if len(newKeywords) == 0 {
+		return nil
+	}
+	newSet := make(map[string]bool)
+	for _, kw := range newKeywords {
+		newSet[kw] = true
+	}
+
+	type scored struct {
+		fp    taskFingerprint
+		score int
+	}
+	var candidates []scored
+
+	for _, mem := range memories {
+		var data map[string]any
+		if err := json.Unmarshal([]byte(mem.Content), &data); err != nil {
+			continue
+		}
+
+		// Count keyword overlap.
+		kwRaw, _ := data["keywords"].([]any)
+		overlap := 0
+		for _, kw := range kwRaw {
+			if s, ok := kw.(string); ok && newSet[s] {
+				overlap++
+			}
+		}
+		if overlap < 2 {
+			continue // need at least 2 keyword matches
+		}
+
+		taskID, _ := data["task_id"].(float64)
+		taskTitle, _ := data["title"].(string)
+		filesRaw, _ := data["files_modified"].([]any)
+		var files []string
+		for _, f := range filesRaw {
+			if s, ok := f.(string); ok {
+				files = append(files, s)
+			}
+		}
+
+		candidates = append(candidates, scored{
+			fp:    taskFingerprint{TaskID: int64(taskID), Title: taskTitle, Files: files},
+			score: overlap,
+		})
+	}
+
+	// Sort by score descending, take top 3.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].score > candidates[j].score
+	})
+
+	var result []taskFingerprint
+	for i, c := range candidates {
+		if i >= 3 {
+			break
+		}
+		result = append(result, c.fp)
+	}
+	return result
 }

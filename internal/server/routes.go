@@ -36,10 +36,17 @@ func (s *Server) registerRoutes() {
 	// Attachment proxy — redirects to MinIO pre-signed URL.
 	s.mux.HandleFunc("GET /api/attachments/", s.handleAttachment)
 
+	// Screenshot serving — serves E2E screenshots from ~/.soul/screenshots/
+	s.mux.HandleFunc("GET /api/screenshots/", s.handleScreenshot)
+
 	// Chat session endpoints.
 	s.mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleSessionMessages)
+
+	// Auth endpoints.
+	s.mux.HandleFunc("POST /api/reauth", s.handleReauth)
+	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 
 	// Model list endpoint.
 	s.mux.HandleFunc("GET /api/models", s.handleModelsList)

@@ -1,8 +1,8 @@
-import type { PlannerTask } from '../../lib/types.ts';
+import { useState } from 'react';
+import type { PlannerTask, HorizontalRailPosition } from '../../lib/types.ts';
 
 // Deterministic color from product name for unknown products
 const PRODUCT_COLORS: Record<string, string> = {
-  soul: 'text-soul bg-soul/10 border-soul',
   compliance: 'text-stage-validation bg-stage-validation/10 border-stage-validation',
   'compliance-go': 'text-stage-active bg-stage-active/10 border-stage-active',
   scout: 'text-stage-brainstorm bg-stage-brainstorm/10 border-stage-brainstorm',
@@ -19,7 +19,6 @@ const FALLBACK_COLORS = [
 
 function productColor(name: string): string {
   if (PRODUCT_COLORS[name]) return PRODUCT_COLORS[name];
-  // Hash name to a fallback color
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffff;
   return FALLBACK_COLORS[hash % FALLBACK_COLORS.length];
@@ -31,26 +30,261 @@ function productAbbr(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+// ── Toggle component (reused from SettingsPanel) ──
+function Toggle({ checked, onChange, label, description }: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="flex items-start gap-3 w-full text-left cursor-pointer group"
+    >
+      <div className={`relative shrink-0 mt-0.5 w-8 rounded-full transition-colors ${checked ? 'bg-soul' : 'bg-overlay'}`}
+        style={{ height: '18px', width: '32px' }}
+      >
+        <span
+          className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[14px]' : 'translate-x-0.5'}`}
+        />
+      </div>
+      <div>
+        <div className={`text-sm font-display transition-colors ${checked ? 'text-fg' : 'text-fg-secondary'}`}>
+          {label}
+        </div>
+        {description && (
+          <div className="text-[10px] text-fg-muted mt-0.5">{description}</div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── Auth section ──
+function AuthSection() {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+
+  const handleReauth = async () => {
+    setStatus('loading');
+    try {
+      const res = await fetch('/api/reauth', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setStatus('ok');
+        setMessage(data.message || 'Credentials refreshed');
+      } else {
+        setStatus('error');
+        setMessage(data.error || 'Failed to refresh');
+      }
+    } catch {
+      setStatus('error');
+      setMessage('Network error');
+    }
+    setTimeout(() => setStatus('idle'), 4000);
+  };
+
+  return (
+    <section>
+      <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
+        AI Authentication
+      </h3>
+      <button
+        type="button"
+        onClick={handleReauth}
+        disabled={status === 'loading'}
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border-subtle text-sm font-display text-fg-secondary hover:border-border-default hover:text-fg transition-colors cursor-pointer disabled:opacity-50"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" />
+          <path d="M1 1v3h3M13 13v-3h-3" />
+        </svg>
+        {status === 'loading' ? 'Refreshing...' : 'Refresh OAuth'}
+      </button>
+      {status === 'ok' && <div className="mt-2 text-[10px] text-green-400 font-mono">{message}</div>}
+      {status === 'error' && <div className="mt-2 text-[10px] text-red-400 font-mono">{message}</div>}
+    </section>
+  );
+}
+
+// ── Gear icon SVG ──
+const GearIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="8" cy="8" r="2.5" />
+    <path d="M6.8 1.5h2.4l.3 1.7a5.2 5.2 0 0 1 1.3.7l1.6-.6.9 1.5-1.3 1.1a5 5 0 0 1 0 1.5l1.3 1.1-.9 1.5-1.6-.6a5.2 5.2 0 0 1-1.3.7l-.3 1.7H6.8l-.3-1.7a5.2 5.2 0 0 1-1.3-.7l-1.6.6-.9-1.5 1.3-1.1a5 5 0 0 1 0-1.5L2.7 4.8l.9-1.5 1.6.6a5.2 5.2 0 0 1 1.3-.7z" />
+  </svg>
+);
+
+// ── Panel toggle icon ──
+const PanelIcon = ({ expanded }: { expanded: boolean }) => (
+  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
+    <path d="M5.5 2v12" />
+    {expanded ? (
+      <path d="M9 8l-2 0M9 6l-2 2 2 2" />
+    ) : (
+      <path d="M8 8l2 0M8 6l2 2-2 2" />
+    )}
+  </svg>
+);
+
+// ── Settings content (inline in panel) ──
+interface SettingsContentProps {
+  onBack: () => void;
+  railPosition: HorizontalRailPosition;
+  setRailPosition: (pos: HorizontalRailPosition) => void;
+  autoInjectContext: boolean;
+  setAutoInjectContext: (v: boolean) => void;
+  showContextChip: boolean;
+  setShowContextChip: (v: boolean) => void;
+  toastsEnabled: boolean;
+  setToastsEnabled: (v: boolean) => void;
+  inlineBadgesEnabled: boolean;
+  setInlineBadgesEnabled: (v: boolean) => void;
+}
+
+function SettingsContent({
+  onBack,
+  railPosition,
+  setRailPosition,
+  autoInjectContext,
+  setAutoInjectContext,
+  showContextChip,
+  setShowContextChip,
+  toastsEnabled,
+  setToastsEnabled,
+  inlineBadgesEnabled,
+  setInlineBadgesEnabled,
+}: SettingsContentProps) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 h-12 border-b border-border-subtle shrink-0">
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M9 2L3 7l6 5" />
+          </svg>
+        </button>
+        <span className="font-display text-sm font-semibold text-fg">Settings</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        {/* Rail Position */}
+        <section>
+          <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
+            Drawer Position
+          </h3>
+          <div className="flex flex-col gap-2">
+            {(['bottom', 'top'] as HorizontalRailPosition[]).map((pos) => (
+              <button
+                key={pos}
+                type="button"
+                onClick={() => setRailPosition(pos)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer text-left ${
+                  railPosition === pos
+                    ? 'border-soul bg-soul/10 text-soul'
+                    : 'border-border-subtle text-fg-secondary hover:border-border-default hover:text-fg'
+                }`}
+              >
+                <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  railPosition === pos ? 'border-soul' : 'border-fg-muted'
+                }`}>
+                  {railPosition === pos && <span className="w-1.5 h-1.5 rounded-full bg-soul" />}
+                </span>
+                <span className="text-sm font-display capitalize">{pos}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Context Injection */}
+        <section>
+          <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
+            Context Injection
+          </h3>
+          <div className="space-y-4">
+            <Toggle checked={autoInjectContext} onChange={setAutoInjectContext} label="Auto-inject on new chat" description="Sends active product context when starting a new session" />
+            <Toggle checked={showContextChip} onChange={setShowContextChip} label="Show chip on product switch" description="Offers inject prompt when navigating to a different product" />
+          </div>
+        </section>
+
+        {/* Notifications */}
+        <section>
+          <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
+            Notifications
+          </h3>
+          <div className="space-y-4">
+            <Toggle checked={toastsEnabled} onChange={setToastsEnabled} label="Stage change toasts" description="Pop-up notifications when a task moves between stages" />
+            <Toggle checked={inlineBadgesEnabled} onChange={setInlineBadgesEnabled} label="Inline task card badges" description="Pulsing dot on the task card after a stage change" />
+          </div>
+        </section>
+
+        {/* AI Authentication */}
+        <AuthSection />
+
+        {/* Version info */}
+        <section className="pt-2">
+          <div className="text-[10px] text-fg-muted font-mono">Soul v0.2.0-alpha</div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ──
+
 interface ProductRailProps {
   products: string[];
   activeProduct: string | null;
   tasks: PlannerTask[];
   onProductSelect: (product: string | null) => void;
-  onSessionsToggle: () => void;
-  onSettingsToggle: () => void;
-  sessionsOpen: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   settingsOpen: boolean;
+  onSettingsToggle: () => void;
+  // Settings props (passed through)
+  railPosition: HorizontalRailPosition;
+  setRailPosition: (pos: HorizontalRailPosition) => void;
+  autoInjectContext: boolean;
+  setAutoInjectContext: (v: boolean) => void;
+  showContextChip: boolean;
+  setShowContextChip: (v: boolean) => void;
+  toastsEnabled: boolean;
+  setToastsEnabled: (v: boolean) => void;
+  inlineBadgesEnabled: boolean;
+  setInlineBadgesEnabled: (v: boolean) => void;
 }
+
+const RAIL_WIDTH = 56;   // w-14
+const PANEL_WIDTH = 220;
+
+export { RAIL_WIDTH, PANEL_WIDTH };
 
 export default function ProductRail({
   products,
   activeProduct,
   tasks,
   onProductSelect,
-  onSessionsToggle,
-  onSettingsToggle,
-  sessionsOpen,
+  expanded,
+  onToggleExpanded,
   settingsOpen,
+  onSettingsToggle,
+  railPosition,
+  setRailPosition,
+  autoInjectContext,
+  setAutoInjectContext,
+  showContextChip,
+  setShowContextChip,
+  toastsEnabled,
+  setToastsEnabled,
+  inlineBadgesEnabled,
+  setInlineBadgesEnabled,
 }: ProductRailProps) {
   // Count active tasks per product
   const activeCounts: Record<string, number> = {};
@@ -60,41 +294,96 @@ export default function ProductRail({
     }
   }
 
-  return (
-    <div data-testid="product-rail" className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-1 shrink-0 z-10">
-      {/* Soul logo — opens sessions drawer */}
-      <button
-        type="button"
-        onClick={onSessionsToggle}
-        className={`relative w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer mb-1 ${
-          sessionsOpen ? 'bg-soul/15' : 'hover:bg-elevated'
-        }`}
-        title="Soul — Sessions"
+  const width = expanded ? PANEL_WIDTH : RAIL_WIDTH;
+
+  // ── Settings view (overlays entire panel in expanded mode) ──
+  if (settingsOpen && expanded) {
+    return (
+      <div
+        data-testid="product-rail"
+        className="fixed left-0 top-0 h-screen bg-surface border-r border-border-subtle z-20 transition-[width] duration-200"
+        style={{ width }}
       >
-        <span className="absolute inset-0 -m-0.5 bg-soul/10 rounded-full blur-sm animate-soul-pulse pointer-events-none" />
-        <span className="relative text-2xl text-soul leading-none">&#9670;</span>
-      </button>
+        <SettingsContent
+          onBack={onSettingsToggle}
+          railPosition={railPosition}
+          setRailPosition={setRailPosition}
+          autoInjectContext={autoInjectContext}
+          setAutoInjectContext={setAutoInjectContext}
+          showContextChip={showContextChip}
+          setShowContextChip={setShowContextChip}
+          toastsEnabled={toastsEnabled}
+          setToastsEnabled={setToastsEnabled}
+          inlineBadgesEnabled={inlineBadgesEnabled}
+          setInlineBadgesEnabled={setInlineBadgesEnabled}
+        />
+      </div>
+    );
+  }
 
-      <div className="w-7 border-t border-border-subtle my-1" />
+  return (
+    <div
+      data-testid="product-rail"
+      className="fixed left-0 top-0 h-screen bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-1 z-20 transition-[width] duration-200"
+      style={{ width }}
+    >
+      {/* Soul logo */}
+      <div className={`flex items-center gap-2 shrink-0 mb-1 ${expanded ? 'w-full px-4' : ''}`}>
+        <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
+          <span className="absolute inset-0 -m-1 bg-soul/15 rounded-full blur-md animate-soul-pulse pointer-events-none" />
+          <span className="relative text-3xl text-soul leading-none drop-shadow-[0_0_8px_var(--color-soul)]">&#9670;</span>
+        </div>
+        {expanded && (
+          <span className="font-display text-lg font-bold text-fg tracking-tight">Soul</span>
+        )}
+      </div>
 
-      {/* Dynamic product list */}
-      <div className="flex flex-col items-center gap-1 flex-1 w-full px-1 overflow-y-auto overflow-x-hidden">
+      <div className={`border-t border-border-subtle my-1 ${expanded ? 'w-full mx-4' : 'w-7'}`} />
+
+      {/* Product list */}
+      <div className={`flex flex-col gap-1 flex-1 w-full overflow-y-auto overflow-x-hidden ${expanded ? 'px-2' : 'px-1 items-center'}`}>
         {products.map((product) => {
           const isActive = activeProduct === product;
           const colors = productColor(product);
           const abbr = productAbbr(product);
           const count = activeCounts[product] ?? 0;
 
+          if (expanded) {
+            return (
+              <button
+                key={product}
+                type="button"
+                onClick={() => { if (!isActive) onProductSelect(product); }}
+                title={product}
+                className={`relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-display font-bold transition-all cursor-pointer border-l-2 ${
+                  isActive
+                    ? `${colors} border-opacity-100`
+                    : 'text-fg-secondary hover:text-fg hover:bg-elevated border-transparent'
+                }`}
+              >
+                <span className="w-8 h-8 flex items-center justify-center rounded shrink-0 text-xs">
+                  {abbr}
+                </span>
+                <span className="text-sm font-display font-semibold capitalize truncate">{product}</span>
+                {count > 0 && (
+                  <span className="ml-auto w-5 h-5 bg-stage-active text-deep text-[10px] font-bold rounded-full flex items-center justify-center leading-none shrink-0">
+                    {count > 9 ? '9+' : count}
+                  </span>
+                )}
+              </button>
+            );
+          }
+
           return (
             <button
               key={product}
               type="button"
-              onClick={() => onProductSelect(isActive ? null : product)}
+              onClick={() => { if (!isActive) onProductSelect(product); }}
               title={product}
               className={`relative w-10 h-10 flex items-center justify-center rounded-lg text-xs font-display font-bold transition-all cursor-pointer border-l-2 ${
                 isActive
                   ? `${colors} border-opacity-100`
-                  : 'text-fg-muted hover:text-fg hover:bg-elevated border-transparent'
+                  : 'text-fg-secondary hover:text-fg hover:bg-elevated border-transparent'
               }`}
             >
               {abbr}
@@ -108,55 +397,37 @@ export default function ProductRail({
         })}
       </div>
 
-      <div className="w-7 border-t border-border-subtle my-1" />
+      <div className={`border-t border-border-subtle my-1 ${expanded ? 'w-full mx-4' : 'w-7'}`} />
 
-      {/* All Tasks shortcut */}
+      {/* Panel toggle */}
       <button
         type="button"
-        onClick={() => onProductSelect(null)}
-        className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-          activeProduct === null ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+        onClick={onToggleExpanded}
+        className={`flex items-center gap-2 rounded-lg transition-colors cursor-pointer text-fg-secondary hover:text-fg hover:bg-elevated ${
+          expanded ? 'w-full mx-2 px-3 py-2' : 'w-10 h-10 justify-center'
         }`}
-        title="All Tasks"
+        title={expanded ? 'Collapse panel' : 'Expand panel'}
       >
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 4l2 2 4-4" />
-          <path d="M3 10l2 2 4-4" />
-          <path d="M11 5h2M11 11h2" />
-        </svg>
-      </button>
-
-      {/* Conversation History */}
-      <button
-        type="button"
-        onClick={onSessionsToggle}
-        className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-          sessionsOpen ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg hover:bg-elevated'
-        }`}
-        title="Conversation History"
-        data-testid="conversation-history-btn"
-      >
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="6" />
-          <path d="M8 5v3.5l2.5 1.5" />
-          <path d="M2.5 2.5 Q1 5 2 8" strokeWidth="1.3" />
-          <path d="M2 5.5l0 2.5 2.5 0" strokeWidth="1.3" />
-        </svg>
+        <PanelIcon expanded={expanded} />
+        {expanded && <span className="text-sm font-display">Collapse</span>}
       </button>
 
       {/* Settings */}
       <button
         type="button"
-        onClick={onSettingsToggle}
-        className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-          settingsOpen ? 'bg-elevated text-fg' : 'text-fg-muted hover:text-fg hover:bg-elevated'
-        }`}
+        onClick={() => {
+          if (!expanded) {
+            onToggleExpanded();
+          }
+          onSettingsToggle();
+        }}
+        className={`flex items-center gap-2 rounded-lg transition-colors cursor-pointer ${
+          settingsOpen ? 'bg-elevated text-fg' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+        } ${expanded ? 'w-full mx-2 px-3 py-2' : 'w-10 h-10 justify-center'}`}
         title="Settings"
       >
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="2" />
-          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
-        </svg>
+        <GearIcon />
+        {expanded && <span className="text-sm font-display">Settings</span>}
       </button>
     </div>
   );

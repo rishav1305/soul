@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,27 +83,39 @@ const maxToolIterations = 40
 // AgentLoop drives the Claude AI conversation with tool routing through the
 // product manager. It streams responses back to the browser via WebSocket events.
 type AgentLoop struct {
-	ai          *ai.Client
-	products    *products.Manager
-	sessions    *session.Store
-	planner     *planner.Store
-	broadcast   func(WSMessage)
-	model       string
-	projectRoot string // when set, enables code_* tools for file operations
-	autonomous  bool   // strips E2E self-verify instructions from prompt
-	maxIter     int    // max tool iterations (0 = use default maxToolIterations)
+	ai            *ai.Client
+	products      *products.Manager
+	sessions      *session.Store
+	planner       *planner.Store
+	broadcast     func(WSMessage)
+	model         string
+	projectRoot   string // when set, enables code_* tools for file operations
+	autonomous    bool   // strips E2E self-verify instructions from prompt
+	maxIter       int    // max tool iterations (0 = use default maxToolIterations)
+	contextBudget int    // estimated max context tokens (default 200000)
+	taskMemory    map[string]string // task-scoped key-value memory
+	hooks         *HookRunner       // pre/post tool execution hooks
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
 func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string) *AgentLoop {
+	budget := 200000
+	if strings.Contains(model, "opus") {
+		budget = 200000
+	} else if strings.Contains(model, "haiku") {
+		budget = 200000
+	}
 	return &AgentLoop{
-		ai:          aiClient,
-		products:    pm,
-		sessions:    sessions,
-		planner:     plannerStore,
-		broadcast:   broadcast,
-		model:       model,
-		projectRoot: projectRoot,
+		ai:            aiClient,
+		products:      pm,
+		sessions:      sessions,
+		planner:       plannerStore,
+		broadcast:     broadcast,
+		model:         model,
+		projectRoot:   projectRoot,
+		contextBudget: budget,
+		taskMemory:    make(map[string]string),
+		hooks:         NewHookRunner(),
 	}
 }
 
@@ -315,13 +329,43 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		iterLimit = a.maxIter
 	}
 
-	// Stuck detection: track repeated identical tool calls.
-	type callSig struct{ Name, Input string }
-	callCounts := make(map[callSig]int)
+	// Stuck detection via LoopDetector.
+	detector := NewLoopDetector()
 
 	var fullResponse strings.Builder
 	for iteration := 0; iteration < iterLimit; iteration++ {
 		log.Printf("[agent] iteration %d/%d", iteration+1, iterLimit)
+
+		// Context budget check.
+		budget := a.contextBudget
+		if budget == 0 {
+			budget = 200000
+		}
+		usage := estimateTokens(messages, sysPrompt)
+		usagePct := float64(usage) / float64(budget) * 100
+
+		if usagePct > 85 {
+			log.Printf("[agent] context emergency: %.0f%% used, restarting with brief", usagePct)
+			var brief strings.Builder
+			brief.WriteString("CONTEXT LIMIT REACHED. Here is a summary of your work so far:\n\n")
+			count := 0
+			for i := len(messages) - 1; i >= 0 && count < 3; i-- {
+				if messages[i].Role == "assistant" {
+					if text, ok := messages[i].Content.(string); ok && text != "" {
+						brief.WriteString(text + "\n\n")
+						count++
+					}
+				}
+			}
+			brief.WriteString("\nContinue from where you left off. Do NOT re-read files you already read. Do NOT repeat searches.")
+			messages = []ai.Message{{Role: "user", Content: brief.String()}}
+		} else if usagePct > 70 {
+			messages = compressHistory(messages, iteration)
+			log.Printf("[agent] context high (%.0f%%), aggressive compression applied", usagePct)
+		} else if usagePct > 50 {
+			messages = compressHistory(messages, iteration)
+		}
+
 		req := ai.Request{
 			MaxTokens: maxTokens,
 			System:    sysPrompt,
@@ -356,6 +400,17 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 			break
 		}
 
+		// Adaptive planning: check if agent skipped the plan on first iteration.
+		if iteration == 0 && a.autonomous && len(textContent) > 0 {
+			if !strings.Contains(textContent, "## Plan") && !strings.Contains(textContent, "Files to modify") {
+				planWarning := "WARNING: You did not output a plan before acting. You MUST plan first. Output your plan now before making any more tool calls."
+				messages = append(messages, ai.Message{
+					Role:    "user",
+					Content: planWarning,
+				})
+			}
+		}
+
 		// Build the assistant message with all content blocks (text + tool_use).
 		assistantContent := buildAssistantContent(textContent, toolCalls)
 		messages = append(messages, ai.Message{
@@ -366,32 +421,63 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		// Execute each tool call and build tool_result blocks.
 		var toolResults []any
 		for _, tc := range toolCalls {
-			result := a.executeTool(ctx, sessionID, tc, sendEvent)
+			// Extract hook variables from tool call.
+			hookVars := map[string]string{
+				"tool_name": tc.Name,
+				"worktree":  a.projectRoot,
+			}
+			if tc.Input != "" {
+				var inp map[string]any
+				if json.Unmarshal([]byte(tc.Input), &inp) == nil {
+					if f, ok := inp["path"].(string); ok {
+						hookVars["file"] = f
+					}
+					if c, ok := inp["command"].(string); ok {
+						hookVars["input"] = c
+					}
+				}
+			}
+
+			// Before hook.
+			var result string
+			if a.hooks != nil {
+				blocked, msg, _ := a.hooks.RunToolHook("before", tc.Name, hookVars)
+				if blocked {
+					result = fmt.Sprintf("BLOCKED: %s", msg)
+					toolResults = append(toolResults, map[string]any{
+						"type":        "tool_result",
+						"tool_use_id": tc.ID,
+						"content":     result,
+					})
+					detector.Record(tc.Name, tc.Input, result, iteration)
+					continue
+				}
+			}
+
+			result = a.executeTool(ctx, sessionID, tc, sendEvent)
+
+			// After hook.
+			if a.hooks != nil {
+				_, _, hookOutput := a.hooks.RunToolHook("after", tc.Name, hookVars)
+				if hookOutput != "" {
+					result = result + "\n" + hookOutput
+				}
+			}
+
 			toolResults = append(toolResults, map[string]any{
 				"type":        "tool_result",
 				"tool_use_id": tc.ID,
 				"content":     result,
 			})
+			// Record in loop detector.
+			detector.Record(tc.Name, tc.Input, result, iteration)
 		}
 
-		// Stuck detection: check for repeated identical tool calls.
-		for _, tc := range toolCalls {
-			sig := callSig{tc.Name, tc.Input}
-			callCounts[sig]++
-			if callCounts[sig] >= 3 {
-				log.Printf("[agent] stuck: tool=%s repeated=%d", tc.Name, callCounts[sig])
-				warning := fmt.Sprintf(
-					"\n\nWARNING — STUCK DETECTION: You called `%s` %d times with identical arguments. "+
-						"Stop repeating. Try a different approach or move the task to blocked.",
-					tc.Name, callCounts[sig])
-				if last, ok := toolResults[len(toolResults)-1].(map[string]any); ok {
-					last["content"] = fmt.Sprintf("%s%s", last["content"], warning)
-				}
-				iterLimit -= 2
-				if iterLimit <= iteration+1 {
-					iterLimit = iteration + 2
-				}
-				break
+		// Stuck detection: check for patterns after all tool calls in this iteration.
+		if detected, warning := detector.Check(iteration, iterLimit); detected {
+			log.Printf("[agent] stuck detected: %s", warning)
+			if last, ok := toolResults[len(toolResults)-1].(map[string]any); ok {
+				last["content"] = fmt.Sprintf("%s%s", last["content"], warning)
 			}
 		}
 
@@ -593,6 +679,50 @@ func (a *AgentLoop) executeTool(
 		SessionID: sessionID,
 		Data:      callData,
 	})
+
+	// Handle task-scoped memory tool.
+	if tc.Name == "task_memory" && a.projectRoot != "" {
+		var input map[string]any
+		if tc.Input != "" {
+			if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+				return fmt.Sprintf("Error parsing input: %v", err)
+			}
+		}
+		result := a.executeTaskMemory(input)
+		completeData, _ := json.Marshal(map[string]any{
+			"id":      tc.ID,
+			"success": !strings.HasPrefix(result, "Error"),
+			"output":  result,
+		})
+		sendEvent(WSMessage{
+			Type:      "tool.complete",
+			SessionID: sessionID,
+			Data:      completeData,
+		})
+		return result
+	}
+
+	// Handle subagent tool.
+	if tc.Name == "subagent" && a.projectRoot != "" {
+		var input map[string]any
+		if tc.Input != "" {
+			if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+				return fmt.Sprintf("Error parsing input: %v", err)
+			}
+		}
+		result := a.executeSubagent(input)
+		completeData, _ := json.Marshal(map[string]any{
+			"id":      tc.ID,
+			"success": !strings.HasPrefix(result, "Error"),
+			"output":  result,
+		})
+		sendEvent(WSMessage{
+			Type:      "tool.complete",
+			SessionID: sessionID,
+			Data:      completeData,
+		})
+		return result
+	}
 
 	// Handle built-in task tools.
 	if strings.HasPrefix(tc.Name, "task_") {
@@ -835,6 +965,502 @@ func buildAssistantContent(text string, calls []toolCall) []any {
 	return content
 }
 
+// ── LoopDetector — stuck pattern detection ──
+
+// loopEntry records a single tool call for stuck detection.
+type loopEntry struct {
+	name      string
+	input     string // first 200 chars of input
+	file      string // extracted file path if any
+	errSig    string // first 100 chars of result if error
+	iteration int    // which iteration this came from
+}
+
+// LoopDetector tracks tool calls and detects stuck patterns.
+type LoopDetector struct {
+	history []loopEntry
+	maxHist int
+}
+
+// NewLoopDetector creates a new LoopDetector that keeps the last 10 entries.
+func NewLoopDetector() *LoopDetector {
+	return &LoopDetector{maxHist: 10}
+}
+
+// Record stores a tool call entry for pattern detection.
+func (ld *LoopDetector) Record(name, input, result string, iteration int) {
+	entry := loopEntry{
+		name:      name,
+		iteration: iteration,
+	}
+	if len(input) > 200 {
+		entry.input = input[:200]
+	} else {
+		entry.input = input
+	}
+	// Extract file path from input JSON.
+	var parsed map[string]any
+	if json.Unmarshal([]byte(input), &parsed) == nil {
+		if f, ok := parsed["file"].(string); ok {
+			entry.file = f
+		} else if f, ok := parsed["path"].(string); ok {
+			entry.file = f
+		} else if f, ok := parsed["file_path"].(string); ok {
+			entry.file = f
+		}
+	}
+	// Capture error signature.
+	if strings.HasPrefix(result, "Error") || strings.HasPrefix(result, "Exit error") {
+		if len(result) > 100 {
+			entry.errSig = result[:100]
+		} else {
+			entry.errSig = result
+		}
+	}
+	ld.history = append(ld.history, entry)
+	if len(ld.history) > ld.maxHist {
+		ld.history = ld.history[len(ld.history)-ld.maxHist:]
+	}
+}
+
+// Check detects stuck patterns and returns a warning if found.
+func (ld *LoopDetector) Check(iteration, maxIter int) (bool, string) {
+	h := ld.history
+
+	// (e) Running low: current iteration > 70% of max iterations.
+	if maxIter > 0 && float64(iteration) > float64(maxIter)*0.7 {
+		return true, fmt.Sprintf(
+			"\n\nWARNING: You're at %d/%d iterations. Wrap up: commit what works, document what's left in a task_comment.",
+			iteration, maxIter)
+	}
+
+	// (a) Search loop: same tool name 3+ times in last 6 calls with similar input.
+	if len(h) >= 3 {
+		window := h
+		if len(window) > 6 {
+			window = window[len(window)-6:]
+		}
+		// Group by tool name.
+		byName := make(map[string][]loopEntry)
+		for _, e := range window {
+			byName[e.name] = append(byName[e.name], e)
+		}
+		for name, entries := range byName {
+			if len(entries) >= 3 {
+				// Check for similar input in any pair.
+				hasSimilar := false
+				for i := 0; i < len(entries) && !hasSimilar; i++ {
+					for j := i + 1; j < len(entries); j++ {
+						if stringSimilarity(entries[i].input, entries[j].input) > 0.7 {
+							hasSimilar = true
+							break
+						}
+					}
+				}
+				if hasSimilar {
+					return true, fmt.Sprintf(
+						"\n\nWARNING — STUCK: You've searched with `%s` 3 times with similar input. Use what you have or try a completely different approach. Consider reading a file directly with code_read.",
+						name)
+				}
+			}
+		}
+	}
+
+	// (b) Edit thrashing: code_edit on same file 3+ times in last 5 calls.
+	if len(h) >= 3 {
+		window := h
+		if len(window) > 5 {
+			window = window[len(window)-5:]
+		}
+		fileCounts := make(map[string]int)
+		for _, e := range window {
+			if e.name == "code_edit" && e.file != "" {
+				fileCounts[e.file]++
+			}
+		}
+		for file, count := range fileCounts {
+			if count >= 3 {
+				return true, fmt.Sprintf(
+					"\n\nWARNING — STUCK: You've edited %s %d times. Stop. Re-read the full file with code_read, then make ONE correct edit.",
+					file, count)
+			}
+		}
+	}
+
+	// (c) Build loop: code_exec returns similar error 2+ times in last 4 calls.
+	if len(h) >= 2 {
+		window := h
+		if len(window) > 4 {
+			window = window[len(window)-4:]
+		}
+		var execErrors []loopEntry
+		for _, e := range window {
+			if e.name == "code_exec" && e.errSig != "" {
+				execErrors = append(execErrors, e)
+			}
+		}
+		if len(execErrors) >= 2 {
+			for i := 0; i < len(execErrors); i++ {
+				for j := i + 1; j < len(execErrors); j++ {
+					if stringSimilarity(execErrors[i].errSig, execErrors[j].errSig) > 0.6 {
+						return true, "\n\nWARNING — STUCK: Same error twice from code_exec. Read the error carefully. Identify the root cause. Don't retry the same fix."
+					}
+				}
+			}
+		}
+	}
+
+	// (d) Blind execution: 5+ consecutive tool calls with no assistant text between them.
+	if len(h) >= 5 {
+		last5 := h[len(h)-5:]
+		allSameIter := true
+		iter := last5[0].iteration
+		for _, e := range last5[1:] {
+			if e.iteration != iter {
+				allSameIter = false
+				break
+			}
+		}
+		if allSameIter {
+			return true, "\n\nWARNING: Pause. Summarize what you've learned so far and what you're trying to do next before making more tool calls."
+		}
+	}
+
+	return false, ""
+}
+
+// stringSimilarity computes a simple character frequency overlap ratio.
+func stringSimilarity(a, b string) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	freq := make(map[byte]int)
+	for i := 0; i < len(a); i++ {
+		freq[a[i]]++
+	}
+	matches := 0
+	for i := 0; i < len(b); i++ {
+		if freq[b[i]] > 0 {
+			matches++
+			freq[b[i]]--
+		}
+	}
+	maxLen := len(a)
+	if len(b) > maxLen {
+		maxLen = len(b)
+	}
+	return float64(matches) / float64(maxLen)
+}
+
+// ── Task-Scoped Memory ──
+
+// executeTaskMemory handles the task_memory tool for storing/recalling facts.
+func (a *AgentLoop) executeTaskMemory(input map[string]any) string {
+	action, _ := input["action"].(string)
+	key, _ := input["key"].(string)
+	value, _ := input["value"].(string)
+
+	switch action {
+	case "store":
+		if key == "" || value == "" {
+			return "Error: key and value required for store"
+		}
+		a.taskMemory[key] = value
+		return fmt.Sprintf("Stored: %s = %s", key, value)
+	case "recall":
+		if key == "" {
+			return "Error: key required for recall"
+		}
+		if v, ok := a.taskMemory[key]; ok {
+			return fmt.Sprintf("%s = %s", key, v)
+		}
+		return fmt.Sprintf("No memory found for key: %s", key)
+	case "list":
+		if len(a.taskMemory) == 0 {
+			return "No facts stored yet."
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "%d facts stored:\n", len(a.taskMemory))
+		for k, v := range a.taskMemory {
+			fmt.Fprintf(&b, "- %s: %s\n", k, v)
+		}
+		return b.String()
+	default:
+		return "Error: action must be store, recall, or list"
+	}
+}
+
+// ── Subagent ──
+
+// executeSubagent spawns a fresh AgentLoop for focused codebase exploration.
+func (a *AgentLoop) executeSubagent(input map[string]any) string {
+	task, _ := input["task"].(string)
+	if task == "" {
+		return "Error: task is required"
+	}
+
+	maxIter := 5
+	if m, ok := input["max_iterations"].(float64); ok && int(m) > 0 {
+		maxIter = int(m)
+		if maxIter > 10 {
+			maxIter = 10
+		}
+	}
+
+	log.Printf("[subagent] spawning for task: %s (max_iter=%d)", task, maxIter)
+
+	// Create a fresh agent with read-only tools only.
+	sub := &AgentLoop{
+		ai:          a.ai,
+		products:    nil,
+		sessions:    session.NewStore(),
+		planner:     nil,
+		broadcast:   func(WSMessage) {},
+		model:       a.model,
+		projectRoot: a.projectRoot,
+		taskMemory:  make(map[string]string),
+	}
+	sub.maxIter = maxIter
+
+	// Create a temporary session and run.
+	sessionID := fmt.Sprintf("subagent-%d", time.Now().UnixNano())
+	sess := sub.sessions.GetOrCreate(sessionID)
+	sess.AddMessage("user", task)
+
+	// Build read-only code tools (no code_write, code_edit, code_exec).
+	readOnlyTools := []ai.ClaudeTool{}
+	for _, t := range builtinCodeTools() {
+		if t.Name == "code_read" || t.Name == "code_search" || t.Name == "code_grep" || t.Name == "code_glob" {
+			readOnlyTools = append(readOnlyTools, t)
+		}
+	}
+
+	// Build minimal system prompt.
+	sysPrompt := fmt.Sprintf("You are a codebase exploration agent. Answer the question using the available tools. Be concise and direct. Project root: %s\n\nYou are powered by %s.", a.projectRoot, a.model)
+
+	messages := buildAIMessages(sess)
+
+	var result strings.Builder
+	for iteration := 0; iteration < maxIter; iteration++ {
+		req := ai.Request{
+			MaxTokens: 4096,
+			System:    sysPrompt,
+			Messages:  messages,
+			Tools:     readOnlyTools,
+		}
+
+		body, err := a.ai.SendStream(context.Background(), req)
+		if err != nil {
+			return fmt.Sprintf("Subagent error: %v", err)
+		}
+
+		// Process stream silently (no sendEvent).
+		stopReason, toolCalls, textContent := sub.processStream(context.Background(), sessionID, body, func(WSMessage) {})
+		body.Close()
+
+		result.WriteString(textContent)
+
+		if stopReason != "tool_use" || len(toolCalls) == 0 {
+			break
+		}
+
+		// Build assistant message.
+		assistantContent := buildAssistantContent(textContent, toolCalls)
+		messages = append(messages, ai.Message{Role: "assistant", Content: assistantContent})
+
+		// Execute read-only tools.
+		var toolResults []any
+		for _, tc := range toolCalls {
+			var toolResult string
+			switch tc.Name {
+			case "code_read", "code_search", "code_grep", "code_glob":
+				toolResult = executeCodeTool(a.projectRoot, tc)
+			default:
+				toolResult = fmt.Sprintf("Error: tool %s not available in subagent", tc.Name)
+			}
+			toolResults = append(toolResults, map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": tc.ID,
+				"content":     toolResult,
+			})
+		}
+		messages = append(messages, ai.Message{Role: "user", Content: toolResults})
+	}
+
+	finalResult := result.String()
+	if len(finalResult) > 3000 {
+		finalResult = finalResult[:3000] + "\n... (truncated)"
+	}
+
+	log.Printf("[subagent] completed, result length=%d", len(finalResult))
+	return finalResult
+}
+
+// ── Tool Result Compression ──
+
+// compressHistory shrinks old tool results to keep context fresh.
+// - Last 3 iterations: full output
+// - 4-8 iterations ago: keep first 10 + last 5 lines, middle replaced
+// - 9+ iterations ago: replace with 1-line summary
+func compressHistory(messages []ai.Message, currentIter int) []ai.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	// Walk backwards through messages, counting iterations by assistant/user pairs.
+	// Each iteration produces an assistant message (with tool_use) + a user message (with tool_result).
+	iterFromEnd := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role == "assistant" {
+			iterFromEnd++
+		}
+
+		// Only compress user messages (they contain tool results).
+		if msg.Role != "user" {
+			continue
+		}
+
+		contentSlice, ok := msg.Content.([]any)
+		if !ok {
+			continue
+		}
+
+		// Skip recent iterations — keep full output.
+		if iterFromEnd <= 3 {
+			continue
+		}
+
+		for j, block := range contentSlice {
+			bm, ok := block.(map[string]any)
+			if !ok {
+				continue
+			}
+			if bm["type"] != "tool_result" {
+				continue
+			}
+			content, ok := bm["content"].(string)
+			if !ok || len(content) < 500 {
+				continue
+			}
+
+			if iterFromEnd >= 9 {
+				// Full compression: 1-line summary.
+				toolID, _ := bm["tool_use_id"].(string)
+				summary := compressSummary(content, toolID, messages, i)
+				bm["content"] = summary
+				contentSlice[j] = bm
+			} else {
+				// Partial compression: keep first 10 + last 5 lines.
+				lines := strings.Split(content, "\n")
+				if len(lines) > 15 {
+					omitted := len(lines) - 15
+					var compressed strings.Builder
+					for _, l := range lines[:10] {
+						compressed.WriteString(l)
+						compressed.WriteByte('\n')
+					}
+					compressed.WriteString(fmt.Sprintf("... (%d lines omitted)\n", omitted))
+					for _, l := range lines[len(lines)-5:] {
+						compressed.WriteString(l)
+						compressed.WriteByte('\n')
+					}
+					bm["content"] = compressed.String()
+					contentSlice[j] = bm
+				}
+			}
+		}
+		messages[i].Content = contentSlice
+	}
+
+	return messages
+}
+
+// compressSummary generates a 1-line summary for a tool result.
+func compressSummary(content, toolUseID string, messages []ai.Message, userMsgIdx int) string {
+	// Try to find the tool name from the preceding assistant message.
+	toolName := ""
+	if userMsgIdx > 0 {
+		prevMsg := messages[userMsgIdx-1]
+		if prevMsg.Role == "assistant" {
+			if blocks, ok := prevMsg.Content.([]any); ok {
+				for _, b := range blocks {
+					if bm, ok := b.(map[string]any); ok {
+						if bm["type"] == "tool_use" {
+							if id, ok := bm["id"].(string); ok && id == toolUseID {
+								toolName, _ = bm["name"].(string)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	lines := strings.Split(content, "\n")
+	lineCount := len(lines)
+
+	switch {
+	case toolName == "code_grep" || toolName == "code_search":
+		// Count files mentioned — lines with file paths.
+		fileSet := make(map[string]bool)
+		for _, l := range lines {
+			if strings.Contains(l, "/") || strings.Contains(l, ".go") || strings.Contains(l, ".ts") {
+				parts := strings.Fields(l)
+				if len(parts) > 0 {
+					fileSet[parts[0]] = true
+				}
+			}
+		}
+		return fmt.Sprintf("[compressed] %s: found matches in %d files (%d lines of output)", toolName, len(fileSet), lineCount)
+
+	case toolName == "code_read":
+		return fmt.Sprintf("[compressed] Read file, %d lines", lineCount)
+
+	case toolName == "code_exec":
+		// Try to detect exit code.
+		if strings.HasPrefix(content, "Exit error") || strings.HasPrefix(content, "Error") {
+			firstLine := lines[0]
+			if len(firstLine) > 80 {
+				firstLine = firstLine[:80]
+			}
+			return fmt.Sprintf("[compressed] Executed command, error: %s", firstLine)
+		}
+		return fmt.Sprintf("[compressed] Executed command, %d lines of output", lineCount)
+
+	default:
+		if toolName != "" {
+			return fmt.Sprintf("[compressed] %s completed (%d lines)", toolName, lineCount)
+		}
+		return fmt.Sprintf("[compressed] Tool completed (%d lines)", lineCount)
+	}
+}
+
+// ── Context Budget ──
+
+// estimateTokens gives a rough token count (4 chars per token approximation).
+func estimateTokens(messages []ai.Message, sysPrompt string) int {
+	total := len(sysPrompt) / 4
+	for _, m := range messages {
+		switch c := m.Content.(type) {
+		case string:
+			total += len(c) / 4
+		case []any:
+			for _, block := range c {
+				if bm, ok := block.(map[string]any); ok {
+					if content, ok := bm["content"].(string); ok {
+						total += len(content) / 4
+					}
+					if input, ok := bm["input"].(string); ok {
+						total += len(input) / 4
+					}
+				}
+			}
+		}
+	}
+	return total
+}
+
 // builtinTaskTools returns the Claude tool definitions for built-in task management.
 func builtinTaskTools() []ai.ClaudeTool {
 	return []ai.ClaudeTool{
@@ -879,13 +1505,14 @@ func builtinTaskTools() []ai.ClaudeTool {
 		},
 		{
 			Name:        "task_comment",
-			Description: "Post a comment on a task. Use this to record findings, implementation gaps, analysis, or status updates — never overwrite the task description for these purposes.",
+			Description: "Post a comment on a task. Use this to record findings, implementation gaps, analysis, or status updates — never overwrite the task description for these purposes. You can attach screenshot filenames from e2e_screenshot to show visual evidence.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
-					"task_id": {"type": "integer", "description": "Task ID to comment on"},
-					"body":    {"type": "string", "description": "Comment body (markdown supported)"},
-					"type":    {"type": "string", "description": "Comment type: feedback, status, verification, error", "enum": ["feedback", "status", "verification", "error"]}
+					"task_id":     {"type": "integer", "description": "Task ID to comment on"},
+					"body":        {"type": "string", "description": "Comment body (markdown supported)"},
+					"type":        {"type": "string", "description": "Comment type: feedback, status, verification, error", "enum": ["feedback", "status", "verification", "error"]},
+					"attachments": {"type": "array", "items": {"type": "string"}, "description": "Screenshot filenames from e2e_screenshot to attach (e.g. [\"task-35-20260305-120000.png\"])"}
 				},
 				"required": ["task_id", "body"]
 			}`),
@@ -1066,12 +1693,25 @@ func (a *AgentLoop) toolTaskComment(input map[string]any, sendEvent func(WSMessa
 		commentType = "feedback"
 	}
 
+	// Parse attachments array (screenshot filenames).
+	var attachments []string
+	if rawAttach, ok := input["attachments"].([]any); ok {
+		for _, v := range rawAttach {
+			if s, ok := v.(string); ok && s != "" {
+				attachments = append(attachments, s)
+			}
+		}
+	}
+	if attachments == nil {
+		attachments = []string{}
+	}
+
 	comment := planner.Comment{
 		TaskID:      taskID,
 		Author:      "soul",
 		Type:        commentType,
 		Body:        body,
-		Attachments: []string{},
+		Attachments: attachments,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -1451,12 +2091,13 @@ func builtinE2ETools() []ai.ClaudeTool {
 		},
 		{
 			Name:        "e2e_screenshot",
-			Description: "Take a screenshot of the Soul UI page via headless browser. Saves to /tmp/soul-e2e-screenshot.png on titan-pc.",
+			Description: "Take a screenshot of the Soul UI page via headless browser. Returns a local filename that can be used as an attachment in task_comment. Always attach screenshots to verification comments so reviewers can see the actual UI.",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
 					"url": {"type": "string", "description": "Page URL (default: http://192.168.0.128:3000)"},
-					"selector": {"type": "string", "description": "CSS selector to screenshot (omit for full page)"}
+					"selector": {"type": "string", "description": "CSS selector to screenshot (omit for full page)"},
+					"task_id": {"type": "integer", "description": "Task ID to associate the screenshot with (for naming)"}
 				}
 			}`),
 		},
@@ -1543,9 +2184,57 @@ func (a *AgentLoop) executeE2ETool(tc toolCall) string {
 		if result == "" {
 			return "E2E test completed with no output."
 		}
+
+		// For screenshots, SCP the file back from titan-pc and return the local filename.
+		if toolName == "screenshot" {
+			localFile := a.scpScreenshot(input)
+			if localFile != "" {
+				result += fmt.Sprintf("\n\nScreenshot saved locally: %s\nUse this filename in task_comment attachments to show this screenshot to reviewers.", localFile)
+			}
+		}
+
 		return result
 	case <-time.After(60 * time.Second):
 		cmd.Process.Kill()
 		return "Error: E2E test timed out after 60 seconds"
 	}
+}
+
+// scpScreenshot copies /tmp/soul-e2e-screenshot.png from titan-pc to ~/.soul/screenshots/
+// and returns the filename (not full path) for use in API URLs.
+func (a *AgentLoop) scpScreenshot(input map[string]any) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("[e2e] failed to get home dir: %v", err)
+		return ""
+	}
+
+	screenshotDir := filepath.Join(home, ".soul", "screenshots")
+	if err := os.MkdirAll(screenshotDir, 0o755); err != nil {
+		log.Printf("[e2e] failed to create screenshots dir: %v", err)
+		return ""
+	}
+
+	// Build filename: task-{id}-{timestamp}.png
+	taskID := 0
+	if tid, ok := input["task_id"].(float64); ok {
+		taskID = int(tid)
+	}
+	ts := time.Now().UTC().Format("20060102-150405")
+	filename := fmt.Sprintf("task-%d-%s.png", taskID, ts)
+	if taskID == 0 {
+		filename = fmt.Sprintf("screenshot-%s.png", ts)
+	}
+
+	localPath := filepath.Join(screenshotDir, filename)
+
+	// SCP from titan-pc
+	scpCmd := exec.Command("scp", "titan-pc:/tmp/soul-e2e-screenshot.png", localPath)
+	if out, err := scpCmd.CombinedOutput(); err != nil {
+		log.Printf("[e2e] SCP screenshot failed: %v\n%s", err, string(out))
+		return ""
+	}
+
+	log.Printf("[e2e] screenshot saved: %s", localPath)
+	return filename
 }
