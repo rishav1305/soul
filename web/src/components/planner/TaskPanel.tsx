@@ -287,6 +287,7 @@ export default function TaskPanel({
             onTaskClick={setSelectedTask}
             onClearFilters={handleClearFilters}
             taskActivities={taskActivities}
+            products={products}
           />
         )}
       </div>

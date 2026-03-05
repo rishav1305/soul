@@ -16,6 +16,9 @@ type Config struct {
 	Model     string
 	DataDir   string
 
+	// Worker pool for autonomous task execution.
+	MaxWorkers int // from SOUL_MAX_WORKERS, default 2, max 5
+
 	// E2E testing infrastructure.
 	E2EHost       string // SSH host for Playwright tests (default: "titan-pc")
 	E2ERunnerPath string // path to test-runner.js on E2E host (default: "~/soul-e2e")
@@ -33,6 +36,7 @@ func Default() Config {
 		DevUIAddr:     "http://localhost:5173",
 		Model:         "claude-sonnet-4-6",
 		DataDir:       filepath.Join(home, ".soul"),
+		MaxWorkers:    2,
 		E2EHost:       "titan-pc",
 		E2ERunnerPath: "~/soul-e2e",
 	}
@@ -66,6 +70,12 @@ func FromEnv() Config {
 
 	if v := os.Getenv("SOUL_DATA_DIR"); v != "" {
 		cfg.DataDir = v
+	}
+
+	if v := os.Getenv("SOUL_MAX_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 5 {
+			cfg.MaxWorkers = n
+		}
 	}
 
 	if v := os.Getenv("SOUL_E2E_HOST"); v != "" {

@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	soulv1 "github.com/rishav1305/soul/proto/soul/v1"
@@ -53,6 +55,9 @@ func (s *Server) registerRoutes() {
 
 	// Skills list endpoint — returns names of loaded skills.
 	s.mux.HandleFunc("GET /api/skills", s.handleSkillsList)
+
+	// Task templates endpoint.
+	s.mux.HandleFunc("GET /api/templates", handleTemplates)
 
 	// Catch-all for unknown API routes — returns 404 JSON.
 	s.mux.HandleFunc("/api/", handleAPINotFound)
@@ -225,6 +230,36 @@ func (s *Server) handleModelsList(w http.ResponseWriter, r *http.Request) {
 		{ID: "claude-haiku-4-5-20251001", Name: "Haiku", Description: "Fast & lightweight"},
 	}
 	writeJSON(w, http.StatusOK, models)
+}
+
+// handleTemplates serves task templates from ~/.soul/templates.json, falling back to defaults.
+func handleTemplates(w http.ResponseWriter, r *http.Request) {
+	type taskTemplate struct {
+		Label       string `json:"label"`
+		Icon        string `json:"icon"`
+		Priority    int    `json:"priority"`
+		Description string `json:"description"`
+	}
+
+	// Try loading from ~/.soul/templates.json.
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, ".soul", "templates.json")
+	if data, err := os.ReadFile(path); err == nil {
+		var templates []taskTemplate
+		if json.Unmarshal(data, &templates) == nil && len(templates) > 0 {
+			writeJSON(w, http.StatusOK, templates)
+			return
+		}
+	}
+
+	// Default templates.
+	defaults := []taskTemplate{
+		{Label: "Bug Fix", Icon: "\U0001F41B", Priority: 2, Description: "## Steps to Reproduce\n\n1. \n\n## Expected Behavior\n\n\n## Actual Behavior\n\n"},
+		{Label: "UI Change", Icon: "\U0001F3A8", Priority: 1, Description: "## Change\n\n\n## Affected Components\n\n"},
+		{Label: "Feature", Icon: "\u2728", Priority: 1, Description: "## User Story\n\nAs a user, I want...\n\n## Acceptance Criteria\n\n- [ ] \n"},
+		{Label: "Refactor", Icon: "\u267B\uFE0F", Priority: 1, Description: "## Current State\n\n\n## Desired State\n\n\n## Files\n\n"},
+	}
+	writeJSON(w, http.StatusOK, defaults)
 }
 
 func friendlyModelName(model string) string {

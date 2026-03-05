@@ -189,6 +189,11 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 
 	// Run the AI agent loop with prior history for context.
 	agent := NewAgentLoop(s.ai, s.products, s.sessions, s.planner, s.broadcast, model, s.projectRoot)
+	if s.processor != nil {
+		agent.startTask = func(id int64) { s.processor.StartTask(id) }
+		agent.processor = s.processor
+	}
+	agent.pm = s.pm
 	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, opts.SkillContent, priorMessages, sendEvent)
 
 	// Persist assistant response to DB (always, even for tool-only turns).

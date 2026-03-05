@@ -189,6 +189,17 @@ func (c *Client) CompleteSimple(ctx context.Context, model, prompt string) (stri
 	return result, nil
 }
 
+// AuthMode returns how this client authenticates.
+func (c *Client) GetAuthMode() AuthMode { return c.authMode }
+
+// OAuthSource returns the OAuth token source, or nil if using API key auth.
+func (c *Client) OAuthSource() *OAuthTokenSource {
+	if c.authMode == AuthOAuth {
+		return c.oauth
+	}
+	return nil
+}
+
 func (c *Client) setAuthHeader(req *http.Request) error {
 	switch c.authMode {
 	case AuthOAuth:

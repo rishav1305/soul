@@ -109,6 +109,26 @@ export function useChat() {
           break;
         }
 
+        case 'pm.notification': {
+          const data = msg.data as { severity: string; task_ids: number[]; check: string };
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uuid(),
+              role: 'assistant' as const,
+              content: msg.content ?? '',
+              toolCalls: [],
+              timestamp: new Date(),
+              pmNotification: {
+                severity: data.severity as 'info' | 'warning' | 'error',
+                taskIds: data.task_ids ?? [],
+                check: data.check ?? '',
+              },
+            },
+          ]);
+          break;
+        }
+
         case 'tool.call': {
           const data = msg.data as {
             id: string;

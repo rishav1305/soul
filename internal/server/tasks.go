@@ -66,6 +66,12 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.broadcastTaskEvent("task.created", created)
+
+	// Run PM checks asynchronously.
+	if s.pm != nil {
+		s.pm.AfterCreate(created)
+	}
+
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -261,6 +267,9 @@ func (s *Server) handleTaskMove(w http.ResponseWriter, r *http.Request) {
 	if body.Stage == planner.StageDone && s.worktrees != nil {
 		log.Printf("[tasks] task %d moved to done — merging to master", id)
 
+		if s.processor != nil && s.processor.hooks != nil {
+			s.processor.hooks.RunWorkflowHook("before:merge_to_master", map[string]string{"task_id": fmt.Sprintf("%d", id)})
+		}
 		if err := s.worktrees.MergeToMaster(id, task.Title); err != nil {
 			log.Printf("[tasks] merge to master failed for task %d: %v", id, err)
 		} else {
@@ -290,6 +299,9 @@ func (s *Server) handleTaskMove(w http.ResponseWriter, r *http.Request) {
 					log.Printf("[tasks] prod smoke test PASSED for task %d", id)
 				}
 			}
+		}
+		if s.processor != nil && s.processor.hooks != nil {
+			s.processor.hooks.RunWorkflowHook("after:merge_to_master", map[string]string{"task_id": fmt.Sprintf("%d", id)})
 		}
 
 		// Cleanup the worktree.

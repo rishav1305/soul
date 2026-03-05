@@ -13,6 +13,7 @@ interface TaskContentProps {
   onTaskClick: (task: PlannerTask) => void;
   onClearFilters: () => void;
   taskActivities?: Record<number, TaskActivity[]>;
+  products?: string[];
 }
 
 export default function TaskContent({
@@ -22,6 +23,7 @@ export default function TaskContent({
   onTaskClick,
   onClearFilters,
   taskActivities,
+  products,
 }: TaskContentProps) {
   if (filteredTasks.length === 0) {
     return (
@@ -42,7 +44,7 @@ export default function TaskContent({
     case 'list':
       return <ListView tasks={filteredTasks} onTaskClick={onTaskClick} />;
     case 'kanban':
-      return <KanbanBoard tasksByStage={tasksByStage} onTaskClick={onTaskClick} taskActivities={taskActivities} />;
+      return <KanbanBoard tasksByStage={tasksByStage} onTaskClick={onTaskClick} taskActivities={taskActivities} products={products} />;
     case 'grid':
       return <CompactGrid tasks={filteredTasks} onTaskClick={onTaskClick} />;
     case 'table':

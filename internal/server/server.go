@@ -36,6 +36,7 @@ type Server struct {
 	ai          *ai.Client
 	planner     *planner.Store
 	processor      *TaskProcessor
+	pm             *PMService
 	commentWatcher *CommentWatcher
 	projectRoot    string           // working directory for code tools
 	worktrees      *WorktreeManager // manages per-task git worktrees
@@ -72,7 +73,10 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 	}
 	s.skillStore = skills.Load()
 	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
-	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm, cfg.MaxWorkers)
+	log.Printf("[autonomous] worker pool: max %d concurrent tasks", cfg.MaxWorkers)
+	s.pm = NewPMService(plannerStore, s.broadcast, aiClient, cfg.Model)
+	s.pm.Start()
 	s.registerRoutes()
 
 	// Try to initialize MinIO client.
@@ -127,7 +131,10 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 	}
 	s.skillStore = skills.Load()
 	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
-	s.processor = NewTaskProcessor(s, aiClient, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm)
+	s.processor = NewTaskProcessor(s, pm, sessions, plannerStore, s.broadcast, cfg.Model, projectRoot, wm, cfg.MaxWorkers)
+	log.Printf("[autonomous] worker pool: max %d concurrent tasks", cfg.MaxWorkers)
+	s.pm = NewPMService(plannerStore, s.broadcast, aiClient, cfg.Model)
+	s.pm.Start()
 	s.registerRoutes()
 
 	// Try to initialize MinIO client.
@@ -146,6 +153,54 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 	s.commentWatcher = cw
 
 	return s
+}
+
+// ReloadAIClient re-reads OAuth credentials from disk and swaps the AI client.
+// Returns a description of what happened.
+func (s *Server) ReloadAIClient() (string, error) {
+	// If using OAuth, try reloading from disk first.
+	if s.ai != nil {
+		if src := s.ai.OAuthSource(); src != nil {
+			if src.ReloadFromDisk() {
+				return "Reloaded OAuth credentials from disk", nil
+			}
+			return "", fmt.Errorf("no updated credentials found on disk — run 'claude login' first")
+		}
+		return "Using API key auth — no OAuth to refresh", nil
+	}
+
+	// No client at all — try to create one.
+	if oauthCreds := ai.LoadOAuthCredentials(); oauthCreds != nil {
+		tokenSource := ai.NewOAuthTokenSource(oauthCreds)
+		s.ai = ai.NewOAuthClient(tokenSource, s.cfg.Model)
+		return "Created new OAuth client from disk credentials", nil
+	}
+
+	return "", fmt.Errorf("no API key or OAuth credentials found")
+}
+
+// handleReauth re-reads OAuth credentials and reports status.
+func (s *Server) handleReauth(w http.ResponseWriter, r *http.Request) {
+	msg, err := s.ReloadAIClient()
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("[auth] %s", msg)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": msg})
+}
+
+// handleAuthStatus returns the current auth mode and token expiry.
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	result := map[string]any{"configured": s.ai != nil}
+	if s.ai != nil {
+		if s.ai.GetAuthMode() == ai.AuthOAuth {
+			result["mode"] = "oauth"
+		} else {
+			result["mode"] = "api_key"
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // Handler returns the underlying http.Handler (for testing).

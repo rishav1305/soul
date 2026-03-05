@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 interface NewTaskFormProps {
   onClose: () => void;
   onCreate: (title: string, description: string, priority: number, product: string) => Promise<void>;
+  template?: { priority: number; description: string };
+  activeProduct?: string;
+  products?: string[];
 }
 
 const PRIORITY_OPTIONS = [
@@ -12,15 +15,43 @@ const PRIORITY_OPTIONS = [
   { value: 3, label: 'Critical' },
 ];
 
-export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
+export default function NewTaskForm({ onClose, onCreate, template, activeProduct, products }: NewTaskFormProps) {
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState(1);
-  const [product, setProduct] = useState('');
+  const [description, setDescription] = useState(template?.description ?? '');
+  const [priority, setPriority] = useState(template?.priority ?? 1);
+  const [product, setProduct] = useState(activeProduct ?? '');
   const [submitting, setSubmitting] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const validate = useCallback(() => {
+    const w: string[] = [];
+    const e: string[] = [];
+
+    if (description.trim() === '') {
+      w.push('Tasks without descriptions are harder to execute. Add details?');
+    } else if (description.trim().length < 30) {
+      w.push('Consider adding acceptance criteria (use - [ ] checklists)');
+    }
+
+    if (priority === 3 && description.trim() === '') {
+      e.push('Critical tasks require a description');
+    }
+
+    if (title.trim().length >= 1 && title.trim().length <= 9) {
+      w.push("Try a more specific title (e.g., 'Add logout button to sidebar')");
+    }
+
+    setWarnings(w);
+    setErrors(e);
+    return e.length === 0;
+  }, [title, description, priority]);
+
+  useEffect(() => { validate(); }, [validate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
     if (!title.trim() || !product.trim()) return;
 
     setSubmitting(true);
@@ -52,6 +83,7 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title"
               required
+              autoFocus
               className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20"
             />
           </div>
@@ -65,8 +97,8 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe the task..."
-              rows={4}
-              className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20 resize-none"
+              rows={6}
+              className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20 resize-none font-mono"
             />
           </div>
 
@@ -93,33 +125,64 @@ export default function NewTaskForm({ onClose, onCreate }: NewTaskFormProps) {
               <label htmlFor="task-product" className="block font-display text-xs font-medium text-fg-secondary uppercase tracking-wide mb-1">
                 Product <span className="text-stage-blocked">*</span>
               </label>
-              <input
-                id="task-product"
-                type="text"
-                value={product}
-                onChange={(e) => setProduct(e.target.value)}
-                placeholder="e.g. compliance"
-                required
-                className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20"
-              />
+              {products && products.length > 0 ? (
+                <select
+                  id="task-product"
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value)}
+                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20"
+                >
+                  <option value="">Select product</option>
+                  <option value="soul">soul</option>
+                  {products.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="task-product"
+                  type="text"
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value)}
+                  placeholder="e.g. compliance"
+                  required
+                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-fg placeholder:text-fg-muted font-body text-sm focus:border-soul/50 focus:outline-none focus:ring-1 focus:ring-soul/20"
+                />
+              )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium rounded-md bg-elevated hover:bg-overlay text-fg-secondary hover:text-fg transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!title.trim() || !product.trim() || submitting}
-              className="px-4 py-2 text-sm rounded-md bg-soul hover:bg-soul/80 text-deep font-display font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              {submitting ? 'Creating...' : 'Create'}
-            </button>
+          {(warnings.length > 0 || errors.length > 0) && (
+            <div className="space-y-1">
+              {errors.map((e, i) => (
+                <p key={`e-${i}`} className="text-xs text-red-400 font-body">{e}</p>
+              ))}
+              {warnings.map((w, i) => (
+                <p key={`w-${i}`} className="text-xs text-amber-400 font-body">{w}</p>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-[10px] text-fg-muted">
+              Tip: Press <kbd className="px-1 py-0.5 bg-overlay rounded text-[10px] font-mono">C</kbd> to open this form
+            </span>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-elevated hover:bg-overlay text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!title.trim() || !product.trim() || submitting || errors.length > 0}
+                className="px-4 py-2 text-sm rounded-md bg-soul hover:bg-soul/80 text-deep font-display font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                {submitting ? 'Creating...' : 'Create'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

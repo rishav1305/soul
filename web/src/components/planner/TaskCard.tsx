@@ -69,12 +69,14 @@ interface RecentActivity {
 
 interface TaskCardProps {
   task: PlannerTask;
-  onClick: (task: PlannerTask) => void;
+  onClick?: ((task: PlannerTask) => void) | (() => void);
+  selected?: boolean;
+  selectable?: boolean;
   recentActivity?: RecentActivity;
   inlineBadgesEnabled?: boolean;
 }
 
-export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEnabled = true }: TaskCardProps) {
+export default function TaskCard({ task, onClick, selected, selectable, recentActivity, inlineBadgesEnabled = true }: TaskCardProps) {
   const borderClass = PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low';
   const substepIndex = task.substep ? SUBSTEP_ORDER.indexOf(task.substep) + 1 : 0;
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
@@ -95,9 +97,23 @@ export default function TaskCard({ task, onClick, recentActivity, inlineBadgesEn
   return (
     <button
       type="button"
-      onClick={() => onClick(task)}
-      className={`relative w-full text-left bg-elevated border-l-[3px] ${borderClass} border border-border-subtle rounded-lg p-3 hover:bg-overlay hover:border-border-default transition-all duration-150 cursor-pointer`}
+      onClick={() => onClick?.(task)}
+      className={`relative w-full text-left bg-elevated border-l-[3px] ${borderClass} border rounded-lg p-3 hover:bg-overlay transition-all duration-150 cursor-pointer ${
+        selected ? 'border-soul ring-1 ring-soul/30' : 'border-border-subtle hover:border-border-default'
+      }`}
     >
+      {/* Selection checkbox */}
+      {selectable && (
+        <span className={`absolute top-2 left-2 w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+          selected ? 'bg-soul border-soul' : 'border-border-default bg-elevated'
+        }`}>
+          {selected && (
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 6l2.5 2.5 4.5-5" />
+            </svg>
+          )}
+        </span>
+      )}
       {/* Inline stage-change badge */}
       {showBadge && (
         <span

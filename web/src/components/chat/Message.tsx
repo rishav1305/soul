@@ -80,6 +80,22 @@ function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallMessage[] }) {
 export default function Message({ message }: MessageProps) {
   const isUser = message.role === 'user';
 
+  // PM notification — render as a styled card instead of a normal bubble
+  if (message.pmNotification) {
+    const severityStyles = {
+      error: 'border-l-2 border-red-500 bg-red-500/5',
+      warning: 'border-l-2 border-amber-500 bg-amber-500/5',
+      info: 'border-l-2 border-zinc-500 bg-zinc-500/5',
+    };
+    return (
+      <div className={`rounded-lg px-3 py-2 my-1 text-xs font-body ${severityStyles[message.pmNotification.severity]}`}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {message.content}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div className={`max-w-[80%] px-4 py-3 ${

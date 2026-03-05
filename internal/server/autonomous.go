@@ -34,10 +34,23 @@ type TaskProcessor struct {
 
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
+
+	mergeMu    sync.Mutex     // serializes merge operations
+	maxWorkers int            // max concurrent tasks
+	workerSem  chan struct{}   // semaphore to limit concurrency
+
+	listenerMu sync.Mutex
+	listeners  map[int64][]func(string, string) // taskID -> callbacks(type, content)
 }
 
 // NewTaskProcessor creates a new autonomous task processor.
-func NewTaskProcessor(srv *Server, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager) *TaskProcessor {
+func NewTaskProcessor(srv *Server, pm *products.Manager, sessions *session.Store, plannerStore *planner.Store, broadcast func(WSMessage), model, projectRoot string, worktrees *WorktreeManager, maxWorkers int) *TaskProcessor {
+	if maxWorkers <= 0 {
+		maxWorkers = 2
+	}
+	if maxWorkers > 5 {
+		maxWorkers = 5
+	}
 	return &TaskProcessor{
 		server:      srv,
 		products:    pm,
@@ -49,10 +62,14 @@ func NewTaskProcessor(srv *Server, pm *products.Manager, sessions *session.Store
 		worktrees:   worktrees,
 		hooks:       NewHookRunner(),
 		running:     make(map[int64]context.CancelFunc),
+		maxWorkers:  maxWorkers,
+		workerSem:   make(chan struct{}, maxWorkers),
+		listeners:   make(map[int64][]func(string, string)),
 	}
 }
 
 // StartTask begins autonomous processing of a task in a background goroutine.
+// If all worker slots are busy, the task goroutine blocks until a slot opens.
 func (tp *TaskProcessor) StartTask(taskID int64) {
 	tp.mu.Lock()
 	if _, exists := tp.running[taskID]; exists {
@@ -65,7 +82,49 @@ func (tp *TaskProcessor) StartTask(taskID int64) {
 	tp.running[taskID] = cancel
 	tp.mu.Unlock()
 
-	go tp.processTask(ctx, taskID)
+	go func() {
+		// Acquire worker slot (blocks if all workers busy).
+		tp.workerSem <- struct{}{}
+		defer func() { <-tp.workerSem }()
+
+		tp.processTask(ctx, taskID)
+	}()
+}
+
+// StartNext finds the highest-priority pending autonomous task and starts it.
+// Priority order: critical(3) > high(2) > normal(1) > low(0), then oldest first.
+func (tp *TaskProcessor) StartNext() {
+	tasks, err := tp.planner.List(planner.TaskFilter{Stage: planner.StageActive})
+	if err != nil {
+		return
+	}
+
+	// Sort by priority desc, then created_at asc.
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].Priority != tasks[j].Priority {
+			return tasks[i].Priority > tasks[j].Priority
+		}
+		return tasks[i].CreatedAt < tasks[j].CreatedAt
+	})
+
+	for _, t := range tasks {
+		tp.mu.Lock()
+		_, running := tp.running[t.ID]
+		tp.mu.Unlock()
+		if !running {
+			// Check if it's autonomous.
+			var meta map[string]any
+			if t.Metadata != "" {
+				if err := json.Unmarshal([]byte(t.Metadata), &meta); err == nil {
+					if auto, _ := meta["autonomous"].(bool); auto {
+						log.Printf("[autonomous] StartNext: picking task %d (priority=%d)", t.ID, t.Priority)
+						tp.StartTask(t.ID)
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 // StopTask cancels an in-progress autonomous task.
@@ -198,6 +257,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 
 	agent := NewAgentLoop(tp.server.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
 	agent.autonomous = true
+	agent.pm = tp.server.pm
 	switch workflow {
 	case "micro":
 		agent.maxIter = 15
@@ -246,7 +306,8 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			}
 
 			if hasChanges {
-				// Pre-merge gate: tsc + vite build in worktree.
+				// Pre-merge gate: tsc + vite build in worktree (runs in task's
+				// own worktree, so no serialization needed).
 				tp.sendActivity(taskID, "status", "Running pre-merge type check...")
 				worktreeWeb := filepath.Join(taskRoot, "web")
 				if gateErr := PreMergeGate(worktreeWeb); gateErr != nil {
@@ -257,6 +318,11 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 					continue
 				}
 
+				// Serialize merge/build/test — only one task merges to dev at a time.
+				tp.mergeMu.Lock()
+				mergeRetry := false // set true if smoke test fails and we need to continue the retry loop
+
+				tp.hooks.RunWorkflowHook("before:merge_to_dev", map[string]string{"task_id": fmt.Sprintf("%d", taskID)})
 				tp.sendActivity(taskID, "status", "Merging to dev branch...")
 				if err := tp.worktrees.MergeToDev(taskID, task.Title); err != nil {
 					log.Printf("[autonomous] merge to dev failed for task %d: %v", taskID, err)
@@ -285,12 +351,17 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 								tp.server.RebuildDevFrontend()
 								prompt = prompt + "\n\n## Dev Smoke Test Failed\n\n" + FormatSmokeFailure(smokeResult) + "\n"
 								hasChanges = false
-								continue
+								mergeRetry = true
 							} else {
 								tp.sendActivity(taskID, "status", "Dev smoke test PASSED — all checks green")
 							}
 						}
 					}
+				}
+
+				tp.mergeMu.Unlock()
+				if mergeRetry {
+					continue
 				}
 			}
 		}
@@ -326,7 +397,7 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.postVerificationComment(taskID, "**Task blocked**: Agent ran but no changes were successfully merged. The task may need a more detailed description or the agent may have encountered issues it couldn't resolve.")
 		} else {
 			// Changes made and smoke test passed — extract fingerprint and advance to validation.
-			tp.extractFingerprint(task, taskRoot, workflow)
+			tp.extractFingerprint(task, taskRoot, workflow, agent.filesRead, agent.iterationsUsed)
 			validation := planner.StageValidation
 			tp.planner.Update(taskID, planner.TaskUpdate{
 				Stage:       &validation,
@@ -346,6 +417,9 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 
 	tp.sendActivity(taskID, "done", "")
 	log.Printf("[autonomous] === completed task %d (stage=%s) ===", taskID, updated.Stage)
+
+	// Check for next queued autonomous task.
+	tp.StartNext()
 }
 
 func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow string) string {
@@ -556,7 +630,29 @@ func classifyWorkflow(title, description string) string {
 	return "quick"
 }
 
+// AddListener registers a callback for task activity events.
+func (tp *TaskProcessor) AddListener(taskID int64, cb func(string, string)) {
+	tp.listenerMu.Lock()
+	tp.listeners[taskID] = append(tp.listeners[taskID], cb)
+	tp.listenerMu.Unlock()
+}
+
+// RemoveListeners removes all listeners for a task.
+func (tp *TaskProcessor) RemoveListeners(taskID int64) {
+	tp.listenerMu.Lock()
+	delete(tp.listeners, taskID)
+	tp.listenerMu.Unlock()
+}
+
 func (tp *TaskProcessor) sendActivity(taskID int64, activityType, content string) {
+	// Notify any registered listeners (e.g., quick_task chat stream).
+	tp.listenerMu.Lock()
+	cbs := tp.listeners[taskID]
+	tp.listenerMu.Unlock()
+	for _, cb := range cbs {
+		cb(activityType, content)
+	}
+
 	data, _ := json.Marshal(map[string]any{
 		"task_id": taskID,
 		"type":    activityType,
@@ -595,7 +691,7 @@ func (tp *TaskProcessor) broadcastTaskUpdate(taskID int64) {
 }
 
 // extractFingerprint captures what the agent learned from a completed task.
-func (tp *TaskProcessor) extractFingerprint(task planner.Task, taskRoot, workflow string) {
+func (tp *TaskProcessor) extractFingerprint(task planner.Task, taskRoot, workflow string, filesRead map[string]bool, iterationsUsed int) {
 	modifiedFiles := getModifiedFiles(taskRoot)
 	if len(modifiedFiles) == 0 {
 		return
@@ -603,12 +699,20 @@ func (tp *TaskProcessor) extractFingerprint(task planner.Task, taskRoot, workflo
 
 	keywords := extractKeywords(task.Title + " " + task.Description)
 
+	var readFiles []string
+	for f := range filesRead {
+		readFiles = append(readFiles, f)
+	}
+	sort.Strings(readFiles)
+
 	fingerprint := map[string]any{
-		"task_id":        task.ID,
-		"title":          task.Title,
-		"files_modified": modifiedFiles,
-		"keywords":       keywords,
-		"workflow":       workflow,
+		"task_id":         task.ID,
+		"title":           task.Title,
+		"files_modified":  modifiedFiles,
+		"files_read":      readFiles,
+		"iterations_used": iterationsUsed,
+		"keywords":        keywords,
+		"workflow":        workflow,
 	}
 
 	data, err := json.Marshal(fingerprint)

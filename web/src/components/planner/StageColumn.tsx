@@ -31,12 +31,14 @@ const STAGE_LABELS: Record<TaskStage, string> = {
 interface StageColumnProps {
   stage: TaskStage;
   tasks: PlannerTask[];
-  onTaskClick: (task: PlannerTask) => void;
+  onTaskClick?: (task: PlannerTask) => void;
+  onTaskSelect?: (id: number) => void;
+  selectedIds?: Set<number>;
   taskActivities?: Record<number, TaskActivity[]>;
   inlineBadgesEnabled?: boolean;
 }
 
-export default function StageColumn({ stage, tasks, onTaskClick, taskActivities, inlineBadgesEnabled = true }: StageColumnProps) {
+export default function StageColumn({ stage, tasks, onTaskClick, onTaskSelect, selectedIds, taskActivities, inlineBadgesEnabled = true }: StageColumnProps) {
   return (
     <div className="flex flex-col min-w-[220px] w-full bg-surface/30">
       <div className="flex items-center gap-2 px-3 py-2 shrink-0">
@@ -56,7 +58,9 @@ export default function StageColumn({ stage, tasks, onTaskClick, taskActivities,
             <TaskCard
               key={task.id}
               task={task}
-              onClick={onTaskClick}
+              onClick={onTaskSelect ? () => onTaskSelect(task.id) : onTaskClick ? () => onTaskClick(task) : undefined}
+              selected={selectedIds?.has(task.id)}
+              selectable={!!onTaskSelect}
               recentActivity={lastStageActivity}
               inlineBadgesEnabled={inlineBadgesEnabled}
             />

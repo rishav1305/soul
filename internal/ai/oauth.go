@@ -102,7 +102,28 @@ func (s *OAuthTokenSource) AccessToken() (string, error) {
 
 	newCreds, err := refreshOAuthToken(s.httpClient, s.creds.RefreshToken)
 	if err != nil {
-		return "", fmt.Errorf("ai: failed to refresh OAuth token: %w", err)
+		// Refresh failed — try re-reading from disk in case Claude Code updated it.
+		if s.credsPath != "" {
+			log.Println("  OAuth refresh failed, trying disk credentials...")
+			if diskCreds := loadOAuthFromPath(s.credsPath); diskCreds != nil && diskCreds.RefreshToken != s.creds.RefreshToken {
+				newCreds, err = refreshOAuthToken(s.httpClient, diskCreds.RefreshToken)
+				if err == nil {
+					log.Println("  Recovered using updated disk credentials")
+				} else {
+					// Disk creds also stale — try using the disk access token directly if not expired.
+					if diskCreds.ExpiresAt > time.Now().UnixMilli()+60*1000 {
+						log.Println("  Using unexpired disk access token directly")
+						s.creds = *diskCreds
+						return s.creds.AccessToken, nil
+					}
+					return "", fmt.Errorf("ai: failed to refresh OAuth token: %w", err)
+				}
+			} else {
+				return "", fmt.Errorf("ai: failed to refresh OAuth token: %w", err)
+			}
+		} else {
+			return "", fmt.Errorf("ai: failed to refresh OAuth token: %w", err)
+		}
 	}
 
 	s.creds = *newCreds
@@ -113,6 +134,25 @@ func (s *OAuthTokenSource) AccessToken() (string, error) {
 	}
 
 	return s.creds.AccessToken, nil
+}
+
+// ReloadFromDisk re-reads credentials from the credentials file.
+// Returns true if credentials were updated.
+func (s *OAuthTokenSource) ReloadFromDisk() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.credsPath == "" {
+		return false
+	}
+
+	diskCreds := loadOAuthFromPath(s.credsPath)
+	if diskCreds == nil {
+		return false
+	}
+
+	s.creds = *diskCreds
+	return true
 }
 
 type oauthRefreshRequest struct {

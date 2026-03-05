@@ -37,12 +37,32 @@ const systemPrompt = `You are Soul, an AI infrastructure assistant built by Rish
 - After a scan completes, individual findings are already shown in the user's compliance side panel. Do NOT list individual findings, tables, or details in chat. Instead, give a brief summary (total count, severity breakdown) and suggest next steps.
 
 # Task management
-- You have built-in tools to manage the task board: task_create, task_list, task_update.
+- You have built-in tools to manage the task board: task_create, task_list, task_update, quick_task.
 - When the user asks to create, add, or track tasks — use the task_create tool. Do not say you cannot manage tasks.
 - When the user asks to see or list tasks — use the task_list tool.
 - When the user asks to update, move, or change a task — use the task_update tool.
+- When the user wants a quick code change done autonomously — use the quick_task tool. It creates and immediately starts an autonomous agent to make the change.
 - Tasks are created in the "backlog" stage by default. The user can ask to move them to other stages.
 - Always confirm what you did after creating or updating tasks.
+
+# Task creation standards
+When creating tasks with task_create, ALWAYS follow these rules:
+- Title must be specific and actionable (verb + object, 10+ chars). Bad: "Fix bug". Good: "Fix login timeout on session expiry"
+- Description is REQUIRED. Include: what needs to change, why, and acceptance criteria as a markdown checklist (- [ ]).
+- Set priority based on impact: 3=Critical (broken/blocking), 2=High (important), 1=Normal (default), 0=Low (nice-to-have).
+- Set product when known (soul, scout, compliance).
+- Before creating, check if a similar task already exists: use task_list to verify.
+- For large tasks (3+ files, multiple concerns), create a parent task + subtasks instead of one monolith.
+- When decomposing, create a parent task first, then subtasks referencing the parent.
+
+# Board management
+When the user asks to groom, triage, plan, or review the board:
+- Use task_list to get current board state.
+- Flag stale tasks (>7 days in backlog) — suggest removing or reprioritizing.
+- Flag stuck tasks (active >48h with no progress, blocked >5 days).
+- Identify tasks missing descriptions or acceptance criteria.
+- For sprint planning: recommend 3-5 tasks based on priority (highest first), then age (oldest first).
+- Act directly on safe actions (create subtasks, add comments, fix priorities). Ask permission for destructive actions (delete, merge duplicates).
 
 # Persistent memory
 - You have persistent memory that survives across conversations: memory_store, memory_search, memory_list, memory_delete.
@@ -95,6 +115,11 @@ type AgentLoop struct {
 	contextBudget int    // estimated max context tokens (default 200000)
 	taskMemory    map[string]string // task-scoped key-value memory
 	hooks         *HookRunner       // pre/post tool execution hooks
+	startTask     func(int64)       // callback to start autonomous task execution
+	processor     *TaskProcessor    // for quick_task progress streaming
+	pm            *PMService       // PM service for after-create hooks
+	filesRead     map[string]bool   // tracks files read during execution (for fingerprinting)
+	iterationsUsed int              // tracks iterations completed
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
@@ -116,6 +141,7 @@ func NewAgentLoop(aiClient *ai.Client, pm *products.Manager, sessions *session.S
 		contextBudget: budget,
 		taskMemory:    make(map[string]string),
 		hooks:         NewHookRunner(),
+		filesRead:     make(map[string]bool),
 	}
 }
 
@@ -408,6 +434,10 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 					Role:    "user",
 					Content: planWarning,
 				})
+			} else if a.hooks != nil {
+				a.hooks.RunWorkflowHook("after:plan", map[string]string{
+					"worktree": a.projectRoot,
+				})
 			}
 		}
 
@@ -486,6 +516,7 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 			Role:    "user",
 			Content: toolResults,
 		})
+		a.iterationsUsed = iteration + 1
 	}
 
 	// Signal completion.
@@ -725,7 +756,7 @@ func (a *AgentLoop) executeTool(
 	}
 
 	// Handle built-in task tools.
-	if strings.HasPrefix(tc.Name, "task_") {
+	if strings.HasPrefix(tc.Name, "task_") || tc.Name == "quick_task" {
 		return a.executeBuiltinTool(ctx, sessionID, tc, sendEvent)
 	}
 
@@ -774,6 +805,15 @@ func (a *AgentLoop) executeTool(
 	// Handle built-in code tools.
 	if strings.HasPrefix(tc.Name, "code_") && a.projectRoot != "" {
 		result := executeCodeTool(a.projectRoot, tc)
+		// Track files read for fingerprinting.
+		if tc.Name == "code_read" && a.filesRead != nil {
+			var inp map[string]any
+			if json.Unmarshal([]byte(tc.Input), &inp) == nil {
+				if p, ok := inp["path"].(string); ok {
+					a.filesRead[p] = true
+				}
+			}
+		}
 		completeData, _ := json.Marshal(map[string]any{
 			"id":      tc.ID,
 			"success": !strings.HasPrefix(result, "Error"),
@@ -1504,6 +1544,19 @@ func builtinTaskTools() []ai.ClaudeTool {
 			}`),
 		},
 		{
+			Name:        "quick_task",
+			Description: "Create and immediately start an autonomous task. Use this when the user wants a quick code change done — one message turns into a working change on the dev server. The task is auto-classified as micro workflow and starts executing immediately.",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"title":       {"type": "string", "description": "Short task title describing the change"},
+					"description": {"type": "string", "description": "Detailed description of what to implement"},
+					"product":     {"type": "string", "description": "Product name (e.g. soul, compliance, scout)"}
+				},
+				"required": ["title"]
+			}`),
+		},
+		{
 			Name:        "task_comment",
 			Description: "Post a comment on a task. Use this to record findings, implementation gaps, analysis, or status updates — never overwrite the task description for these purposes. You can attach screenshot filenames from e2e_screenshot to show visual evidence.",
 			InputSchema: json.RawMessage(`{
@@ -1548,6 +1601,8 @@ func (a *AgentLoop) executeBuiltinTool(
 		result = a.toolTaskUpdate(input, sendEvent)
 	case "task_comment":
 		result = a.toolTaskComment(input, sendEvent)
+	case "quick_task":
+		result = a.toolQuickTask(input, sendEvent)
 	case "memory_store":
 		result = a.toolMemoryStore(input)
 	case "memory_search":
@@ -1586,6 +1641,9 @@ func (a *AgentLoop) toolTaskCreate(input map[string]any, sendEvent func(WSMessag
 	if title == "" {
 		return "Error: title is required"
 	}
+	if len(strings.TrimSpace(title)) < 10 {
+		return "Error: Title too short (minimum 10 chars). Use a specific, actionable title with a verb and object. Example: 'Add logout button to sidebar'"
+	}
 	description, _ := input["description"].(string)
 
 	task := planner.NewTask(title, description)
@@ -1610,12 +1668,95 @@ func (a *AgentLoop) toolTaskCreate(input map[string]any, sendEvent func(WSMessag
 		a.broadcast(WSMessage{Type: "task.created", Data: raw})
 	}
 
+	// Run PM checks asynchronously.
+	if a.pm != nil {
+		a.pm.AfterCreate(task)
+	}
+
 	result, _ := json.Marshal(map[string]any{
 		"id":    id,
 		"title": title,
 		"stage": "backlog",
 	})
 	return string(result)
+}
+
+func (a *AgentLoop) toolQuickTask(input map[string]any, sendEvent func(WSMessage)) string {
+	title, _ := input["title"].(string)
+	if title == "" {
+		return "Error: title is required"
+	}
+	description, _ := input["description"].(string)
+
+	task := planner.NewTask(title, description)
+	task.Source = "ai"
+	task.Priority = 2 // high priority for quick actions
+
+	if product, ok := input["product"].(string); ok {
+		task.Product = product
+	}
+
+	// Set autonomous + micro workflow in metadata.
+	meta := map[string]any{
+		"autonomous": true,
+		"workflow":   "micro",
+	}
+	metaJSON, _ := json.Marshal(meta)
+	task.Metadata = string(metaJSON)
+
+	id, err := a.planner.Create(task)
+	if err != nil {
+		return fmt.Sprintf("Error creating task: %v", err)
+	}
+	task.ID = id
+
+	// Broadcast to UI.
+	if a.broadcast != nil {
+		raw, _ := json.Marshal(task)
+		a.broadcast(WSMessage{Type: "task.created", Data: raw})
+	}
+
+	// Start autonomous execution and stream progress to chat.
+	if a.startTask != nil {
+		// Register listener to forward task activity as chat tokens.
+		done := make(chan struct{})
+		if a.processor != nil {
+			a.processor.AddListener(id, func(actType, content string) {
+				if actType == "done" {
+					close(done)
+					return
+				}
+				if actType == "status" || actType == "stage" {
+					sendEvent(WSMessage{
+						Type:    "chat.token",
+						Content: fmt.Sprintf("\n> **[Task #%d]** %s\n", id, content),
+					})
+				}
+			})
+		}
+
+		a.startTask(id)
+
+		// Wait for task to complete (with timeout).
+		select {
+		case <-done:
+			// Task finished.
+		case <-time.After(5 * time.Minute):
+			// Timeout — don't block the chat forever.
+		}
+
+		if a.processor != nil {
+			a.processor.RemoveListeners(id)
+		}
+
+		// Check final state.
+		if updated, err := a.planner.Get(id); err == nil {
+			return fmt.Sprintf("Quick task #%d completed (stage: %s): %s", id, updated.Stage, title)
+		}
+		return fmt.Sprintf("Quick task #%d finished: %s", id, title)
+	}
+
+	return fmt.Sprintf("Quick task #%d created: %s (start manually — autonomous processor not available)", id, title)
 }
 
 func (a *AgentLoop) toolTaskList(input map[string]any) string {
