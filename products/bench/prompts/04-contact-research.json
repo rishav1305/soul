@@ -1,0 +1,35 @@
+[
+  {
+    "id": "contact-research-01",
+    "task": "contact_research",
+    "prompt": "You are a B2B contact enrichment agent. Given the contact details below, generate a structured enrichment JSON object. Respond with a JSON object containing exactly these keys: 'company_news' (string: notable recent events about the company), 'role_context' (string: what this person's role likely entails and their probable priorities), 'outreach_hook' (string: the most compelling personalized angle for cold outreach), and 'confidence' (one of: high, medium, low — reflecting how confident you are in the enrichment given available signals).\n\nContact details:\n- Name: Marcus Chen\n- Title: VP Engineering\n- Company: DataFlow Inc\n- Industry: Data Infrastructure / Real-Time Pipelines\n- Known signals: DataFlow Inc raised a $42M Series B in January 2026. LinkedIn headline: 'Building the data infrastructure layer for the modern enterprise'. Company headcount: ~120 employees. Engineering team estimated at ~40 people.\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"company_news": "", "role_context": "", "outreach_hook": "", "confidence": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["company_news", "role_context", "outreach_hook", "confidence"],
+      "field_checks": {"confidence": ["high", "medium", "low"]}
+    }
+  },
+  {
+    "id": "contact-research-02",
+    "task": "contact_research",
+    "prompt": "You are a B2B contact enrichment agent. Given the contact details below, generate a structured enrichment JSON object. Respond with a JSON object containing exactly these keys: 'company_news' (string: notable recent events about the company), 'role_context' (string: what this person's role likely entails and their probable priorities), 'outreach_hook' (string: the most compelling personalized angle for cold outreach), and 'confidence' (one of: high, medium, low — reflecting how confident you are in the enrichment given available signals).\n\nContact details:\n- Name: Robert Halverson\n- Title: CTO\n- Company: Acme Corp\n- Industry: Enterprise Software / ERP\n- Known signals: Acme Corp is a large enterprise with 5,000+ employees and a 20-year history in ERP software. Halverson joined as CTO 18 months ago from a cloud-native startup background. Public LinkedIn activity suggests focus on modernizing legacy infrastructure and reducing technical debt. No major recent funding events — bootstrapped / public company.\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"company_news": "", "role_context": "", "outreach_hook": "", "confidence": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["company_news", "role_context", "outreach_hook", "confidence"],
+      "field_checks": {"confidence": ["high", "medium", "low"]}
+    }
+  },
+  {
+    "id": "contact-research-03",
+    "task": "contact_research",
+    "prompt": "You are a B2B contact enrichment agent. Given the contact details below, generate a structured enrichment JSON object. Respond with a JSON object containing exactly these keys: 'company_news' (string: notable recent events about the company), 'role_context' (string: what this person's role likely entails and their probable priorities), 'outreach_hook' (string: the most compelling personalized angle for cold outreach), and 'confidence' (one of: high, medium, low — reflecting how confident you are in the enrichment given available signals).\n\nContact details:\n- Name: Priya Nair\n- Title: Head of Data\n- Company: Meridian Analytics\n- Industry: Business Intelligence / Analytics Consulting\n- Known signals: Meridian Analytics has ~300 employees. Priya Nair has been Head of Data for 2 years, previously Senior Data Engineer at a fintech. LinkedIn posts recently about Airflow DAG reliability and silent pipeline failure costs. Company recently won a BI implementation contract with a regional bank (announced on their website). No recent funding events — appears to be profitable services business.\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"company_news": "", "role_context": "", "outreach_hook": "", "confidence": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["company_news", "role_context", "outreach_hook", "confidence"],
+      "field_checks": {"confidence": ["high", "medium", "low"]}
+    }
+  }
+]

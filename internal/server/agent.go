@@ -86,6 +86,16 @@ When the user asks to groom, triage, plan, or review the board:
 - Default test URL is http://192.168.0.128:3000 (prod). For dev server use http://192.168.0.128:3001.
 - After making ANY UI change (frontend code, vite build), run at least one e2e_assert or e2e_dom to confirm the change is visible.
 
+# E2E quality standards
+Test like a senior reviewer, not just "does it render":
+- Check ALL state permutations. If a component has N toggleable states, test all combinations — not just the default.
+- Verify visual quality: alignment, spacing, sizing, borders. If it looks "stuck on" or out of place, it fails.
+- Test interactions: click targets work, hover states exist, expand/collapse transitions are smooth, resize handles drag.
+- Check edge cases: empty state, overflow with lots of content, minimum/maximum widths.
+- After fixing one thing, check that you didn't break something else (regression).
+- "It renders" is NOT the same as "it looks correct and polished." Trust your instinct if something looks wrong.
+- NEVER mark a UI task complete with only one e2e check. Test at least 3 different states/interactions.
+
 # Tone and style
 - Be concise and direct. Short responses are better than padded ones.
 - Do not use emojis unless the user uses them first.
@@ -118,8 +128,10 @@ type AgentLoop struct {
 	startTask     func(int64)       // callback to start autonomous task execution
 	processor     *TaskProcessor    // for quick_task progress streaming
 	pm            *PMService       // PM service for after-create hooks
-	filesRead     map[string]bool   // tracks files read during execution (for fingerprinting)
-	iterationsUsed int              // tracks iterations completed
+	filesRead        map[string]bool // tracks files read during execution (for fingerprinting)
+	iterationsUsed   int             // tracks iterations completed
+	totalInputTokens  int            // cumulative input tokens across iterations
+	totalOutputTokens int            // cumulative output tokens across iterations
 }
 
 // NewAgentLoop creates a new agent loop with the given dependencies.
@@ -302,6 +314,9 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		sysPrompt = strings.Replace(sysPrompt,
 			"- After making ANY UI change (frontend code, vite build), run at least one e2e_assert or e2e_dom to confirm the change is visible.\n",
 			"- Do NOT run E2E verification yourself — the autonomous pipeline handles build and verification automatically after your changes.\n", 1)
+		sysPrompt = strings.Replace(sysPrompt,
+			"- NEVER mark a UI task complete with only one e2e check. Test at least 3 different states/interactions.",
+			"- The pipeline runs multi-state E2E verification after your changes. Focus on correct implementation.", 1)
 	}
 
 	// Inject active skill content when provided.
@@ -415,10 +430,12 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 			return
 		}
 
-		stopReason, toolCalls, textContent := a.processStream(ctx, sessionID, body, sendEvent)
+		stopReason, toolCalls, textContent, inTok, outTok := a.processStream(ctx, sessionID, body, sendEvent)
 		body.Close()
+		a.totalInputTokens += inTok
+		a.totalOutputTokens += outTok
 
-		log.Printf("[agent] stream done stop_reason=%s tool_calls=%d text_len=%d", stopReason, len(toolCalls), len(textContent))
+		log.Printf("[agent] stream done stop_reason=%s tool_calls=%d text_len=%d tokens=%d/%d", stopReason, len(toolCalls), len(textContent), inTok, outTok)
 		fullResponse.WriteString(textContent)
 
 		// If no tool calls, we're done.
@@ -519,10 +536,21 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		a.iterationsUsed = iteration + 1
 	}
 
-	// Signal completion.
+	// Signal completion with token usage.
+	usagePctFinal := 0
+	if a.contextBudget > 0 {
+		usage := estimateTokens(messages, sysPrompt)
+		usagePctFinal = int(float64(usage) / float64(a.contextBudget) * 100)
+	}
+	usageJSON, _ := json.Marshal(map[string]int{
+		"input_tokens":  a.totalInputTokens,
+		"output_tokens": a.totalOutputTokens,
+		"context_pct":   usagePctFinal,
+	})
 	sendEvent(WSMessage{
 		Type:      "chat.done",
 		SessionID: sessionID,
+		Data:      usageJSON,
 	})
 
 	// Store the assistant response in the in-memory session.
@@ -593,7 +621,7 @@ func (a *AgentLoop) processStream(
 	sessionID string,
 	body io.Reader,
 	sendEvent func(WSMessage),
-) (string, []toolCall, string) {
+) (string, []toolCall, string, int, int) {
 	events := make(chan ai.StreamEvent, 64)
 	go ai.ParseSSEStream(body, events)
 
@@ -606,10 +634,26 @@ func (a *AgentLoop) processStream(
 		currentTool   string
 		toolInputBuf  strings.Builder
 		thinkingBuf   strings.Builder
+		inputTokens   int
+		outputTokens  int
 	)
 
 	for ev := range events {
 		switch ev.Type {
+		case "message_start":
+			var wrapper struct {
+				Message struct {
+					Usage struct {
+						InputTokens  int `json:"input_tokens"`
+						OutputTokens int `json:"output_tokens"`
+					} `json:"usage"`
+				} `json:"message"`
+			}
+			if err := json.Unmarshal(ev.Data, &wrapper); err == nil {
+				inputTokens += wrapper.Message.Usage.InputTokens
+				outputTokens += wrapper.Message.Usage.OutputTokens
+			}
+
 		case "content_block_start":
 			var wrapper struct {
 				ContentBlock ai.ContentBlockStart `json:"content_block"`
@@ -671,10 +715,16 @@ func (a *AgentLoop) processStream(
 				Delta struct {
 					StopReason string `json:"stop_reason"`
 				} `json:"delta"`
+				Usage struct {
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
 			}
 			if err := json.Unmarshal(ev.Data, &wrapper); err == nil {
 				if wrapper.Delta.StopReason != "" {
 					stopReason = wrapper.Delta.StopReason
+				}
+				if wrapper.Usage.OutputTokens > 0 {
+					outputTokens += wrapper.Usage.OutputTokens
 				}
 			}
 
@@ -686,7 +736,7 @@ func (a *AgentLoop) processStream(
 		}
 	}
 
-	return stopReason, toolCalls, textContent.String()
+	return stopReason, toolCalls, textContent.String(), inputTokens, outputTokens
 }
 
 // executeTool routes a tool call through the product manager and streams
@@ -1295,7 +1345,7 @@ func (a *AgentLoop) executeSubagent(input map[string]any) string {
 		}
 
 		// Process stream silently (no sendEvent).
-		stopReason, toolCalls, textContent := sub.processStream(context.Background(), sessionID, body, func(WSMessage) {})
+		stopReason, toolCalls, textContent, _, _ := sub.processStream(context.Background(), sessionID, body, func(WSMessage) {})
 		body.Close()
 
 		result.WriteString(textContent)

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 
 	soul "github.com/rishav1305/soul"
@@ -83,57 +84,71 @@ func runServe(args []string) {
 		fmt.Println("  Planner store opened")
 	}
 
-	// Determine compliance binary path.
-	complianceBin := getFlagValue(args, "--compliance-bin")
-	if complianceBin == "" {
-		complianceBin = os.Getenv("SOUL_COMPLIANCE_BIN")
-	}
+	// Start products from config file + env var / CLI flag overrides.
+	productConfigs := config.LoadProducts(cfg.DataDir)
 
-	// Start compliance product if binary is available.
-	if complianceBin != "" {
-		if _, err := os.Stat(complianceBin); err == nil {
-			ctx := context.Background()
-			fmt.Printf("  Starting compliance product: %s\n", complianceBin)
-			if err := manager.StartProduct(ctx, "compliance", complianceBin); err != nil {
-				log.Printf("WARNING: failed to start compliance product: %v", err)
-			} else {
-				fmt.Println("  Compliance product started")
+	// Backwards compat: if no config file, check legacy env vars / flags.
+	if len(productConfigs) == 0 {
+		// Legacy compliance
+		compBin := getFlagValue(args, "--compliance-bin")
+		if compBin == "" {
+			compBin = os.Getenv("SOUL_COMPLIANCE_BIN")
+		}
+		if compBin != "" {
+			productConfigs = append(productConfigs, config.ProductConfig{
+				Name: "compliance", Binary: compBin, Label: "Compliance", Color: "validation",
+			})
+		}
+		// Legacy scout
+		scoutBin := getFlagValue(args, "--scout-bin")
+		if scoutBin == "" {
+			scoutBin = os.Getenv("SOUL_SCOUT_BIN")
+		}
+		if scoutBin == "" {
+			cwd, _ := os.Getwd()
+			candidate := filepath.Join(cwd, "products", "scout", "scout")
+			if _, err := os.Stat(candidate); err == nil {
+				scoutBin = candidate
 			}
-		} else {
-			log.Printf("WARNING: compliance binary not found at %s", complianceBin)
+		}
+		if scoutBin != "" {
+			productConfigs = append(productConfigs, config.ProductConfig{
+				Name: "scout", Binary: scoutBin, Label: "Career Intelligence", Color: "brainstorm",
+			})
+		}
+	} else {
+		// Config file exists — apply env var / CLI flag overrides per product.
+		for i := range productConfigs {
+			pc := &productConfigs[i]
+			envKey := "SOUL_" + strings.ToUpper(strings.ReplaceAll(pc.Name, "-", "_")) + "_BIN"
+			if envBin := os.Getenv(envKey); envBin != "" {
+				pc.Binary = envBin
+			}
+			if flagBin := getFlagValue(args, "--"+pc.Name+"-bin"); flagBin != "" {
+				pc.Binary = flagBin
+			}
 		}
 	}
 
-	// Determine scout binary path.
-	scoutBin := getFlagValue(args, "--scout-bin")
-	if scoutBin == "" {
-		scoutBin = os.Getenv("SOUL_SCOUT_BIN")
-	}
-	if scoutBin == "" {
-		cwd, _ := os.Getwd()
-		candidate := filepath.Join(cwd, "products", "scout", "scout")
-		if _, err := os.Stat(candidate); err == nil {
-			scoutBin = candidate
+	ctx := context.Background()
+	for _, pc := range productConfigs {
+		if pc.Binary == "" {
+			continue
 		}
-	}
-
-	// Start scout product if binary is available.
-	if scoutBin != "" {
-		if _, err := os.Stat(scoutBin); err == nil {
-			ctx := context.Background()
-			fmt.Printf("  Starting scout product: %s\n", scoutBin)
-			if err := manager.StartProduct(ctx, "scout", scoutBin); err != nil {
-				log.Printf("WARNING: failed to start scout product: %v", err)
-			} else {
-				fmt.Println("  Scout product started")
-			}
+		if _, err := os.Stat(pc.Binary); err != nil {
+			log.Printf("WARNING: %s binary not found at %s", pc.Name, pc.Binary)
+			continue
+		}
+		fmt.Printf("  Starting %s product: %s\n", pc.Name, pc.Binary)
+		if err := manager.StartProduct(ctx, pc.Name, pc.Binary); err != nil {
+			log.Printf("WARNING: failed to start %s product: %v", pc.Name, err)
 		} else {
-			log.Printf("WARNING: scout binary not found at %s", scoutBin)
+			fmt.Printf("  %s product started\n", pc.Name)
 		}
 	}
 
 	// Create server with embedded SPA (falls back to placeholder if web/dist not built).
-	srv := server.NewWithWebFS(cfg, manager, aiClient, plannerStore, soul.WebDist)
+	srv := server.NewWithWebFS(cfg, manager, aiClient, plannerStore, soul.WebDist, productConfigs)
 
 	// Start dev server on port+1.
 	go srv.StartDevServer(cfg.Port + 1)
@@ -158,17 +173,19 @@ func runServe(args []string) {
 func printHelp() {
 	fmt.Printf("◆ Soul v%s\n\n", version)
 	fmt.Println("Usage:")
-	fmt.Println("  soul serve [--port PORT] [--dev] [--compliance-bin PATH] [--scout-bin PATH]   Start web UI")
-	fmt.Println("  soul --version                                              Show version")
-	fmt.Println("  soul --help                                                 Show this help")
+	fmt.Println("  soul serve [--port PORT] [--dev]   Start web UI")
+	fmt.Println("  soul --version                     Show version")
+	fmt.Println("  soul --help                        Show this help")
 	fmt.Println()
 	fmt.Println("Authentication (in priority order):")
 	fmt.Println("  ANTHROPIC_API_KEY      Claude API key")
 	fmt.Println("  ~/.claude/.credentials.json   Claude Max/Pro OAuth (auto-detected)")
 	fmt.Println()
+	fmt.Println("Products:")
+	fmt.Println("  Configure in ~/.soul/products.yaml")
+	fmt.Println("  Override binary: SOUL_<NAME>_BIN or --<name>-bin flag")
+	fmt.Println()
 	fmt.Println("Environment:")
-	fmt.Println("  SOUL_COMPLIANCE_BIN    Path to compliance product binary")
-	fmt.Println("  SOUL_SCOUT_BIN         Path to scout product binary")
 	fmt.Println("  SOUL_PORT              Server port (default: 3000)")
 	fmt.Println("  SOUL_HOST              Server host (default: 127.0.0.1)")
 	fmt.Println("  SOUL_DATA_DIR          Data directory (default: ~/.soul)")

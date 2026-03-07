@@ -148,6 +148,40 @@ body {
   50% { transform: translateY(-16px); }
 }
 
+@keyframes float-move {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.animate-float-glow {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+  animation: float-move 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-float-glow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(232, 168, 73, 0.35) 0%, rgba(232, 168, 73, 0.1) 45%, transparent 70%);
+  border-radius: 50%;
+  animation: glow-pulse 5s ease-in-out infinite;
+  will-change: opacity;
+  pointer-events: none;
+  z-index: -1;
+}
+
 @keyframes slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -177,6 +211,57 @@ body {
   background: linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.04) 50%, transparent 70%);
   background-size: 200% 100%;
   animation: shimmer 2s linear infinite;
+}
+
+/* Streaming shimmer bar — gold gradient sweep */
+@keyframes stream-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.stream-bar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--color-soul-dim, rgba(212, 175, 55, 0.1));
+}
+.stream-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, var(--color-soul, #D4AF37) 40%, var(--color-soul, #D4AF37) 60%, transparent);
+  animation: stream-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Diamond avatar pulse rings during streaming */
+@keyframes diamond-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.diamond-pulse {
+  position: relative;
+}
+.diamond-pulse::before,
+.diamond-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-soul, #D4AF37);
+  animation: diamond-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+.diamond-pulse::after {
+  animation-delay: 0.8s;
+}
+
+/* Diamond glow breathe */
+@keyframes diamond-breathe {
+  0%, 100% { box-shadow: 0 0 6px rgba(212, 175, 55, 0.2); }
+  50% { box-shadow: 0 0 16px rgba(212, 175, 55, 0.5), 0 0 30px rgba(212, 175, 55, 0.15); }
+}
+.diamond-breathe {
+  animation: diamond-breathe 2s ease-in-out infinite;
 }
 
 /* Stagger animation delays */
@@ -233,30 +318,55 @@ body {
   --tw-prose-td-borders: var(--color-border-subtle);
 }
 
+/* ─── Responsive panel labels (container queries) ─── */
+
+.panel-container { container-type: inline-size; }
+
+/* Tier 1: <500px — hide view labels (List, Board, Grid, Table) */
+@container (max-width: 500px) {
+  .rp-label-view { display: none; }
+}
+
+/* Tier 2: <400px — also hide action labels (Sync, Close, Auth, History) */
+@container (max-width: 400px) {
+  .rp-label-action { display: none; }
+}
+
+/* Tier 3: <320px — also hide primary labels (New) + filter labels (Stage:, Priority:, Project:) */
+@container (max-width: 320px) {
+  .rp-label-primary { display: none; }
+  .rp-label-filter { display: none; }
+}
+
 /* ─── Custom select styling ─── */
 
 select.soul-select {
   background-color: var(--color-elevated);
   border: 1px solid var(--color-border-default);
-  border-radius: 6px;
-  padding: 4px 24px 4px 8px;
+  border-radius: 8px;
+  padding: 5px 26px 5px 10px;
   font-size: 11px;
+  line-height: 1.4;
   color: var(--color-fg-secondary);
   font-family: var(--font-body);
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%239494ac' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%236a6a82' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 6px center;
-  transition: border-color 0.15s, background-color 0.15s;
+  background-position: right 8px center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
 }
 
 select.soul-select:hover {
   border-color: var(--color-border-active);
   background-color: var(--color-overlay);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  color: var(--color-fg);
 }
 
 select.soul-select:focus {
   outline: none;
   border-color: var(--color-soul);
+  box-shadow: 0 0 0 1px var(--color-soul-dim);
 }

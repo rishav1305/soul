@@ -1,0 +1,54 @@
+{
+  "model": "qwen2.5-3b-instruct-q4_k_m",
+  "timestamp": "2026-02-22T16:58:15.307060+00:00",
+  "hardware": {
+    "hostname": "titan-pc",
+    "cpu": "Intel(R) Core(TM) i5-8400 CPU @ 2.80GHz",
+    "cores": 6,
+    "ram_gb": 7.6
+  },
+  "model_size_gb": 1.96,
+  "results": [
+    {
+      "id": "reasoning-01",
+      "task": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many are left? Think step by step, then give the final answer as a single number.",
+      "expected": "9",
+      "response": "Let's break this down step-by-step:\n\n1. The farmer starts with 17 sheep.\n2. All but 9 sheep die.\n\nThe phrase \"all but 9\" means that all except 9 of the sheep die. \n\nSo, we need to subtract the 9 sheep that survive from the original 17 sheep.\n\n17 (original sheep) - 9 (sheep that survive) = 8\n\nTherefore, the number of sheep left is 8.",
+      "accuracy": 0.0,
+      "latency_s": 19.98,
+      "peak_ram_mb": 3422.7,
+      "tokens_per_second": 9.4
+    },
+    {
+      "id": "code-01",
+      "task": "code",
+      "prompt": "Write a Python function called `is_palindrome` that takes a string and returns True if it is a palindrome (ignoring case and spaces), False otherwise. Include a docstring. Output only the function, no explanation.",
+      "expected": "def is_palindrome",
+      "response": "```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Check if the input string is a palindrome, ignoring case and spaces.\n    \n    Args:\n    s (str): The string to check.\n    \n    Returns:\n    bool: True if s is a palindrome, False otherwise.\n    \"\"\"\n    # Normalize the string: remove spaces and convert to lowercase\n    normalized_str = s.replace(\" \", \"\").lower()\n    # Check if the normalized string is equal to its reverse\n    return normalized_str == normalized_str[::-1]",
+      "accuracy": 1.0,
+      "latency_s": 15.76,
+      "peak_ram_mb": 3426.6,
+      "tokens_per_second": 9.3
+    },
+    {
+      "id": "classification-01",
+      "task": "classification",
+      "prompt": "Classify this email as exactly one of: SPAM or NOT_SPAM. Reply with only the label, nothing else.\n\nEmail: \"Congratulations! You've won a free iPhone 15 Pro! Click here immediately to claim your prize before it expires. Limited time offer!\"",
+      "expected": "SPAM",
+      "response": "SPAM",
+      "accuracy": 1.0,
+      "latency_s": 4.01,
+      "peak_ram_mb": 3429.5,
+      "tokens_per_second": 13.9
+    }
+  ],
+  "summary": {
+    "avg_accuracy": 0.667,
+    "avg_latency_s": 13.25,
+    "avg_peak_ram_mb": 3426.3,
+    "avg_tokens_per_second": 10.87
+  },
+  "cars_ram": 0.015,
+  "cars_size": 0.0257
+}

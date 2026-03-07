@@ -1,0 +1,54 @@
+{
+  "model": "Phi-3.5-mini-instruct-Q4_K_M",
+  "timestamp": "2026-02-22T16:57:35.538581+00:00",
+  "hardware": {
+    "hostname": "titan-pc",
+    "cpu": "Intel(R) Core(TM) i5-8400 CPU @ 2.80GHz",
+    "cores": 6,
+    "ram_gb": 7.6
+  },
+  "model_size_gb": 2.229,
+  "results": [
+    {
+      "id": "reasoning-01",
+      "task": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many are left? Think step by step, then give the final answer as a single number.",
+      "expected": "9",
+      "response": "Step 1: Understand the phrase \"All but 9 die.\" This means that 9 out of the total sheep survive.\n\nStep 2: The total number of sheep the farmer has is 17.\n\nStep 3: Subtract the number of sheep that died (17 - 9) to find out how many are left.\n\nCalculation: 17 - 9 = 8\n\nFinal Answer: The farmer has 8 sheep left.\n\nSo, the answer is: 8.",
+      "accuracy": 0.0,
+      "latency_s": 19.37,
+      "peak_ram_mb": 4322.1,
+      "tokens_per_second": 7.7
+    },
+    {
+      "id": "code-01",
+      "task": "code",
+      "prompt": "Write a Python function called `is_palindrome` that takes a string and returns True if it is a palindrome (ignoring case and spaces), False otherwise. Include a docstring. Output only the function, no explanation.",
+      "expected": "def is_palindrome",
+      "response": "```python\ndef is_palindrome(s):\n    \"\"\"\n    Check if the given string is a palindrome, ignoring case and spaces.\n    \n    Parameters:\n    s (str): The string to check.\n    \n    Returns:\n    bool: True if the string is a palindrome, False otherwise.\n    \"\"\"\n    cleaned_s = ''.join(c.lower() for c in s if c.isalnum())\n    return cleaned_s == cleaned_s[::-1]\n```",
+      "accuracy": 1.0,
+      "latency_s": 20.38,
+      "peak_ram_mb": 4324.6,
+      "tokens_per_second": 7.7
+    },
+    {
+      "id": "classification-01",
+      "task": "classification",
+      "prompt": "Classify this email as exactly one of: SPAM or NOT_SPAM. Reply with only the label, nothing else.\n\nEmail: \"Congratulations! You've won a free iPhone 15 Pro! Click here immediately to claim your prize before it expires. Limited time offer!\"",
+      "expected": "SPAM",
+      "response": "SPAM",
+      "accuracy": 1.0,
+      "latency_s": 4.61,
+      "peak_ram_mb": 4326.8,
+      "tokens_per_second": 11.5
+    }
+  ],
+  "summary": {
+    "avg_accuracy": 0.667,
+    "avg_latency_s": 14.79,
+    "avg_peak_ram_mb": 4324.5,
+    "avg_tokens_per_second": 8.97
+  },
+  "cars_ram": 0.0107,
+  "cars_size": 0.0202
+}

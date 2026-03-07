@@ -1,0 +1,32 @@
+[
+  {
+    "id": "code-gen-01",
+    "task": "code_generation",
+    "prompt": "Write a Python function called `is_even` that takes an integer and returns True if it is even, False otherwise. Output only the function, no explanation.",
+    "expected_answer": "def is_even",
+    "scoring": "code_executes",
+    "scoring_config": {
+      "function_name": "is_even"
+    }
+  },
+  {
+    "id": "code-gen-02",
+    "task": "code_generation",
+    "prompt": "Write a Python function called `flatten` that takes a nested list of arbitrary depth and returns a flat list. Example: flatten([1, [2, [3, 4]], 5]) returns [1, 2, 3, 4, 5]. Output only the function, no explanation.",
+    "expected_answer": "def flatten",
+    "scoring": "code_executes",
+    "scoring_config": {
+      "function_name": "flatten"
+    }
+  },
+  {
+    "id": "code-gen-03",
+    "task": "code_generation",
+    "prompt": "Write a Python function called `parse_key_value` that takes a string like 'key=value' and returns a tuple (key, value). Handle quoted values: 'name=\"John Doe\"' should return ('name', 'John Doe'). Output only the function, no explanation.",
+    "expected_answer": "def parse_key_value",
+    "scoring": "code_executes",
+    "scoring_config": {
+      "function_name": "parse_key_value"
+    }
+  }
+]

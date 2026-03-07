@@ -1,0 +1,26 @@
+[
+  {
+    "id": "classification-01",
+    "task": "classification",
+    "prompt": "Classify the following email into exactly one of these categories: SPAM, NOT_SPAM.\n\nEmail:\nSubject: CONGRATULATIONS! You have been selected as our LUCKY WINNER!!!\nFrom: prize-notify@win-cash-rewards247.biz\nBody: Dear Friend, You have been randomly selected to receive $5,000,000 USD from the Global Lottery Commission. To claim your prize, reply with your full name, home address, bank account number, and a processing fee of $299. Act now — offer expires in 24 hours!\n\nRespond with only the label: SPAM or NOT_SPAM. No explanation.",
+    "expected_answer": "SPAM",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "classification-02",
+    "task": "classification",
+    "prompt": "Classify the following email into exactly one of these categories: SPAM, NOT_SPAM.\n\nEmail:\nSubject: Re: Your proposal for the data pipeline migration\nFrom: sarah.kim@acmecorp.com\nBody: Hi Rishav, Thank you for sending over the proposal. I reviewed it with our VP of Engineering and we are interested in moving forward. Could we schedule a 30-minute call this Thursday or Friday to discuss the timeline and scope? Looking forward to speaking with you.\n\nRespond with only the label: SPAM or NOT_SPAM. No explanation.",
+    "expected_answer": "NOT_SPAM",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "classification-03",
+    "task": "classification",
+    "prompt": "Classify the following email into exactly one of these categories: SPAM, NOT_SPAM.\n\nEmail:\nSubject: Action required: Reset your password immediately\nFrom: security-noreply@accounts-google.support-login.net\nBody: We detected unusual sign-in activity on your Google account. To secure your account, click the link below within 1 hour or your account will be permanently suspended. Reset now: http://accounts-google.support-login.net/reset?token=xK93mZ&redirect=steal-credentials.ru\n\nNote: The sender domain is not google.com. The link redirects to a non-Google domain.\n\nRespond with only the label: SPAM or NOT_SPAM. No explanation.",
+    "expected_answer": "SPAM",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  }
+]

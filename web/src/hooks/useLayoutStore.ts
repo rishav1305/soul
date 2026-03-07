@@ -5,7 +5,9 @@ import type {
   GridSubView,
   TaskFilters,
   HorizontalRailPosition,
+  PanelPosition,
   HorizontalRailTab,
+  DrawerLayout,
 } from '../lib/types.ts';
 
 const STORAGE_KEY = 'soul-layout';
@@ -17,10 +19,13 @@ const DEFAULT_STATE: LayoutState = {
   filters: { stage: 'all', priority: 'all', product: 'all' },
   activeProduct: null,
   railPosition: 'bottom',
+  chatPosition: 'bottom',
+  tasksPosition: 'bottom',
   railExpanded: false,
   railHeightVh: 35,
   railTab: 'chat',
   chatSplitPct: 60,
+  drawerLayout: 'split',
   panelExpanded: false,
   sessionsOpen: false,
   settingsOpen: false,
@@ -28,6 +33,16 @@ const DEFAULT_STATE: LayoutState = {
   showContextChip: true,
   toastsEnabled: true,
   inlineBadgesEnabled: true,
+  syncProductFilter: false,
+  chatRailExpanded: false,
+  chatRailHeightVh: 35,
+  tasksRailExpanded: false,
+  tasksRailHeightVh: 35,
+  rightPanelWidth: 480,
+  rightChatWidth: 420,
+  rightTasksWidth: 420,
+  rightChatExpanded: true,
+  rightTasksExpanded: false,
 };
 
 function loadState(): LayoutState {
@@ -39,8 +54,7 @@ function loadState(): LayoutState {
       ...DEFAULT_STATE,
       ...parsed,
       filters: { ...DEFAULT_STATE.filters, ...parsed.filters },
-      // Always reset ephemeral UI state
-      panelExpanded: false,
+      // Reset overlays (not panel layout)
       sessionsOpen: false,
       settingsOpen: false,
     };
@@ -101,6 +115,16 @@ export function useLayoutStore() {
     [setState],
   );
 
+  const setChatPosition = useCallback(
+    (pos: PanelPosition) => setState((prev) => ({ ...prev, chatPosition: pos })),
+    [setState],
+  );
+
+  const setTasksPosition = useCallback(
+    (pos: PanelPosition) => setState((prev) => ({ ...prev, tasksPosition: pos })),
+    [setState],
+  );
+
   const setRailExpanded = useCallback(
     (expanded: boolean) => setState((prev) => ({ ...prev, railExpanded: expanded })),
     [setState],
@@ -120,6 +144,11 @@ export function useLayoutStore() {
   const setChatSplitPct = useCallback(
     (pct: number) =>
       setState((prev) => ({ ...prev, chatSplitPct: Math.min(80, Math.max(30, pct)) })),
+    [setState],
+  );
+
+  const setDrawerLayout = useCallback(
+    (v: DrawerLayout) => setState((prev) => ({ ...prev, drawerLayout: v })),
     [setState],
   );
 
@@ -158,6 +187,58 @@ export function useLayoutStore() {
     [setState],
   );
 
+  const setSyncProductFilter = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, syncProductFilter: v })),
+    [setState],
+  );
+
+  const setChatRailExpanded = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, chatRailExpanded: v })),
+    [setState],
+  );
+
+  const setChatRailHeightVh = useCallback(
+    (vh: number) => setState((prev) => ({ ...prev, chatRailHeightVh: Math.min(60, Math.max(20, vh)) })),
+    [setState],
+  );
+
+  const setTasksRailExpanded = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, tasksRailExpanded: v })),
+    [setState],
+  );
+
+  const setTasksRailHeightVh = useCallback(
+    (vh: number) => setState((prev) => ({ ...prev, tasksRailHeightVh: Math.min(60, Math.max(20, vh)) })),
+    [setState],
+  );
+
+  const clampWidth = (w: number) => Math.min(Math.round(window.innerWidth * 0.7), Math.max(280, w));
+
+  const setRightPanelWidth = useCallback(
+    (w: number) => setState((prev) => ({ ...prev, rightPanelWidth: clampWidth(w) })),
+    [setState],
+  );
+
+  const setRightChatWidth = useCallback(
+    (w: number) => setState((prev) => ({ ...prev, rightChatWidth: clampWidth(w) })),
+    [setState],
+  );
+
+  const setRightTasksWidth = useCallback(
+    (w: number) => setState((prev) => ({ ...prev, rightTasksWidth: clampWidth(w) })),
+    [setState],
+  );
+
+  const setRightChatExpanded = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, rightChatExpanded: v })),
+    [setState],
+  );
+
+  const setRightTasksExpanded = useCallback(
+    (v: boolean) => setState((prev) => ({ ...prev, rightTasksExpanded: v })),
+    [setState],
+  );
+
   return useMemo(
     () => ({
       ...state,
@@ -167,10 +248,13 @@ export function useLayoutStore() {
       setFilters,
       setActiveProduct,
       setRailPosition,
+      setChatPosition,
+      setTasksPosition,
       setRailExpanded,
       setRailHeightVh,
       setRailTab,
       setChatSplitPct,
+      setDrawerLayout,
       setPanelExpanded,
       setSessionsOpen,
       setSettingsOpen,
@@ -178,13 +262,25 @@ export function useLayoutStore() {
       setShowContextChip,
       setToastsEnabled,
       setInlineBadgesEnabled,
+      setSyncProductFilter,
+      setChatRailExpanded,
+      setChatRailHeightVh,
+      setTasksRailExpanded,
+      setTasksRailHeightVh,
+      setRightPanelWidth,
+      setRightChatWidth,
+      setRightTasksWidth,
+      setRightChatExpanded,
+      setRightTasksExpanded,
     }),
     [
       state,
       setTaskView, setGridSubView, setPanelWidth, setFilters,
-      setActiveProduct, setRailPosition, setRailExpanded, setRailHeightVh,
-      setRailTab, setChatSplitPct, setPanelExpanded, setSessionsOpen, setSettingsOpen,
-      setAutoInjectContext, setShowContextChip, setToastsEnabled, setInlineBadgesEnabled,
+      setActiveProduct, setRailPosition, setChatPosition, setTasksPosition, setRailExpanded, setRailHeightVh,
+      setRailTab, setChatSplitPct, setDrawerLayout, setPanelExpanded, setSessionsOpen, setSettingsOpen,
+      setAutoInjectContext, setShowContextChip, setToastsEnabled, setInlineBadgesEnabled, setSyncProductFilter,
+      setChatRailExpanded, setChatRailHeightVh, setTasksRailExpanded, setTasksRailHeightVh,
+      setRightPanelWidth, setRightChatWidth, setRightTasksWidth, setRightChatExpanded, setRightTasksExpanded,
     ],
   );
 }

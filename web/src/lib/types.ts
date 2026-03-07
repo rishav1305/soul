@@ -12,6 +12,12 @@ export interface ChatMessage {
   thinking?: string;
   toolCalls?: ToolCallMessage[];
   timestamp: Date;
+  model?: string;
+  pmNotification?: {
+    severity: 'info' | 'warning' | 'error';
+    taskIds: number[];
+    check: string;
+  };
 }
 
 export interface ToolCallMessage {
@@ -65,7 +71,9 @@ export interface PlannerTask {
 export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
 export type GridSubView = 'grid' | 'table' | 'grouped';
 export type HorizontalRailPosition = 'bottom' | 'top';
+export type PanelPosition = 'bottom' | 'top' | 'right';
 export type HorizontalRailTab = 'chat' | 'tasks';
+export type DrawerLayout = 'split' | 'independent';
 
 export interface TaskFilters {
   stage: TaskStage | 'all';
@@ -79,11 +87,14 @@ export interface LayoutState {
   panelWidth: number | null;
   filters: TaskFilters;
   activeProduct: string | null;         // which product is open in main view
-  railPosition: HorizontalRailPosition; // bottom or top
+  railPosition: HorizontalRailPosition; // bottom or top (legacy, used by HorizontalRail)
+  chatPosition: PanelPosition;           // independent chat panel position
+  tasksPosition: PanelPosition;          // independent tasks panel position
   railExpanded: boolean;                // 48px bar vs expanded panel
   railHeightVh: number;                 // expanded height 25–60vh
   railTab: HorizontalRailTab;           // which tab is focused when expanded
   chatSplitPct: number;                 // chat % of expanded rail (default 60)
+  drawerLayout: DrawerLayout;           // split (side-by-side) or independent (stacked)
   panelExpanded: boolean;               // left rail expanded (220px vs 56px)
   sessionsOpen: boolean;                // sessions drawer overlay on left rail
   settingsOpen: boolean;                // settings panel overlay
@@ -91,6 +102,16 @@ export interface LayoutState {
   showContextChip: boolean;             // show "inject?" chip on product switch
   toastsEnabled: boolean;               // stage-change toast notifications
   inlineBadgesEnabled: boolean;         // pulsing dot badge on task cards
+  syncProductFilter: boolean;           // sync task list filter with active product
+  chatRailExpanded: boolean;            // per-panel expanded (used in mixed position mode)
+  chatRailHeightVh: number;
+  tasksRailExpanded: boolean;
+  tasksRailHeightVh: number;
+  rightPanelWidth: number;            // width in px — both panels open
+  rightChatWidth: number;             // width in px — chat only
+  rightTasksWidth: number;            // width in px — tasks only
+  rightChatExpanded: boolean;         // right chat panel drawer vs rail
+  rightTasksExpanded: boolean;        // right tasks panel drawer vs rail
 }
 
 export interface StageNotification {
@@ -105,9 +126,18 @@ export interface StageNotification {
 export interface ChatSession {
   id: number;
   title: string;
+  summary: string;
+  model: string;
+  message_count: number;
   status: 'running' | 'idle' | 'completed';
   created_at: string;
   updated_at: string;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  contextPct: number;
 }
 
 export interface SendOptions {
@@ -133,6 +163,16 @@ export interface TaskComment {
   body: string;
   attachments: string[];
   created_at: string;
+}
+
+/** Product metadata from /api/products */
+export interface ProductInfo {
+  name: string;
+  version: string;
+  label: string;
+  color: string;
+  tools: number;
+  running: boolean;
 }
 
 /* ── Scout types ────────────────────────────────────── */

@@ -26,10 +26,14 @@ interface ContextChip {
 interface InputBarProps {
   onSend: (message: string, options?: SendOptions) => void;
   disabled: boolean;
+  isStreaming?: boolean;
+  onStop?: () => void;
   contextChip?: string | null;
   onInjectContext?: () => void;
   onDismissChip?: () => void;
   contextChips?: ContextChip[];
+  droppedFiles?: File[];
+  onDroppedFilesConsumed?: () => void;
 }
 
 const CHAT_TYPES = [
@@ -43,14 +47,55 @@ const CHAT_TYPES = [
   { value: 'Clarify', label: 'Clarify', group: 'skill' },
 ] as const;
 
-export default function InputBar({ onSend, disabled, contextChip, onInjectContext, onDismissChip, contextChips = [] }: InputBarProps) {
+const PREFS_KEY = 'soul-chat-prefs';
+
+interface ChatPrefs {
+  model?: string;
+  chatType?: string;
+  thinking?: boolean;
+  disabledTools?: string[];
+}
+
+function loadPrefs(): ChatPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function savePrefs(partial: Partial<ChatPrefs>): void {
+  try {
+    const prev = loadPrefs();
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prev, ...partial }));
+  } catch { /* ignore */ }
+}
+
+export default function InputBar({ onSend, disabled, isStreaming = false, onStop, contextChip, onInjectContext, onDismissChip, contextChips = [], droppedFiles, onDroppedFilesConsumed }: InputBarProps) {
+  const prefs = useRef(loadPrefs()).current;
   const [value, setValue] = useState('');
-  const [model, setModel] = useState<string>('');
+  const [model, _setModel] = useState<string>(prefs.model ?? '');
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [chatType, setChatType] = useState<string>('Chat');
-  const [thinking, setThinking] = useState(false);
+  const [chatType, _setChatType] = useState<string>(prefs.chatType ?? 'Chat');
+  const [thinking, _setThinking] = useState(prefs.thinking ?? true);
   const [tools, setTools] = useState<ToolInfo[]>([]);
-  const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set());
+  const [disabledTools, _setDisabledTools] = useState<Set<string>>(new Set(prefs.disabledTools ?? []));
+
+  const setModel = useCallback((v: string) => { _setModel(v); savePrefs({ model: v }); }, []);
+  const setChatType = useCallback((v: string) => { _setChatType(v); savePrefs({ chatType: v }); }, []);
+  const setThinking = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
+    _setThinking((prev) => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      savePrefs({ thinking: next });
+      return next;
+    });
+  }, []);
+  const setDisabledTools = useCallback((v: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    _setDisabledTools((prev) => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      savePrefs({ disabledTools: Array.from(next) });
+      return next;
+    });
+  }, []);
   const [showToolPopover, setShowToolPopover] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
@@ -66,16 +111,20 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
   const recognitionRef = useRef<any>(null);
   const speechSupported = typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
-  // Fetch models on mount
+  // Fetch models on mount — use saved preference if valid, otherwise first model
   useEffect(() => {
     fetch('/api/models')
       .then((r) => r.json())
       .then((data: ModelInfo[]) => {
         setModels(data);
-        if (data.length > 0) setModel(data[0].id);
+        if (data.length > 0) {
+          const saved = loadPrefs().model;
+          const valid = saved && data.some((m) => m.id === saved);
+          setModel(valid ? saved! : data[0].id);
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [setModel]);
 
   // Fetch tools on mount
   useEffect(() => {
@@ -87,10 +136,25 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
       .catch(() => {});
   }, []);
 
-  // Auto-focus
+  // Sticky focus — re-focus textarea when clicks land outside other inputs
   useEffect(() => {
     textareaRef.current?.focus();
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't steal focus from other inputs, buttons, selects, or textareas
+      if (target.closest('input, select, textarea, button, [role="button"], [contenteditable]')) return;
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
   }, []);
+
+  useEffect(() => {
+    if (droppedFiles && droppedFiles.length > 0) {
+      setFiles((prev) => [...prev, ...droppedFiles]);
+      onDroppedFilesConsumed?.();
+    }
+  }, [droppedFiles, onDroppedFilesConsumed]);
 
   // Close tool popover on outside click
   useEffect(() => {
@@ -105,18 +169,45 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
   }, [showToolPopover]);
 
   const handleSend = useCallback(() => {
-    const trimmed = value.trim();
+    let trimmed = value.trim();
     if (!trimmed || disabled) return;
+
+    // Detect inline /command at start of message (e.g. "/brainstorm Add stocks product")
+    let effectiveChatType = chatType;
+    if (trimmed.startsWith('/')) {
+      const spaceIdx = trimmed.indexOf(' ');
+      const cmdName = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
+      const matched = commands.find(c => c.name.toLowerCase() === cmdName.toLowerCase());
+      if (matched) {
+        if (matched.chatType) {
+          effectiveChatType = matched.chatType;
+          setChatType(matched.chatType);
+        }
+        if (matched.builtin && matched.name === 'think') {
+          setThinking(prev => !prev);
+        }
+        trimmed = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+        if (!trimmed) {
+          // Command-only (no message) — just switch mode
+          setValue('');
+          if (textareaRef.current) textareaRef.current.style.height = 'auto';
+          setTimeout(() => textareaRef.current?.focus(), 0);
+          return;
+        }
+      }
+    }
+
     const options: SendOptions = {};
     if (model) options.model = model;
-    if (chatType !== 'Chat') options.chatType = chatType.toLowerCase();
+    if (effectiveChatType !== 'Chat') options.chatType = effectiveChatType.toLowerCase();
     if (disabledTools.size > 0) options.disabledTools = Array.from(disabledTools);
     if (thinking) options.thinking = true;
     onSend(trimmed, Object.keys(options).length > 0 ? options : undefined);
     setValue('');
     setFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [value, disabled, model, chatType, disabledTools, thinking, onSend]);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [value, disabled, model, chatType, disabledTools, thinking, onSend, commands, setChatType, setThinking]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -142,20 +233,22 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
     [showSlashPalette, commands, slashQuery]
   );
 
-  const selectCommand = useCallback((cmd: SlashCommand) => {
+  const selectCommand = useCallback((cmd: SlashCommand, inlineText?: string) => {
     setShowSlashPalette(false);
-    setValue('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     if (cmd.builtin) {
       if (cmd.name === 'think') {
         setThinking(prev => !prev);
       }
+      setValue(inlineText ?? '');
       textareaRef.current?.focus();
       return;
     }
     if (cmd.chatType) {
       setChatType(cmd.chatType);
     }
+    // If there's inline text after the command, keep it as the message
+    setValue(inlineText ?? '');
     textareaRef.current?.focus();
   }, []);
 
@@ -275,6 +368,11 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           return;
         }
       }
+      if (e.key === 'Escape' && isStreaming && onStop) {
+        e.preventDefault();
+        onStop();
+        return;
+      }
       if (e.key === 'Escape' && isListening) {
         e.preventDefault();
         stopListening();
@@ -286,7 +384,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
         handleSend();
       }
     },
-    [handleSend, isListening, stopListening, showSlashPalette, filteredCommands, paletteIndex, selectCommand],
+    [handleSend, isListening, stopListening, isStreaming, onStop, showSlashPalette, filteredCommands, paletteIndex, selectCommand],
   );
 
   const placeholder = (chatType === 'Brainstorm' || chatType === 'Clarify')
@@ -294,7 +392,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
     : 'Message Soul...';
 
   return (
-    <div className="px-5 py-4">
+    <div className="panel-container px-5 py-4">
       <div className="relative">
         {/* Slash command palette — positioned above the input box */}
         {showSlashPalette && filteredCommands.length > 0 && (
@@ -340,6 +438,22 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
             >
               ×
             </button>
+          </div>
+        )}
+        {/* Active mode badge */}
+        {chatType !== 'Chat' && (
+          <div className="flex items-center gap-2 px-4 pt-3">
+            <span className="inline-flex items-center gap-1.5 bg-soul/10 border border-soul/30 rounded-full px-2.5 py-0.5 text-[11px] font-mono text-soul">
+              /{chatType.toLowerCase()}
+              <button
+                type="button"
+                onClick={() => setChatType('Chat')}
+                className="text-soul/50 hover:text-soul cursor-pointer"
+                title="Reset to Chat mode"
+              >
+                ×
+              </button>
+            </span>
           </div>
         )}
         {/* Context chips (array) */}
@@ -423,7 +537,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
               >
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
-                    ◆ {m.name}
+                    {m.name}
                   </option>
                 ))}
               </select>
@@ -453,7 +567,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
             <button
               type="button"
               onClick={() => setThinking(!thinking)}
-              className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
+              className={`h-7 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${
                 thinking ? 'bg-soul/20 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
               }`}
               title={thinking ? 'Extended thinking ON' : 'Extended thinking OFF'}
@@ -462,6 +576,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
                 <path d="M8 2a5 5 0 0 1 3 9v1.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 5 12.5V11a5 5 0 0 1 3-9z" />
                 <path d="M6 14.5h4" />
               </svg>
+              <span className="rp-label-view text-[10px] font-mono">Think</span>
             </button>
           )}
 
@@ -470,13 +585,14 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
             <button
               type="button"
               onClick={() => setShowToolPopover(!showToolPopover)}
-              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+              className="relative h-7 flex items-center gap-1 px-1.5 rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
               title="Tool permissions"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 3h4l2 2v2l-5 5-5-5V5l2-2z" />
                 <circle cx="8" cy="6" r="1" />
               </svg>
+              <span className="rp-label-view text-[10px] font-mono">Tools</span>
               {disabledTools.size > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-stage-blocked text-deep text-[9px] font-bold rounded-full flex items-center justify-center">
                   {disabledTools.size}
@@ -531,12 +647,13 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+            className="h-7 flex items-center gap-1 px-1.5 rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
             title="Attach file"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l5.8-5.8a2.3 2.3 0 0 1 3.3 3.3L6 11.6a1.2 1.2 0 0 1-1.7-1.7L9.5 4.7" />
             </svg>
+            <span className="rp-label-action text-[10px] font-mono">File</span>
           </button>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
 
@@ -544,7 +661,7 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+            className="h-7 flex items-center gap-1 px-1.5 rounded hover:bg-elevated text-fg-secondary hover:text-fg transition-colors cursor-pointer"
             title="Attach image"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -552,29 +669,43 @@ export default function InputBar({ onSend, disabled, contextChip, onInjectContex
               <circle cx="5.5" cy="5.5" r="1.5" />
               <path d="M14 10l-3-3-7 7" />
             </svg>
+            <span className="rp-label-action text-[10px] font-mono">Image</span>
           </button>
           <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Send or Mic button */}
-          {!value.trim() && !disabled && speechSupported ? (
+          {/* Stop / Send / Mic button */}
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={() => { onStop(); setTimeout(() => textareaRef.current?.focus(), 0); }}
+              className="h-8 rounded-full flex items-center gap-1.5 px-3 bg-stage-blocked/15 text-stage-blocked hover:bg-stage-blocked/25 transition-colors shrink-0 cursor-pointer"
+              title="Stop generating (Esc)"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="3" y="3" width="10" height="10" rx="1.5" />
+              </svg>
+              <span className="text-[10px] font-mono">Stop</span>
+            </button>
+          ) : !value.trim() && !disabled && speechSupported ? (
             <button
               type="button"
               onClick={isListening ? stopListening : startListening}
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+              className={`h-8 rounded-full flex items-center gap-1.5 px-3 transition-colors shrink-0 cursor-pointer ${
                 isListening
                   ? 'bg-stage-blocked text-white animate-soul-pulse'
-                  : 'bg-elevated text-fg-secondary hover:text-fg hover:bg-overlay'
+                  : 'bg-soul/15 text-soul hover:bg-soul/25'
               }`}
               title={isListening ? 'Stop listening' : 'Voice input'}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="5" y="1" width="6" height="8" rx="3" />
                 <path d="M3 7v1a5 5 0 0 0 10 0V7" />
                 <path d="M8 13v2" />
               </svg>
+              {isListening && <span className="text-[10px] font-mono">Stop</span>}
             </button>
           ) : (
             <button

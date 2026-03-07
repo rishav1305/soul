@@ -17,6 +17,9 @@ func (s *Server) registerRoutes() {
 	// Health check endpoint.
 	s.mux.HandleFunc("GET /api/health", handleHealth)
 
+	// Products list endpoint — returns registered product metadata.
+	s.mux.HandleFunc("GET /api/products", s.handleProductsList)
+
 	// Tools list endpoint — returns all registered tools.
 	s.mux.HandleFunc("GET /api/tools", s.handleToolsList)
 
@@ -125,6 +128,68 @@ func (s *Server) handleToolsList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tools)
 }
 
+// productInfo is the JSON-serializable product metadata returned by /api/products.
+type productInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Label   string `json:"label"`
+	Color   string `json:"color"`
+	Tools   int    `json:"tools"`
+	Running bool   `json:"running"`
+}
+
+// handleProductsList returns all known products with metadata.
+// Products from the config are always returned; running status reflects
+// whether the product process is currently connected via gRPC.
+func (s *Server) handleProductsList(w http.ResponseWriter, r *http.Request) {
+	// Build a set of running product names from the registry.
+	running := make(map[string]bool)
+	if s.products != nil {
+		for _, name := range s.products.Registry().Names() {
+			running[name] = true
+		}
+	}
+
+	// Start from the full config list so every product is always present.
+	seen := make(map[string]bool)
+	var result []productInfo
+
+	for _, pc := range s.productConfigs {
+		if seen[pc.Name] {
+			continue
+		}
+		seen[pc.Name] = true
+
+		pi := productInfo{
+			Name:    pc.Name,
+			Label:   pc.Label,
+			Color:   pc.Color,
+			Running: running[pc.Name],
+		}
+
+		// Enrich from manifest if running.
+		if pi.Running && s.products != nil {
+			if manifest, ok := s.products.Registry().GetManifest(pc.Name); ok {
+				pi.Version = manifest.GetVersion()
+				pi.Tools = len(manifest.GetTools())
+			}
+		}
+
+		// Default label from name if not set.
+		if pi.Label == "" {
+			words := strings.ReplaceAll(pc.Name, "-", " ")
+			pi.Label = strings.ToUpper(words[:1]) + words[1:]
+		}
+
+		result = append(result, pi)
+	}
+
+	if result == nil {
+		result = []productInfo{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // handleToolExecute directly executes a tool, bypassing the AI agent.
 // This is used for UI actions like "Fix All" buttons.
 func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +290,8 @@ type modelInfo struct {
 // handleModelsList returns available AI models.
 func (s *Server) handleModelsList(w http.ResponseWriter, r *http.Request) {
 	models := []modelInfo{
-		{ID: "claude-sonnet-4-6", Name: "Sonnet", Description: "Fast & capable"},
 		{ID: "claude-opus-4-6", Name: "Opus", Description: "Most capable"},
+		{ID: "claude-sonnet-4-6", Name: "Sonnet", Description: "Fast & capable"},
 		{ID: "claude-haiku-4-5-20251001", Name: "Haiku", Description: "Fast & lightweight"},
 	}
 	writeJSON(w, http.StatusOK, models)

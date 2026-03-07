@@ -62,6 +62,8 @@ CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, created_a
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'idle',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -116,6 +118,14 @@ func OpenStore(dbPath string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+
+	// Migrate: add columns that may not exist in older databases.
+	for _, alter := range []string{
+		"ALTER TABLE chat_sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE chat_sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''",
+	} {
+		db.Exec(alter) // ignore "duplicate column" errors
 	}
 
 	return &Store{db: db}, nil

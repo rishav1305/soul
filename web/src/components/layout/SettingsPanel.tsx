@@ -1,9 +1,11 @@
-import type { HorizontalRailPosition } from '../../lib/types.ts';
+import type { PanelPosition } from '../../lib/types.ts';
 
 interface SettingsPanelProps {
   onClose: () => void;
-  railPosition: HorizontalRailPosition;
-  setRailPosition: (pos: HorizontalRailPosition) => void;
+  chatPosition: PanelPosition;
+  setChatPosition: (pos: PanelPosition) => void;
+  tasksPosition: PanelPosition;
+  setTasksPosition: (pos: PanelPosition) => void;
   chatSplitPct: number;
   setChatSplitPct: (pct: number) => void;
   autoInjectContext: boolean;
@@ -48,10 +50,41 @@ function Toggle({ checked, onChange, label, description }: {
   );
 }
 
+function PositionSwitch({ value, onChange, label }: {
+  value: PanelPosition;
+  onChange: (pos: PanelPosition) => void;
+  label: string;
+}) {
+  const options: PanelPosition[] = ['top', 'bottom', 'right'];
+  return (
+    <div className="space-y-1.5">
+      <div className="text-xs font-display text-fg-secondary">{label}</div>
+      <div className="flex rounded-lg border border-border-subtle overflow-hidden">
+        {options.map((pos) => (
+          <button
+            key={pos}
+            type="button"
+            onClick={() => onChange(pos)}
+            className={`flex-1 px-2 py-1.5 text-xs font-display capitalize transition-colors cursor-pointer ${
+              value === pos
+                ? 'bg-soul/15 text-soul'
+                : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+            }`}
+          >
+            {pos === 'right' ? 'Right' : pos === 'top' ? 'Top' : 'Bottom'}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPanel({
   onClose,
-  railPosition,
-  setRailPosition,
+  chatPosition,
+  setChatPosition,
+  tasksPosition,
+  setTasksPosition,
   chatSplitPct,
   setChatSplitPct,
   autoInjectContext,
@@ -86,31 +119,14 @@ export default function SettingsPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-          {/* Rail Position */}
+          {/* Panel Positions */}
           <section>
             <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
-              Chat &amp; Tasks Rail Position
+              Panel Positions
             </h3>
-            <div className="flex flex-col gap-2">
-              {(['bottom', 'top'] as HorizontalRailPosition[]).map((pos) => (
-                <button
-                  key={pos}
-                  type="button"
-                  onClick={() => setRailPosition(pos)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer text-left ${
-                    railPosition === pos
-                      ? 'border-soul bg-soul/10 text-soul'
-                      : 'border-border-subtle text-fg-secondary hover:border-border-default hover:text-fg'
-                  }`}
-                >
-                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    railPosition === pos ? 'border-soul' : 'border-fg-muted'
-                  }`}>
-                    {railPosition === pos && <span className="w-2 h-2 rounded-full bg-soul" />}
-                  </span>
-                  <span className="text-sm font-display capitalize">{pos}</span>
-                </button>
-              ))}
+            <div className="space-y-3">
+              <PositionSwitch value={chatPosition} onChange={setChatPosition} label="Chat" />
+              <PositionSwitch value={tasksPosition} onChange={setTasksPosition} label="Tasks" />
             </div>
           </section>
 

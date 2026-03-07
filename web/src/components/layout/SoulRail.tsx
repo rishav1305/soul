@@ -1,10 +1,8 @@
 interface SoulRailProps {
   onExpand: () => void;
-  scoutOpen?: boolean;
-  onScoutToggle?: () => void;
 }
 
-export default function SoulRail({ onExpand, scoutOpen, onScoutToggle }: SoulRailProps) {
+export default function SoulRail({ onExpand }: SoulRailProps) {
   return (
     <div className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-4 gap-4 shrink-0">
       {/* Soul logo */}
@@ -27,21 +25,6 @@ export default function SoulRail({ onExpand, scoutOpen, onScoutToggle }: SoulRai
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 4l2 2 4-4" />
           <path d="M3 10l2 2 4-4" />
-        </svg>
-      </button>
-
-      {/* Scout shortcut */}
-      <button
-        type="button"
-        onClick={onScoutToggle}
-        className={`w-9 h-9 flex items-center justify-center rounded transition-colors cursor-pointer ${
-          scoutOpen ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
-        }`}
-        title="Scout"
-      >
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="6" r="4" />
-          <path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5" />
         </svg>
       </button>
 

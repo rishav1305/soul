@@ -8,12 +8,21 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 
 	"github.com/rishav1305/soul/internal/ai"
 )
+
+// chatSession tracks the cancellable context for an active chat stream per connection.
+type chatSession struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{} // closed when the current chat goroutine finishes
+}
 
 // WSMessage is the envelope for all WebSocket messages.
 type WSMessage struct {
@@ -41,6 +50,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.registerWSClient(conn, ctx)
 	defer s.unregisterWSClient(conn)
 
+	cs := &chatSession{}
+
 	for {
 		var msg WSMessage
 		if err := wsjson.Read(ctx, conn, &msg); err != nil {
@@ -58,7 +69,46 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "chat.send", "chat.message":
-			s.handleChatSend(ctx, conn, &msg)
+			// Cancel any previous stream and wait for it to finish.
+			cs.mu.Lock()
+			if cs.cancel != nil {
+				cs.cancel()
+			}
+			prevDone := cs.done
+			cs.mu.Unlock()
+			if prevDone != nil {
+				<-prevDone
+			}
+
+			chatCtx, cancel := context.WithCancel(ctx)
+			done := make(chan struct{})
+			cs.mu.Lock()
+			cs.cancel = cancel
+			cs.done = done
+			cs.mu.Unlock()
+
+			// Capture msg for goroutine (loop var reuse).
+			chatMsg := msg
+			go func() {
+				defer close(done)
+				s.handleChatSend(chatCtx, conn, &chatMsg)
+				cs.mu.Lock()
+				if cs.done == done {
+					cs.cancel = nil
+					cs.done = nil
+				}
+				cs.mu.Unlock()
+			}()
+
+		case "chat.stop":
+			cs.mu.Lock()
+			if cs.cancel != nil {
+				log.Printf("[ws] stopping active chat stream")
+				cs.cancel()
+				cs.cancel = nil
+			}
+			cs.mu.Unlock()
+
 		default:
 			log.Printf("[ws] unknown message type: %q", msg.Type)
 			s.sendWSError(ctx, conn, fmt.Sprintf("unknown message type: %q", msg.Type))
@@ -167,12 +217,51 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		}
 	}
 
-	// Wrap sendEvent to capture the full assistant response for DB persistence.
+	// Capture the full assistant response with incremental DB persistence.
+	// Insert a placeholder row up front so even a crash preserves partial output.
 	var fullResponse strings.Builder
+	var assistantMsgID int64
+	var flushMu sync.Mutex
+	lastFlushLen := 0
+
+	if dbSessionID > 0 && s.planner != nil {
+		if id, err := s.planner.InsertMessage(dbSessionID, "assistant", ""); err == nil {
+			assistantMsgID = id
+		} else {
+			log.Printf("[ws] failed to insert assistant placeholder: %v", err)
+		}
+	}
+
+	// Periodic flush: update the DB row every 5 seconds with accumulated content.
+	flushTicker := time.NewTicker(5 * time.Second)
+	flushDone := make(chan struct{})
+	go func() {
+		defer flushTicker.Stop()
+		for {
+			select {
+			case <-flushTicker.C:
+				flushMu.Lock()
+				content := fullResponse.String()
+				shouldFlush := len(content) > lastFlushLen && assistantMsgID > 0 && s.planner != nil
+				if shouldFlush {
+					lastFlushLen = len(content)
+				}
+				flushMu.Unlock()
+				if shouldFlush {
+					_ = s.planner.UpdateMessageContent(assistantMsgID, content)
+				}
+			case <-flushDone:
+				return
+			}
+		}
+	}()
+
 	originalSendEvent := sendEvent
 	sendEvent = func(wsMsg WSMessage) {
 		if wsMsg.Type == "chat.token" {
+			flushMu.Lock()
 			fullResponse.WriteString(wsMsg.Content)
+			flushMu.Unlock()
 		}
 		originalSendEvent(wsMsg)
 	}
@@ -196,14 +285,15 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 	agent.pm = s.pm
 	agent.RunWithHistory(ctx, inMemorySessionID, msg.Content, opts.ChatType, opts.DisabledTools, opts.Thinking, opts.SkillContent, priorMessages, sendEvent)
 
-	// Persist assistant response to DB (always, even for tool-only turns).
-	if dbSessionID > 0 && s.planner != nil {
+	// Stop the periodic flusher and do a final persist.
+	close(flushDone)
+	if assistantMsgID > 0 && s.planner != nil {
 		content := fullResponse.String()
 		if content == "" {
 			content = "[tool calls executed]"
 		}
-		if err := s.planner.AddMessage(dbSessionID, "assistant", content); err != nil {
-			log.Printf("[ws] failed to persist assistant message: %v", err)
+		if err := s.planner.UpdateMessageContent(assistantMsgID, content); err != nil {
+			log.Printf("[ws] failed to persist final assistant message: %v", err)
 		}
 	}
 	// Always reset status to idle.
@@ -211,7 +301,115 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		_ = s.planner.UpdateSessionStatus(dbSessionID, "idle")
 	}
 
+	// Generate smart title + summary in the background after the first complete exchange.
+	if dbSessionID > 0 && s.planner != nil && s.ai != nil {
+		go s.generateSessionSummary(dbSessionID, model, ctx, conn)
+	}
+
 	log.Printf("[ws] chat.send complete session=%s dbSession=%d", inMemorySessionID, dbSessionID)
+}
+
+// generateSessionSummary calls a lightweight AI model to create a smart title
+// and summary for the given session, then broadcasts the update to all WS clients.
+func (s *Server) generateSessionSummary(sessionID int64, model string, parentCtx context.Context, conn *websocket.Conn) {
+	// Use a fresh context so this doesn't get cancelled when the parent stream ends.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	records, err := s.planner.GetSessionMessages(sessionID)
+	if err != nil || len(records) < 2 {
+		return // need at least 1 user + 1 assistant message
+	}
+
+	// Build a condensed transcript — first 3 + last 3 messages (if long conversation).
+	var transcript strings.Builder
+	msgs := records
+	if len(msgs) > 6 {
+		for _, m := range msgs[:3] {
+			fmt.Fprintf(&transcript, "%s: %s\n", m.Role, truncate(m.Content, 300))
+		}
+		transcript.WriteString("...\n")
+		for _, m := range msgs[len(msgs)-3:] {
+			fmt.Fprintf(&transcript, "%s: %s\n", m.Role, truncate(m.Content, 300))
+		}
+	} else {
+		for _, m := range msgs {
+			fmt.Fprintf(&transcript, "%s: %s\n", m.Role, truncate(m.Content, 300))
+		}
+	}
+
+	prompt := fmt.Sprintf(`Analyze this conversation and return ONLY a JSON object with two fields:
+- "title": a concise 3-7 word title capturing the main topic (no quotes, no period)
+- "summary": a 1-sentence summary of what was discussed or accomplished (max 120 chars)
+
+Conversation:
+%s
+
+Return ONLY the JSON object, nothing else.`, transcript.String())
+
+	// Use haiku for speed and cost efficiency.
+	summaryModel := "claude-haiku-4-5-20251001"
+	result, err := s.ai.CompleteSimple(ctx, summaryModel, prompt)
+	if err != nil {
+		log.Printf("[ws] summary generation failed for session %d: %v", sessionID, err)
+		return
+	}
+
+	// Parse the JSON response.
+	var parsed struct {
+		Title   string `json:"title"`
+		Summary string `json:"summary"`
+	}
+
+	// Try to extract JSON from the response (handle potential markdown wrapping).
+	jsonStr := strings.TrimSpace(result)
+	if idx := strings.Index(jsonStr, "{"); idx >= 0 {
+		if end := strings.LastIndex(jsonStr, "}"); end > idx {
+			jsonStr = jsonStr[idx : end+1]
+		}
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		log.Printf("[ws] failed to parse summary JSON for session %d: %v (raw: %s)", sessionID, err, result)
+		return
+	}
+
+	if parsed.Title == "" {
+		return
+	}
+
+	// Determine model short name for display.
+	modelShort := model
+	if i := strings.LastIndex(model, "-"); i > 0 {
+		// e.g. "claude-sonnet-4-6" → "sonnet-4"
+		parts := strings.Split(model, "-")
+		if len(parts) >= 3 {
+			modelShort = parts[1]
+		}
+	}
+
+	if err := s.planner.UpdateSessionSummary(sessionID, parsed.Title, parsed.Summary, modelShort); err != nil {
+		log.Printf("[ws] failed to save summary for session %d: %v", sessionID, err)
+		return
+	}
+
+	log.Printf("[ws] generated summary for session %d: %q / %q", sessionID, parsed.Title, parsed.Summary)
+
+	// Broadcast session.updated so all connected clients refresh the drawer.
+	data, _ := json.Marshal(map[string]any{
+		"session_id": sessionID,
+		"title":      parsed.Title,
+		"summary":    parsed.Summary,
+		"model":      modelShort,
+	})
+	s.broadcast(WSMessage{Type: "session.updated", Data: data})
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // sendWSError sends an error message back to the client.

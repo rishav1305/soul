@@ -1,0 +1,32 @@
+[
+  {
+    "id": "knowledge-qa-01",
+    "task": "knowledge_qa",
+    "prompt": "Read the following knowledge base excerpt, then answer the question below it.\n\n--- CONTEXT ---\nIn soul-os, Docker containers are managed via docker-compose and monitored by soul-heal. When a container enters an unhealthy state, the recommended restart procedure is as follows: (1) Check the container status with 'docker ps -a' to confirm the container name and current state. (2) Inspect the container logs using 'docker logs <container_name> --tail 50' to identify the failure reason before restarting. (3) If the failure is transient (e.g., network timeout, temporary resource spike), restart the container with 'docker restart <container_name>'. (4) If the container fails to restart, run 'docker-compose up -d <service_name>' from the project directory to re-create it with the current configuration. (5) After restart, verify the container returns to healthy state by running 'docker inspect <container_name>' and checking the Health.Status field. Never restart a container without checking logs first, as silent restarts can mask recurring root causes.\n--- END CONTEXT ---\n\nQuestion: What steps should you follow to restart a failing Docker container?\n\nAnswer in 3-5 sentences covering the key steps from the context.",
+    "expected_answer": "check logs before restarting",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["docker", "restart", "container", "check", "logs"]
+    }
+  },
+  {
+    "id": "knowledge-qa-02",
+    "task": "knowledge_qa",
+    "prompt": "Read the following knowledge base excerpt, then answer the question below it.\n\n--- CONTEXT ---\nsoul-soc handles CVE (Common Vulnerabilities and Exposures) scanning and remediation for soul-os infrastructure. When a new CVE is discovered that affects a package installed on a soul-os node, the following process applies: (1) soul-soc's scanner detects the vulnerable package version during its daily scan cycle and creates a CVE record in the security knowledge base. (2) The CVE is triaged by severity (Critical, High, Medium, Low) using the CVSS score from the NVD database. (3) For Critical and High CVEs, an automated patch task is queued immediately. For Medium and Low, patching is batched into the weekly maintenance window. (4) The patch is applied by running 'apt-get update && apt-get install --only-upgrade <package>' on the affected node. (5) After patching, soul-soc runs a verification scan to confirm the CVE no longer appears in the scan results. (6) All CVE records and remediation actions are logged to the security knowledge base for audit purposes. Never skip the verification scan after patching, as the package manager may install a version that is still within the vulnerable range.\n--- END CONTEXT ---\n\nQuestion: How should a newly discovered CVE be handled?\n\nAnswer in 3-5 sentences covering the key steps from the context.",
+    "expected_answer": "scan patch verify update",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["CVE", "patch", "update", "scan", "verify"]
+    }
+  },
+  {
+    "id": "knowledge-qa-03",
+    "task": "knowledge_qa",
+    "prompt": "Read the following knowledge base excerpt, then answer the question below it.\n\n--- CONTEXT ---\nsoul-os uses SQLite for several internal databases including the outreach CRM, task scheduler state, and knowledge base indexes. Backups are created nightly using SQLite's online backup API via the command 'sqlite3 <db_path> \".backup <backup_path>\"', which produces a consistent snapshot without locking the database. Backups are stored in /mnt/vault/backups/ with a date-stamped filename. To restore a database from backup, follow these steps: (1) Stop any services that have the database open to prevent write conflicts — use 'systemctl stop <service_name>' for each affected service. (2) Copy the backup file to the target path using 'cp <backup_path> <db_path>'. (3) Verify the restored database integrity by running 'sqlite3 <db_path> \"PRAGMA integrity_check;\"' — a healthy database returns 'ok'. (4) If integrity_check returns errors, do not start services — the backup itself may be corrupt. Try the previous night's backup instead. (5) Restart the services with 'systemctl start <service_name>' and confirm they connect to the database successfully by checking service logs. Always verify integrity before restarting services to avoid propagating a corrupted database into production.\n--- END CONTEXT ---\n\nQuestion: What is the procedure for restoring a database from backup?\n\nAnswer in 3-5 sentences covering the key steps from the context.",
+    "expected_answer": "backup restore verify integrity",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["backup", "restore", "sqlite", "verify", "integrity"]
+    }
+  }
+]

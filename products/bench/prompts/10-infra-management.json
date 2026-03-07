@@ -1,0 +1,32 @@
+[
+  {
+    "id": "infra-mgmt-01",
+    "task": "infra_management",
+    "prompt": "You are an infrastructure management agent for soul-os. Given an emergency type and a system snapshot, provide a diagnosis and recommended actions.\n\nEmergency type: Storage and container health alert\n\nSystem snapshot:\n{\"disk_pct\": 89, \"disk_used_gb\": 401, \"disk_total_gb\": 450, \"temp_c\": 54, \"mem_pct\": 61, \"failed_services\": [], \"docker_unhealthy\": [\"soul-gitea\"], \"docker_images_dangling\": 47, \"docker_volumes_unused\": 12}\n\nDiagnose the problem and list the recommended actions needed to resolve this situation. Be specific about what to clean up and in what order.",
+    "expected_answer": "disk cleanup prune docker",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["disk", "cleanup", "prune", "docker"]
+    }
+  },
+  {
+    "id": "infra-mgmt-02",
+    "task": "infra_management",
+    "prompt": "You are an infrastructure management agent for soul-os. Given an emergency type and a system snapshot, provide a diagnosis and recommended actions.\n\nEmergency type: Thermal emergency\n\nSystem snapshot:\n{\"disk_pct\": 52, \"temp_c\": 85, \"temp_threshold_critical_c\": 80, \"cpu_freq_mhz\": 600, \"cpu_freq_max_mhz\": 1800, \"mem_pct\": 58, \"failed_services\": [], \"docker_unhealthy\": [], \"fan_rpm\": 0, \"ambient_temp_c\": 32}\n\nThe CPU temperature has exceeded the critical threshold. The fan is not spinning. CPU frequency has dropped to 600 MHz (thermal throttling is active). Diagnose the problem and list the recommended actions to prevent hardware damage.",
+    "expected_answer": "temperature thermal throttle cool",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["temperature", "thermal", "throttle", "cool"]
+    }
+  },
+  {
+    "id": "infra-mgmt-03",
+    "task": "infra_management",
+    "prompt": "You are an infrastructure management agent for soul-os. Given an emergency type and a system snapshot, provide a diagnosis and recommended actions.\n\nEmergency type: Memory exhaustion and service failure\n\nSystem snapshot:\n{\"disk_pct\": 61, \"temp_c\": 57, \"mem_pct\": 95, \"mem_used_gb\": 15.2, \"mem_total_gb\": 16, \"swap_pct\": 88, \"failed_services\": [\"soul-os\"], \"docker_unhealthy\": [], \"top_memory_consumers\": [{\"pid\": 4821, \"name\": \"soul-os\", \"mem_pct\": 42}, {\"pid\": 3109, \"name\": \"chroma\", \"mem_pct\": 31}, {\"pid\": 2044, \"name\": \"gitea\", \"mem_pct\": 9}]}\n\nMemory usage is at 95% with swap nearly exhausted. The core soul-os service has failed. Diagnose what caused this and list the recommended actions to restore service and prevent recurrence.",
+    "expected_answer": "memory restart service kill",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["memory", "restart", "service", "kill"]
+    }
+  }
+]

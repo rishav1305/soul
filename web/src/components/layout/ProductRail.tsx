@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import type { PlannerTask, HorizontalRailPosition } from '../../lib/types.ts';
+import { useState, useRef, useEffect } from 'react';
+import type { PlannerTask, PanelPosition, DrawerLayout, ProductInfo } from '../../lib/types.ts';
 
 // Deterministic color from product name for unknown products
 const PRODUCT_COLORS: Record<string, string> = {
+  soul: 'text-soul bg-soul/10 border-soul',
   compliance: 'text-stage-validation bg-stage-validation/10 border-stage-validation',
   'compliance-go': 'text-stage-active bg-stage-active/10 border-stage-active',
   scout: 'text-stage-brainstorm bg-stage-brainstorm/10 border-stage-brainstorm',
+  mesh: 'text-stage-active bg-stage-active/10 border-stage-active',
+  bench: 'text-stage-done bg-stage-done/10 border-stage-done',
 };
 
 const FALLBACK_COLORS = [
@@ -17,8 +20,25 @@ const FALLBACK_COLORS = [
   'text-soul bg-soul/10 border-soul',
 ];
 
-function productColor(name: string): string {
+function productColor(name: string, metadata?: Map<string, ProductInfo>): string {
+  // Check hardcoded map first (keeps existing colors stable)
   if (PRODUCT_COLORS[name]) return PRODUCT_COLORS[name];
+
+  // Check API metadata for color hint
+  const meta = metadata?.get(name);
+  if (meta?.color) {
+    const colorMap: Record<string, string> = {
+      active: 'text-stage-active bg-stage-active/10 border-stage-active',
+      brainstorm: 'text-stage-brainstorm bg-stage-brainstorm/10 border-stage-brainstorm',
+      validation: 'text-stage-validation bg-stage-validation/10 border-stage-validation',
+      done: 'text-stage-done bg-stage-done/10 border-stage-done',
+      blocked: 'text-stage-blocked bg-stage-blocked/10 border-stage-blocked',
+      backlog: 'text-stage-backlog bg-stage-backlog/10 border-stage-backlog',
+    };
+    if (colorMap[meta.color]) return colorMap[meta.color];
+  }
+
+  // Fallback: hash-based color
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffff;
   return FALLBACK_COLORS[hash % FALLBACK_COLORS.length];
@@ -133,8 +153,12 @@ const PanelIcon = ({ expanded }: { expanded: boolean }) => (
 // ── Settings content (inline in panel) ──
 interface SettingsContentProps {
   onBack: () => void;
-  railPosition: HorizontalRailPosition;
-  setRailPosition: (pos: HorizontalRailPosition) => void;
+  chatPosition: PanelPosition;
+  setChatPosition: (pos: PanelPosition) => void;
+  tasksPosition: PanelPosition;
+  setTasksPosition: (pos: PanelPosition) => void;
+  drawerLayout: DrawerLayout;
+  setDrawerLayout: (v: DrawerLayout) => void;
   autoInjectContext: boolean;
   setAutoInjectContext: (v: boolean) => void;
   showContextChip: boolean;
@@ -145,10 +169,43 @@ interface SettingsContentProps {
   setInlineBadgesEnabled: (v: boolean) => void;
 }
 
+function PositionSwitch({ value, onChange, label }: {
+  value: PanelPosition;
+  onChange: (pos: PanelPosition) => void;
+  label: string;
+}) {
+  const options: PanelPosition[] = ['top', 'bottom', 'right'];
+  return (
+    <div className="space-y-1.5">
+      <div className="text-xs font-display text-fg-secondary">{label}</div>
+      <div className="flex rounded-lg border border-border-subtle overflow-hidden">
+        {options.map((pos) => (
+          <button
+            key={pos}
+            type="button"
+            onClick={() => onChange(pos)}
+            className={`flex-1 px-2 py-1.5 text-xs font-display capitalize transition-colors cursor-pointer ${
+              value === pos
+                ? 'bg-soul/15 text-soul'
+                : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+            }`}
+          >
+            {pos === 'right' ? 'Right' : pos === 'top' ? 'Top' : 'Bottom'}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsContent({
   onBack,
-  railPosition,
-  setRailPosition,
+  chatPosition,
+  setChatPosition,
+  tasksPosition,
+  setTasksPosition,
+  drawerLayout,
+  setDrawerLayout,
   autoInjectContext,
   setAutoInjectContext,
   showContextChip,
@@ -175,32 +232,47 @@ function SettingsContent({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {/* Rail Position */}
+        {/* Panel Positions */}
         <section>
           <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
-            Drawer Position
+            Panel Positions
           </h3>
-          <div className="flex flex-col gap-2">
-            {(['bottom', 'top'] as HorizontalRailPosition[]).map((pos) => (
-              <button
-                key={pos}
-                type="button"
-                onClick={() => setRailPosition(pos)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer text-left ${
-                  railPosition === pos
-                    ? 'border-soul bg-soul/10 text-soul'
-                    : 'border-border-subtle text-fg-secondary hover:border-border-default hover:text-fg'
-                }`}
-              >
-                <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  railPosition === pos ? 'border-soul' : 'border-fg-muted'
-                }`}>
-                  {railPosition === pos && <span className="w-1.5 h-1.5 rounded-full bg-soul" />}
-                </span>
-                <span className="text-sm font-display capitalize">{pos}</span>
-              </button>
-            ))}
+          <div className="space-y-3">
+            <PositionSwitch value={chatPosition} onChange={setChatPosition} label="Chat" />
+            <PositionSwitch value={tasksPosition} onChange={setTasksPosition} label="Tasks" />
           </div>
+        </section>
+
+        {/* Drawer Layout */}
+        <section>
+          <h3 className="text-[11px] font-display font-semibold uppercase tracking-widest text-fg-muted mb-3">
+            Drawer Layout
+          </h3>
+          {(() => {
+            const mixed = chatPosition !== tasksPosition && chatPosition !== 'right' && tasksPosition !== 'right';
+            const effectiveLayout = mixed ? 'independent' : drawerLayout;
+            return (
+              <div className={`flex rounded-lg border border-border-subtle overflow-hidden ${mixed ? 'opacity-50' : ''}`}>
+                {(['split', 'independent'] as DrawerLayout[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => !mixed && setDrawerLayout(mode)}
+                    className={`flex-1 px-3 py-2 text-sm font-display capitalize transition-colors ${mixed ? 'cursor-not-allowed' : 'cursor-pointer'} ${
+                      effectiveLayout === mode
+                        ? 'bg-soul/15 text-soul border-soul'
+                        : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+                    }`}
+                  >
+                    {mode === 'split' ? 'Split' : 'Independent'}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          {chatPosition !== tasksPosition && chatPosition !== 'right' && tasksPosition !== 'right' && (
+            <div className="text-[10px] text-fg-muted mt-1.5">Forced to Independent when positions differ</div>
+          )}
         </section>
 
         {/* Context Injection */}
@@ -243,14 +315,19 @@ interface ProductRailProps {
   products: string[];
   activeProduct: string | null;
   tasks: PlannerTask[];
+  productMetadata?: Map<string, ProductInfo>;
   onProductSelect: (product: string | null) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
   settingsOpen: boolean;
   onSettingsToggle: () => void;
   // Settings props (passed through)
-  railPosition: HorizontalRailPosition;
-  setRailPosition: (pos: HorizontalRailPosition) => void;
+  chatPosition: PanelPosition;
+  setChatPosition: (pos: PanelPosition) => void;
+  tasksPosition: PanelPosition;
+  setTasksPosition: (pos: PanelPosition) => void;
+  drawerLayout: DrawerLayout;
+  setDrawerLayout: (v: DrawerLayout) => void;
   autoInjectContext: boolean;
   setAutoInjectContext: (v: boolean) => void;
   showContextChip: boolean;
@@ -270,13 +347,18 @@ export default function ProductRail({
   products,
   activeProduct,
   tasks,
+  productMetadata,
   onProductSelect,
   expanded,
   onToggleExpanded,
   settingsOpen,
   onSettingsToggle,
-  railPosition,
-  setRailPosition,
+  chatPosition,
+  setChatPosition,
+  tasksPosition,
+  setTasksPosition,
+  drawerLayout,
+  setDrawerLayout,
   autoInjectContext,
   setAutoInjectContext,
   showContextChip,
@@ -286,6 +368,12 @@ export default function ProductRail({
   inlineBadgesEnabled,
   setInlineBadgesEnabled,
 }: ProductRailProps) {
+  // Scroll active product into view
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeProduct]);
+
   // Count active tasks per product
   const activeCounts: Record<string, number> = {};
   for (const t of tasks) {
@@ -306,8 +394,12 @@ export default function ProductRail({
       >
         <SettingsContent
           onBack={onSettingsToggle}
-          railPosition={railPosition}
-          setRailPosition={setRailPosition}
+          chatPosition={chatPosition}
+          setChatPosition={setChatPosition}
+          tasksPosition={tasksPosition}
+          setTasksPosition={setTasksPosition}
+          drawerLayout={drawerLayout}
+          setDrawerLayout={setDrawerLayout}
           autoInjectContext={autoInjectContext}
           setAutoInjectContext={setAutoInjectContext}
           showContextChip={showContextChip}
@@ -344,27 +436,30 @@ export default function ProductRail({
       <div className={`flex flex-col gap-1 flex-1 w-full overflow-y-auto overflow-x-hidden ${expanded ? 'px-2' : 'px-1 items-center'}`}>
         {products.map((product) => {
           const isActive = activeProduct === product;
-          const colors = productColor(product);
-          const abbr = productAbbr(product);
+          const colors = productColor(product, productMetadata);
+          const meta = productMetadata?.get(product);
+          const displayLabel = meta?.label || product;
+          const abbr = productAbbr(displayLabel);
           const count = activeCounts[product] ?? 0;
 
           if (expanded) {
             return (
               <button
                 key={product}
+                ref={isActive ? activeRef : null}
                 type="button"
-                onClick={() => { if (!isActive) onProductSelect(product); }}
-                title={product}
+                onClick={() => onProductSelect(product)}
+                title={displayLabel}
                 className={`relative flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-display font-bold transition-all cursor-pointer border-l-2 ${
                   isActive
-                    ? `${colors} border-opacity-100`
+                    ? 'text-soul bg-soul/10 border-soul'
                     : 'text-fg-secondary hover:text-fg hover:bg-elevated border-transparent'
                 }`}
               >
                 <span className="w-8 h-8 flex items-center justify-center rounded shrink-0 text-xs">
                   {abbr}
                 </span>
-                <span className="text-sm font-display font-semibold capitalize truncate">{product}</span>
+                <span className="text-sm font-display font-semibold truncate">{displayLabel}</span>
                 {count > 0 && (
                   <span className="ml-auto w-5 h-5 bg-stage-active text-deep text-[10px] font-bold rounded-full flex items-center justify-center leading-none shrink-0">
                     {count > 9 ? '9+' : count}
@@ -377,12 +472,13 @@ export default function ProductRail({
           return (
             <button
               key={product}
+              ref={isActive ? activeRef : null}
               type="button"
-              onClick={() => { if (!isActive) onProductSelect(product); }}
-              title={product}
+              onClick={() => onProductSelect(product)}
+              title={displayLabel}
               className={`relative w-10 h-10 flex items-center justify-center rounded-lg text-xs font-display font-bold transition-all cursor-pointer border-l-2 ${
                 isActive
-                  ? `${colors} border-opacity-100`
+                  ? 'text-soul bg-soul/10 border-soul'
                   : 'text-fg-secondary hover:text-fg hover:bg-elevated border-transparent'
               }`}
             >

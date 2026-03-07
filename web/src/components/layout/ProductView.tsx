@@ -7,13 +7,16 @@ import type {
   TaskFilters,
   TaskActivity,
   TaskComment,
+  ProductInfo,
 } from '../../lib/types.ts';
 import TaskPanel from '../planner/TaskPanel.tsx';
 import ScoutPanel from '../panels/ScoutPanel.tsx';
 import CompliancePanel from '../panels/CompliancePanel.tsx';
+import PlaceholderPanel from '../panels/PlaceholderPanel.tsx';
 
 interface ProductViewProps {
   activeProduct: string | null;
+  productMetadata?: Map<string, ProductInfo>;
   // TaskPanel props
   taskView: TaskView;
   gridSubView: GridSubView;
@@ -45,6 +48,7 @@ function emptyByStage(): Record<TaskStage, PlannerTask[]> {
 
 export default function ProductView({
   activeProduct,
+  productMetadata,
   taskView,
   gridSubView,
   panelWidth,
@@ -68,69 +72,56 @@ export default function ProductView({
   fetchComments,
   addComment,
 }: ProductViewProps) {
-  // ── Dedicated product dashboards ──────────────────────────────────────────
-
-  if (activeProduct === 'compliance' || activeProduct === 'compliance-go') {
-    return (
-      <div className="h-full flex flex-col">
-        <div className="glass flex items-center gap-2 px-4 h-11 shrink-0 border-b border-border-subtle">
-          <span className="font-display text-sm font-semibold text-fg">{activeProduct}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded bg-stage-validation/15 text-stage-validation font-medium">
-            Compliance
-          </span>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <CompliancePanel />
-        </div>
-      </div>
-    );
-  }
-
-  if (activeProduct === 'scout') {
-    return (
-      <div className="h-full flex flex-col">
-        <div className="glass flex items-center gap-2 px-4 h-11 shrink-0 border-b border-border-subtle">
-          <span className="font-display text-sm font-semibold text-fg">Scout</span>
-          <span className="text-[10px] px-2 py-0.5 rounded bg-stage-brainstorm/15 text-stage-brainstorm font-medium">
-            Career Intelligence
-          </span>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <ScoutPanel />
-        </div>
-      </div>
-    );
-  }
-
-  // ── Product-scoped task dashboard ─────────────────────────────────────────
-  // Any other named product gets its own TaskPanel dashboard scoped to that product.
+  // ── Panel registry — every product gets a dedicated panel ────────────────
+  // Products with real dashboards get their own component.
+  // Everything else gets PlaceholderPanel (blank) until a dashboard is built.
+  const DEDICATED_PANELS: Record<string, React.ComponentType> = {
+    // Real dashboards
+    compliance:      CompliancePanel,
+    'compliance-go': CompliancePanel,
+    scout:           ScoutPanel,
+    // Placeholders — replace each with a real panel when ready
+    soul:            PlaceholderPanel,
+    qa:              PlaceholderPanel,
+    observe:         PlaceholderPanel,
+    viz:             PlaceholderPanel,
+    bench:           PlaceholderPanel,
+    migrate:         PlaceholderPanel,
+    devops:          PlaceholderPanel,
+    analytics:       PlaceholderPanel,
+    docs:            PlaceholderPanel,
+    api:             PlaceholderPanel,
+    dba:             PlaceholderPanel,
+    costops:         PlaceholderPanel,
+    mesh:            PlaceholderPanel,
+    dataeng:         PlaceholderPanel,
+    stocks:          PlaceholderPanel,
+  };
 
   if (activeProduct) {
-    return (
-      <ProductTaskDashboard
-        product={activeProduct}
-        tasks={tasks}
-        taskView={taskView}
-        gridSubView={gridSubView}
-        panelWidth={panelWidth}
-        filters={filters}
-        setTaskView={setTaskView}
-        setGridSubView={setGridSubView}
-        setPanelWidth={setPanelWidth}
-        setFilters={setFilters}
-        products={products}
-        loading={loading}
-        createTask={createTask}
-        updateTask={updateTask}
-        moveTask={moveTask}
-        deleteTask={deleteTask}
-        taskActivities={taskActivities}
-        taskStreams={taskStreams}
-        taskComments={taskComments}
-        fetchComments={fetchComments}
-        addComment={addComment}
-      />
-    );
+    const Panel = DEDICATED_PANELS[activeProduct];
+    if (Panel) {
+      const meta = productMetadata?.get(activeProduct);
+      // PlaceholderPanel renders null — skip the chrome wrapper entirely
+      if (Panel === PlaceholderPanel) return null;
+      return (
+        <div className="h-full flex flex-col">
+          <div className="glass flex items-center gap-2 px-4 h-11 shrink-0 border-b border-border-subtle">
+            <span className="font-display text-sm font-semibold text-fg">{meta?.label || activeProduct}</span>
+            {meta?.label && meta.label !== activeProduct && (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-soul/10 text-soul font-medium">
+                {meta.label}
+              </span>
+            )}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <Panel />
+          </div>
+        </div>
+      );
+    }
+    // Unknown product not in registry — render blank
+    return null;
   }
 
   // ── Global "All Tasks" dashboard (activeProduct === null) ─────────────────

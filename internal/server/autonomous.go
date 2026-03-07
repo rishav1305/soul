@@ -526,6 +526,34 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow s
 		b.WriteString("Use `task_update` to move the task to `validation` with your summary. If blocked, move to `blocked` with the reason.\n")
 	}
 
+	// Inject quality gate for UI tasks.
+	if isUITask(task.Title, task.Description) {
+		b.WriteString("\n## UI Quality Standards (pipeline verifies — you must implement correctly)\n")
+		b.WriteString("This task affects the UI. The pipeline runs E2E verification AFTER your changes.\n")
+		b.WriteString("To pass verification, your implementation MUST handle:\n\n")
+		b.WriteString("1. **All state permutations**: If a component has toggle states, handle ALL combinations in the code.\n")
+		b.WriteString("   - Expanded/collapsed, open/closed — every combination must render correctly.\n")
+		b.WriteString("   - Don't assume only the default state will be tested.\n")
+		b.WriteString("2. **Visual quality**: Proper alignment, spacing, sizing, borders.\n")
+		b.WriteString("   - Use consistent Tailwind classes matching the existing theme (bg-surface, border-border-subtle, etc.).\n")
+		b.WriteString("   - If it would look 'stuck on' or out of place, it's wrong — fix before submitting.\n")
+		b.WriteString("3. **Interaction correctness**: Click handlers wired, hover states set, transitions smooth.\n")
+		b.WriteString("   - Every button/clickable MUST have an onClick and a cursor-pointer class.\n")
+		b.WriteString("4. **Edge cases**: Empty state, overflow with many items, min/max width constraints.\n")
+		b.WriteString("5. **Regression prevention**: Don't break existing layout or interactions when adding new ones.\n\n")
+	}
+
+	// Inject incremental approach for complex tasks.
+	if isComplexTask(task.Title, task.Description) {
+		b.WriteString("\n## Incremental Implementation\n")
+		b.WriteString("This looks like a complex task. Work incrementally:\n\n")
+		b.WriteString("1. **One capability at a time**: Add ONE thing, verify it works, then add the next.\n")
+		b.WriteString("2. **Build on confirmed state**: Don't build feature B until feature A is verified working.\n")
+		b.WriteString("3. **Wire before build**: Add settings/toggles first (wired to existing behavior), then implement new behavior.\n")
+		b.WriteString("4. **Post progress**: Use `task_comment` after each verified increment so the board shows real progress.\n")
+		b.WriteString("5. **If something breaks, stop and fix it** before adding more changes on top.\n\n")
+	}
+
 	b.WriteString("\n## Rules\n")
 	b.WriteString("- Be precise. Make minimal changes. Do not refactor unrelated code.\n")
 	b.WriteString("- Do NOT run git commands — the system handles commits and merges automatically.\n")
@@ -600,6 +628,44 @@ func findRelevantFiles(taskRoot, title, description string) map[string]string {
 	}
 
 	return results
+}
+
+// isUITask returns true if the task likely involves frontend/UI changes.
+func isUITask(title, description string) bool {
+	text := strings.ToLower(title + " " + description)
+	uiKW := []string{
+		"button", "panel", "layout", "sidebar", "drawer", "rail", "modal",
+		"dialog", "form", "input", "dropdown", "menu", "navbar", "header",
+		"footer", "card", "grid", "table", "list", "tab", "icon", "badge",
+		"tooltip", "toast", "notification", "style", "css", "tailwind",
+		"component", "view", "page", "screen", "ui", "ux", "frontend",
+		"expand", "collapse", "toggle", "resize", "responsive", "theme",
+		".tsx", ".css", "vite", "react",
+	}
+	for _, kw := range uiKW {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// isComplexTask returns true if the task touches multiple interacting systems.
+func isComplexTask(title, description string) bool {
+	text := strings.ToLower(title + " " + description)
+	complexKW := []string{
+		"layout", "refactor", "redesign", "multiple", "panel", "position",
+		"flexible", "configurable", "system", "overhaul", "architecture",
+		"split", "independent", "decouple", "wire", "integrate",
+	}
+	matches := 0
+	for _, kw := range complexKW {
+		if strings.Contains(text, kw) {
+			matches++
+		}
+	}
+	// Need at least 2 keyword matches to be considered complex.
+	return matches >= 2
 }
 
 // classifyWorkflow auto-classifies a task as micro/quick/full based on keywords.

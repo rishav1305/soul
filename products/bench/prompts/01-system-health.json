@@ -1,0 +1,35 @@
+[
+  {
+    "id": "system-health-01",
+    "task": "system_health",
+    "prompt": "You are a system health monitor for soul-os. Analyze the following system snapshot and respond with a JSON object containing exactly these keys: 'findings' (string describing what you observed), 'severity' (one of: low, medium, high, critical), and 'recommended_actions' (string with comma-separated action items).\n\nSystem snapshot:\n{\"disk_pct\": 45, \"temp_c\": 52, \"mem_pct\": 38, \"failed_services\": [], \"docker_unhealthy\": []}\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"severity": "low"},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["findings", "severity", "recommended_actions"],
+      "field_checks": {"severity": ["low", "medium", "high", "critical"]}
+    }
+  },
+  {
+    "id": "system-health-02",
+    "task": "system_health",
+    "prompt": "You are a system health monitor for soul-os. Analyze the following system snapshot and respond with a JSON object containing exactly these keys: 'findings' (string describing what you observed), 'severity' (one of: low, medium, high, critical), and 'recommended_actions' (string with comma-separated action items).\n\nSystem snapshot:\n{\"disk_pct\": 92, \"temp_c\": 58, \"mem_pct\": 62, \"failed_services\": [], \"docker_unhealthy\": [\"soul-vaultwarden\"]}\n\nDisk usage is critically high and the Vaultwarden container is unhealthy. Respond with only the JSON object, no explanation.",
+    "expected_answer": {"severity": "high"},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["findings", "severity", "recommended_actions"],
+      "field_checks": {"severity": ["low", "medium", "high", "critical"]}
+    }
+  },
+  {
+    "id": "system-health-03",
+    "task": "system_health",
+    "prompt": "You are a system health monitor for soul-os. Analyze the following system snapshot and respond with a JSON object containing exactly these keys: 'findings' (string describing what you observed), 'severity' (one of: low, medium, high, critical), and 'recommended_actions' (string with comma-separated action items).\n\nSystem snapshot:\n{\"disk_pct\": 55, \"temp_c\": 85, \"mem_pct\": 95, \"failed_services\": [\"soul-os\"], \"docker_unhealthy\": []}\n\nMemory is nearly exhausted, CPU temperature is dangerously high, and the core soul-os service has failed. Respond with only the JSON object, no explanation.",
+    "expected_answer": {"severity": "critical"},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["findings", "severity", "recommended_actions"],
+      "field_checks": {"severity": ["low", "medium", "high", "critical"]}
+    }
+  }
+]

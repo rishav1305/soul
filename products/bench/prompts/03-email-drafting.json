@@ -1,0 +1,32 @@
+[
+  {
+    "id": "email-draft-01",
+    "task": "email_drafting",
+    "prompt": "You are a B2B outreach copywriter. Draft a cold outreach email using the details below. Respond with a JSON object containing exactly two keys: 'subject' (email subject line) and 'body' (email body text). Keep the body under 150 words. Include a specific observation tied to their Series B news, a concrete value proposition, and a low-pressure CTA. No emojis. No fluff.\n\nTemplate context:\n- Sender: Rishav Chatterjee, AI Systems Architect\n- Product: soul-outreach — AI-powered B2B email pipeline\n- Campaign: VP Engineering outreach — Series B companies\n\nContact details:\n- Name: Marcus Chen\n- Title: VP Engineering\n- Company: DataFlow Inc\n- Industry: Data Infrastructure\n- Recent news: DataFlow Inc raised $42M Series B in January 2026 to expand their real-time data pipeline product\n- LinkedIn headline: 'Building the data infrastructure layer for the modern enterprise'\n- Company size: ~120 employees\n\nEnrichment signals:\n- Likely scaling engineering team post-funding\n- Probable pain: manual outreach to enterprise prospects at scale\n- Hook: Series B often triggers aggressive outbound sales hiring and tooling\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"subject": "", "body": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["subject", "body"]
+    }
+  },
+  {
+    "id": "email-draft-02",
+    "task": "email_drafting",
+    "prompt": "You are a B2B outreach copywriter. Draft a follow-up email to a contact who has not responded to an initial outreach email sent 10 days ago. Use a different angle — do not repeat the original pitch. Respond with a JSON object containing exactly two keys: 'subject' (email subject line, use Re: prefix) and 'body' (email body text). Keep the body under 150 words. Reference the prior email briefly, offer a new insight or resource, and make the CTA even lower pressure (e.g., a yes/no question). No emojis.\n\nTemplate context:\n- Sender: Rishav Chatterjee, AI Systems Architect\n- Product: soul-outreach — AI-powered B2B email pipeline\n- Initial email angle: DataFlow's Series B growth and scaling outbound\n- Days since initial email: 10\n\nContact details:\n- Name: Marcus Chen\n- Title: VP Engineering\n- Company: DataFlow Inc\n- Original outreach sent: 2026-02-13\n\nNew angle for follow-up:\n- Share a brief insight: most post-Series-B engineering orgs find their sales-dev toolchain becomes the bottleneck within 6 months of funding\n- Offer: a one-page breakdown of how soul-outreach's pipeline handles enrichment + drafting at scale\n- CTA: ask if this is even a priority for them right now (yes/no framing)\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"subject": "", "body": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["subject", "body"]
+    }
+  },
+  {
+    "id": "email-draft-03",
+    "task": "email_drafting",
+    "prompt": "You are a B2B outreach copywriter. Draft a technical cold outreach email targeting a Data Engineering lead. This is a technical peer-to-peer email — not a sales pitch. Tone should be practitioner-to-practitioner. Respond with a JSON object containing exactly two keys: 'subject' (email subject line) and 'body' (email body text). Keep the body under 150 words. Reference a specific technical pain point, mention a concrete implementation detail, and propose a brief technical conversation as the CTA. No emojis. No generic phrases like 'hope this finds you well'.\n\nTemplate context:\n- Sender: Rishav Chatterjee, AI Systems Architect, 6 years data engineering\n- Product: soul-outreach — open-source pipeline with structured enrichment + AI drafting\n- Campaign: Data Engineering leads — pipeline observability angle\n\nContact details:\n- Name: Priya Nair\n- Title: Head of Data Engineering\n- Company: Meridian Analytics\n- Industry: Business Intelligence / Analytics\n- Company size: ~300 employees\n- LinkedIn activity: Recently posted about Airflow DAG reliability issues and the cost of silent pipeline failures\n\nEnrichment signals:\n- Active pain: pipeline observability and silent failure detection\n- Technical stack signals: likely Airflow, dbt, Snowflake or Redshift\n- Hook: her LinkedIn post shows active interest in improving monitoring — concrete technical angle available\n\nRespond with only the JSON object, no explanation.",
+    "expected_answer": {"subject": "", "body": ""},
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["subject", "body"]
+    }
+  }
+]

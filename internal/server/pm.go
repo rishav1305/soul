@@ -282,7 +282,22 @@ func (pm *PMService) enrichDescription(task planner.Task) {
 
 func (pm *PMService) decompose(task planner.Task) {
 	prompt := fmt.Sprintf(
-		"Break this task into 2-5 focused subtasks. Each subtask should be completable in one autonomous agent session (1-3 files, under 30 minutes).\n\nTask: %s\nDescription: %s\n\nReturn a JSON array only, no markdown fences, no preamble:\n[{\"title\": \"...\", \"description\": \"...\", \"priority\": 1}]",
+		`Break this task into 2-5 focused subtasks using INCREMENTAL DECOMPOSITION:
+
+Rules:
+- Each subtask adds exactly ONE new capability that is independently testable.
+- Subtasks MUST be ordered sequentially — each builds on the previous one's confirmed working state.
+- First subtask should wire settings/toggles to existing behavior (change nothing visible yet).
+- Middle subtasks add behavior one piece at a time (e.g., one position, one panel, one interaction).
+- Last subtask should be the final polish and integration.
+- Each subtask must be completable in one autonomous agent session (1-3 files, under 30 minutes).
+- For UI tasks: include "verify with e2e" in each subtask description.
+
+Task: %s
+Description: %s
+
+Return a JSON array only, no markdown fences, no preamble:
+[{"title": "...", "description": "...", "priority": 1}]`,
 		task.Title, task.Description)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

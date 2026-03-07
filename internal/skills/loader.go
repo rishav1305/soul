@@ -17,7 +17,7 @@ type Store struct {
 	skills map[string]Skill
 }
 
-// Load scans ~/.claude/plugins/cache for SKILL.md files and indexes them.
+// Load scans ~/.claude/plugins/cache and ~/.claude/skills for SKILL.md files and indexes them.
 func Load() *Store {
 	store := &Store{skills: make(map[string]Skill)}
 
@@ -28,12 +28,14 @@ func Load() *Store {
 
 	cacheDir := filepath.Join(home, ".claude", "plugins", "cache")
 
-	// Support two layout depths:
+	// Support three layout depths:
 	//   cache/<plugin>/<version>/skills/<name>/SKILL.md  (original spec)
 	//   cache/<marketplace>/<plugin>/<version>/skills/<name>/SKILL.md  (actual layout)
+	//   ~/.claude/skills/<name>/SKILL.md  (personal skills)
 	patterns := []string{
 		filepath.Join(cacheDir, "*", "*", "skills", "*", "SKILL.md"),
 		filepath.Join(cacheDir, "*", "*", "*", "skills", "*", "SKILL.md"),
+		filepath.Join(home, ".claude", "skills", "*", "SKILL.md"),
 	}
 
 	var matches []string

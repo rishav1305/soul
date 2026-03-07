@@ -7,11 +7,14 @@ import (
 
 // ChatSession represents a chat session record.
 type ChatSession struct {
-	ID        int64  `json:"id"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           int64  `json:"id"`
+	Title        string `json:"title"`
+	Summary      string `json:"summary"`
+	Model        string `json:"model"`
+	Status       string `json:"status"`
+	MessageCount int    `json:"message_count"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // ChatMessageRecord represents a single chat message stored in the database.
@@ -46,10 +49,29 @@ func (s *Store) CreateSession(title string) (ChatSession, error) {
 	}, nil
 }
 
+// UpdateSessionSummary updates the title, summary, and model for a session.
+func (s *Store) UpdateSessionSummary(id int64, title, summary, model string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.Exec(
+		`UPDATE chat_sessions SET title = ?, summary = ?, model = ?, updated_at = ? WHERE id = ?`,
+		title, summary, model, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update session summary: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ListSessions returns the most recent sessions, ordered by updated_at DESC.
 func (s *Store) ListSessions(limit int) ([]ChatSession, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, status, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC LIMIT ?`,
+		`SELECT s.id, s.title, s.summary, s.model, s.status, s.created_at, s.updated_at,
+		        (SELECT COUNT(*) FROM chat_messages WHERE session_id = s.id) AS message_count
+		 FROM chat_sessions s ORDER BY s.updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -60,7 +82,7 @@ func (s *Store) ListSessions(limit int) ([]ChatSession, error) {
 	var sessions []ChatSession
 	for rows.Next() {
 		var cs ChatSession
-		if err := rows.Scan(&cs.ID, &cs.Title, &cs.Status, &cs.CreatedAt, &cs.UpdatedAt); err != nil {
+		if err := rows.Scan(&cs.ID, &cs.Title, &cs.Summary, &cs.Model, &cs.Status, &cs.CreatedAt, &cs.UpdatedAt, &cs.MessageCount); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		sessions = append(sessions, cs)
@@ -88,6 +110,48 @@ func (s *Store) GetSessionMessages(sessionID int64) ([]ChatMessageRecord, error)
 		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
+}
+
+// InsertMessage inserts a chat message and returns the new row ID.
+func (s *Store) InsertMessage(sessionID int64, role, content string) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.Exec(
+		`INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)`,
+		sessionID, role, content, now,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert message: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	// Update session timestamp.
+	if role == "user" {
+		title := content
+		if len(title) > 100 {
+			title = title[:100]
+		}
+		_, _ = s.db.Exec(
+			`UPDATE chat_sessions SET updated_at = ?, title = CASE WHEN title = '' THEN ? ELSE title END WHERE id = ?`,
+			now, title, sessionID,
+		)
+	} else {
+		_, _ = s.db.Exec(
+			`UPDATE chat_sessions SET updated_at = ? WHERE id = ?`,
+			now, sessionID,
+		)
+	}
+	return id, nil
+}
+
+// UpdateMessageContent updates the content of an existing message by ID.
+func (s *Store) UpdateMessageContent(id int64, content string) error {
+	_, err := s.db.Exec(`UPDATE chat_messages SET content = ? WHERE id = ?`, content, id)
+	if err != nil {
+		return fmt.Errorf("update message content: %w", err)
+	}
+	return nil
 }
 
 // AddMessage inserts a chat message and updates the session's updated_at timestamp.

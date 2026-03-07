@@ -43,7 +43,8 @@ type Server struct {
 	webFS          fs.FS            // embedded SPA files (nil = use placeholder)
 	minioClient    *MinIOClient     // optional MinIO client for screenshots/attachments
 
-	skillStore *skills.Store // loaded from ~/.claude/plugins/cache
+	skillStore     *skills.Store          // loaded from ~/.claude/plugins/cache
+	productConfigs []config.ProductConfig // from products.yaml
 
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
@@ -99,7 +100,7 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 
 // NewWithWebFS creates a Server that serves the SPA from the given embedded FS.
 // webDist should be the top-level embed.FS containing "web/dist/".
-func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerStore *planner.Store, webDist embed.FS) *Server {
+func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerStore *planner.Store, webDist embed.FS, productConfigs []config.ProductConfig) *Server {
 	mux := http.NewServeMux()
 	// Extract web/dist/ subtree from the embed.FS
 	var webFS fs.FS
@@ -118,16 +119,17 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		log.Printf("WARNING: worktree setup failed: %v", wmErr)
 	}
 	s := &Server{
-		cfg:         cfg,
-		mux:         mux,
-		sessions:    sessions,
-		products:    pm,
-		ai:          aiClient,
-		planner:     plannerStore,
-		projectRoot: projectRoot,
-		worktrees:   wm,
-		webFS:       webFS,
-		wsClients:   make(map[*websocket.Conn]context.Context),
+		cfg:            cfg,
+		mux:            mux,
+		sessions:       sessions,
+		products:       pm,
+		ai:             aiClient,
+		planner:        plannerStore,
+		projectRoot:    projectRoot,
+		worktrees:      wm,
+		webFS:          webFS,
+		productConfigs: productConfigs,
+		wsClients:      make(map[*websocket.Conn]context.Context),
 	}
 	s.skillStore = skills.Load()
 	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())

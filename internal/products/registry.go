@@ -60,6 +60,22 @@ func (r *Registry) AllTools() []ToolEntry {
 	return entries
 }
 
+// Names returns all registered product names.
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.manifests))
+	for name := range r.manifests {
+		names = append(names, name)
+	}
+	return names
+}
+
+// GetManifest returns the manifest for a product (exported alias for Get).
+func (r *Registry) GetManifest(name string) (*soulv1.Manifest, bool) {
+	return r.Get(name)
+}
+
 // FindTool looks up a tool by its qualified name (product__tool, using double
 // underscore as separator). Returns the ToolEntry and whether the tool was found.
 func (r *Registry) FindTool(qualifiedName string) (ToolEntry, bool) {

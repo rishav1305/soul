@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './useWebSocket.ts';
 import { uuid } from '../lib/api.ts';
-import type { ChatMessage, ToolCallMessage, WSMessage, SendOptions } from '../lib/types.ts';
+import type { ChatMessage, ToolCallMessage, WSMessage, SendOptions, TokenUsage } from '../lib/types.ts';
 
 export function useChat() {
   const { send, onMessage, connected } = useWebSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   // DB integer session ID — null means no session created yet
   const [sessionId, setSessionId] = useState<number | null>(null);
   // Keep a ref for stable access in callbacks without triggering re-renders
   const sessionIdRef = useRef<number | null>(null);
   const isStreamingRef = useRef(false);
+  const lastModelRef = useRef<string | undefined>(undefined);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -58,9 +60,19 @@ export function useChat() {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant') {
+              // If the last assistant message has tool calls and content that
+              // doesn't already end with a newline, we're at the seam between
+              // tool calls and post-tool text. Insert a paragraph break so the
+              // text doesn't run onto the preceding content (e.g. "Now:Binary").
+              const atSeam =
+                last.toolCalls &&
+                last.toolCalls.length > 0 &&
+                last.content.length > 0 &&
+                !last.content.endsWith('\n');
+              const prefix = atSeam ? '\n\n' : '';
               return [
                 ...prev.slice(0, -1),
-                { ...last, content: last.content + token },
+                { ...last, content: last.content + prefix + token },
               ];
             }
             // Create new assistant message if none exists
@@ -72,6 +84,7 @@ export function useChat() {
                 content: token,
                 toolCalls: [],
                 timestamp: new Date(),
+                model: lastModelRef.current,
               },
             ];
           });
@@ -98,6 +111,7 @@ export function useChat() {
                 thinking: token,
                 toolCalls: [],
                 timestamp: new Date(),
+                model: lastModelRef.current,
               },
             ];
           });
@@ -105,6 +119,14 @@ export function useChat() {
         }
 
         case 'chat.done': {
+          const data = msg.data as { input_tokens?: number; output_tokens?: number; context_pct?: number } | undefined;
+          if (data?.input_tokens || data?.output_tokens) {
+            setTokenUsage({
+              inputTokens: data.input_tokens ?? 0,
+              outputTokens: data.output_tokens ?? 0,
+              contextPct: data.context_pct ?? 0,
+            });
+          }
           setIsStreaming(false);
           break;
         }
@@ -218,14 +240,17 @@ export function useChat() {
 
   const sendMessage = useCallback(
     (content: string, options?: SendOptions) => {
+      lastModelRef.current = options?.model;
       const userMessage: ChatMessage = {
         id: uuid(),
         role: 'user',
         content,
         timestamp: new Date(),
+        model: options?.model,
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
+      setTokenUsage(null);
 
       send({
         type: 'chat.message',
@@ -239,7 +264,34 @@ export function useChat() {
     [send],
   );
 
-  return { messages, setMessages, sendMessage, isStreaming, connected, sessionId, setSessionId };
+  const retryFromMessage = useCallback(
+    (messageId: string) => {
+      const msg = messages.find((m) => m.id === messageId && m.role === 'user');
+      if (!msg) return;
+      const idx = messages.indexOf(msg);
+      setMessages(messages.slice(0, idx));
+      setTimeout(() => sendMessage(msg.content), 0);
+    },
+    [messages, sendMessage],
+  );
+
+  const editMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      const idx = messages.findIndex((m) => m.id === messageId && m.role === 'user');
+      if (idx === -1) return;
+      setMessages(messages.slice(0, idx));
+      setTimeout(() => sendMessage(newContent), 0);
+    },
+    [messages, sendMessage],
+  );
+
+  const stopStreaming = useCallback(() => {
+    if (!isStreamingRef.current) return;
+    send({ type: 'chat.stop' });
+    setIsStreaming(false);
+  }, [send]);
+
+  return { messages, setMessages, sendMessage, isStreaming, connected, sessionId, setSessionId, tokenUsage, retryFromMessage, editMessage, stopStreaming };
 }
 
 function updateAssistantToolCall(

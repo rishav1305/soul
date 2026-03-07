@@ -1,0 +1,23 @@
+[
+  {
+    "id": "reasoning-01",
+    "task": "reasoning",
+    "prompt": "A farmer has 17 sheep. All but 9 die. How many are left? Think step by step, then give the final answer as a single number.",
+    "expected_answer": "9",
+    "scoring": "exact_match_number"
+  },
+  {
+    "id": "code-01",
+    "task": "code",
+    "prompt": "Write a Python function called `is_palindrome` that takes a string and returns True if it is a palindrome (ignoring case and spaces), False otherwise. Include a docstring. Output only the function, no explanation.",
+    "expected_answer": "def is_palindrome",
+    "scoring": "contains_function"
+  },
+  {
+    "id": "classification-01",
+    "task": "classification",
+    "prompt": "Classify this email as exactly one of: SPAM or NOT_SPAM. Reply with only the label, nothing else.\n\nEmail: \"Congratulations! You've won a free iPhone 15 Pro! Click here immediately to claim your prize before it expires. Limited time offer!\"",
+    "expected_answer": "SPAM",
+    "scoring": "exact_match_label"
+  }
+]

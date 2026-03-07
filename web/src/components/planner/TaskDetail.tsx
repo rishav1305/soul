@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { PlannerTask, TaskStage, TaskActivity, TaskComment } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskActivity, TaskComment, ProductInfo } from '../../lib/types.ts';
 
 function parseMetadata(meta: string): Record<string, unknown> {
   try { return meta ? JSON.parse(meta) : {}; } catch { return {}; }
@@ -52,12 +52,13 @@ interface TaskDetailProps {
   activities?: TaskActivity[];
   streamContent?: string;
   products?: string[];
+  productMetadata?: Map<string, ProductInfo>;
   comments?: TaskComment[];
   onFetchComments?: (id: number) => Promise<any>;
   onAddComment?: (id: number, body: string) => Promise<TaskComment>;
 }
 
-export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [], comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
+export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, activities = [], streamContent = '', products = [], productMetadata, comments = [], onFetchComments, onAddComment }: TaskDetailProps) {
   const meta = parseMetadata(task.metadata);
   const [autonomous, setAutonomous] = useState(!!meta.autonomous);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -341,7 +342,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                       <option value="" className="bg-surface text-fg">No product</option>
                       {productOptions.map((p) => (
                         <option key={p} value={p} className="bg-surface text-fg">
-                          {p.charAt(0).toUpperCase() + p.slice(1)}
+                          {productMetadata?.get(p)?.label ?? (p.charAt(0).toUpperCase() + p.slice(1))}
                         </option>
                       ))}
                     </select>

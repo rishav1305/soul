@@ -7,8 +7,6 @@ interface SoulPanelProps {
   onSessionSelect: (id: number) => void;
   onNewChat: () => void;
   connected: boolean;
-  scoutOpen?: boolean;
-  onScoutToggle?: () => void;
 }
 
 export default function SoulPanel({
@@ -18,8 +16,6 @@ export default function SoulPanel({
   onSessionSelect,
   onNewChat,
   connected,
-  scoutOpen,
-  onScoutToggle,
 }: SoulPanelProps) {
   return (
     <div className="w-72 h-full bg-surface border-r border-border-subtle flex flex-col shrink-0">
@@ -77,25 +73,6 @@ export default function SoulPanel({
             {s.title || `Session ${s.id}`}
           </button>
         ))}
-      </div>
-
-      {/* Scout toggle */}
-      <div className="px-3 pb-2">
-        <button
-          type="button"
-          onClick={onScoutToggle}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-            scoutOpen
-              ? 'bg-soul/10 text-soul'
-              : 'text-fg-secondary hover:bg-elevated/50 hover:text-fg'
-          }`}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="8" cy="6" r="4" />
-            <path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5" />
-          </svg>
-          Scout
-        </button>
       </div>
 
       {/* Footer */}

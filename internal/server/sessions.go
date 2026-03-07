@@ -37,7 +37,7 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := s.planner.ListSessions(10)
+	sessions, err := s.planner.ListSessions(30)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to list sessions: %v", err)})
 		return

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "task-planning-01",
+    "task": "task_planning",
+    "prompt": "You are a task dispatcher for soul-os. Given an agent roster and a list of unassigned tasks, assign each task to the most suitable agent based on the agent's description and task types.\n\nAgent roster:\n[\n  {\"name\": \"system_agent\", \"description\": \"Monitors system health, runs diagnostics, and performs remediation actions.\", \"task_types\": [\"health_check\", \"disk_cleanup\", \"service_restart\"]},\n  {\"name\": \"knowledge_agent\", \"description\": \"Manages the knowledge base: ingests, deduplicates, and consolidates documents.\", \"task_types\": [\"kb_ingest\", \"kb_consolidate\", \"kb_search\"]},\n  {\"name\": \"outreach_copywriter\", \"description\": \"Drafts and refines outbound email campaigns for leads and prospects.\", \"task_types\": [\"draft_email\", \"review_email\", \"personalize_email\"]}\n]\n\nUnassigned tasks:\n[\n  {\"task_id\": 1, \"description\": \"Run a system health check and report disk usage\"},\n  {\"task_id\": 2, \"description\": \"Consolidate duplicate entries in the knowledge base\"},\n  {\"task_id\": 3, \"description\": \"Draft cold outreach emails for 10 new leads\"}\n]\n\nRespond with only a JSON array where each element has exactly two keys: 'task_id' (integer) and 'agent' (string matching an agent name from the roster). Assign every task. No explanation.",
+    "expected_answer": [
+      {"task_id": 1, "agent": "system_agent"},
+      {"task_id": 2, "agent": "knowledge_agent"},
+      {"task_id": 3, "agent": "outreach_copywriter"}
+    ],
+    "scoring": "json_schema",
+    "scoring_config": {
+      "is_array": true,
+      "required_keys": ["task_id", "agent"]
+    }
+  },
+  {
+    "id": "task-planning-02",
+    "task": "task_planning",
+    "prompt": "You are a task dispatcher for soul-os. Given an agent roster and a list of unassigned tasks, assign each task to the most suitable agent. Not all agents need to be assigned a task.\n\nAgent roster:\n[\n  {\"name\": \"system_agent\", \"description\": \"Monitors system health, runs diagnostics, and performs remediation actions.\", \"task_types\": [\"health_check\", \"disk_cleanup\", \"service_restart\"]},\n  {\"name\": \"knowledge_agent\", \"description\": \"Manages the knowledge base: ingests, deduplicates, and consolidates documents.\", \"task_types\": [\"kb_ingest\", \"kb_consolidate\", \"kb_search\"]},\n  {\"name\": \"outreach_copywriter\", \"description\": \"Drafts and refines outbound email campaigns for leads and prospects.\", \"task_types\": [\"draft_email\", \"review_email\", \"personalize_email\"]},\n  {\"name\": \"scheduler_agent\", \"description\": \"Manages cron jobs, task queues, and scheduled pipeline runs.\", \"task_types\": [\"schedule_job\", \"cancel_job\", \"list_jobs\"]}\n]\n\nUnassigned tasks:\n[\n  {\"task_id\": 10, \"description\": \"Restart the soul-os service that failed overnight\"},\n  {\"task_id\": 11, \"description\": \"Ingest 50 new research documents into the knowledge base\"}\n]\n\nRespond with only a JSON array where each element has exactly two keys: 'task_id' (integer) and 'agent' (string matching an agent name from the roster). Assign every task. Agents with no tasks are simply omitted from the array. No explanation.",
+    "expected_answer": [
+      {"task_id": 10, "agent": "system_agent"},
+      {"task_id": 11, "agent": "knowledge_agent"}
+    ],
+    "scoring": "json_schema",
+    "scoring_config": {
+      "is_array": true,
+      "required_keys": ["task_id", "agent"]
+    }
+  },
+  {
+    "id": "task-planning-03",
+    "task": "task_planning",
+    "prompt": "You are a task dispatcher for soul-os. Given an agent roster and a list of unassigned tasks, assign each task to the most suitable agent. Multiple tasks may be assigned to the same agent.\n\nAgent roster:\n[\n  {\"name\": \"system_agent\", \"description\": \"Monitors system health, runs diagnostics, and performs remediation actions.\", \"task_types\": [\"health_check\", \"disk_cleanup\", \"service_restart\"]},\n  {\"name\": \"outreach_copywriter\", \"description\": \"Drafts and refines outbound email campaigns for leads and prospects.\", \"task_types\": [\"draft_email\", \"review_email\", \"personalize_email\"]}\n]\n\nUnassigned tasks:\n[\n  {\"task_id\": 20, \"description\": \"Draft a cold email for lead Alice Chen at TechCorp\"},\n  {\"task_id\": 21, \"description\": \"Prune unused Docker images to free up disk space\"},\n  {\"task_id\": 22, \"description\": \"Personalize the follow-up email template for lead Bob Patel\"},\n  {\"task_id\": 23, \"description\": \"Check CPU temperature and restart throttled services\"}\n]\n\nRespond with only a JSON array where each element has exactly two keys: 'task_id' (integer) and 'agent' (string matching an agent name from the roster). Assign every task. No explanation.",
+    "expected_answer": [
+      {"task_id": 20, "agent": "outreach_copywriter"},
+      {"task_id": 21, "agent": "system_agent"},
+      {"task_id": 22, "agent": "outreach_copywriter"},
+      {"task_id": 23, "agent": "system_agent"}
+    ],
+    "scoring": "json_schema",
+    "scoring_config": {
+      "is_array": true,
+      "required_keys": ["task_id", "agent"]
+    }
+  }
+]

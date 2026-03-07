@@ -8,6 +8,7 @@ import type {
   TaskActivity,
   TaskComment,
   HorizontalRailTab,
+  DrawerLayout,
   ChatSession,
   SendOptions,
 } from '../../lib/types.ts';
@@ -42,48 +43,47 @@ const STAGE_COLORS: Record<TaskStage, string> = {
   done: 'bg-stage-done/15 text-stage-done',
 };
 
-// ── Vertical split divider ──
+// ── Split divider (vertical or horizontal) ──
 interface SplitDividerProps {
   onSplitChange: (pct: number) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  direction?: 'vertical' | 'horizontal';
 }
 
-function SplitDivider({ onSplitChange, containerRef }: SplitDividerProps) {
-  const dragRef = useRef<{ startX: number; startPct: number } | null>(null);
-
+function SplitDivider({ onSplitChange, containerRef, direction = 'vertical' }: SplitDividerProps) {
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const container = containerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const currentPct = ((e.clientX - rect.left) / rect.width) * 100;
-    dragRef.current = { startX: e.clientX, startPct: currentPct };
 
     const onMove = (me: MouseEvent) => {
-      if (!dragRef.current || !container) return;
+      if (!container) return;
       const r = container.getBoundingClientRect();
-      const pct = ((me.clientX - r.left) / r.width) * 100;
+      const pct = direction === 'vertical'
+        ? ((me.clientX - r.left) / r.width) * 100
+        : ((me.clientY - r.top) / r.height) * 100;
       onSplitChange(Math.round(Math.min(80, Math.max(30, pct))));
     };
 
     const onUp = () => {
-      dragRef.current = null;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [onSplitChange, containerRef]);
+  }, [onSplitChange, containerRef, direction]);
+
+  const isVert = direction === 'vertical';
 
   return (
     <div
       onMouseDown={onMouseDown}
-      className="w-1 self-stretch cursor-col-resize shrink-0 group relative z-10"
+      className={`${isVert ? 'w-1 self-stretch cursor-col-resize' : 'h-1 w-full cursor-row-resize'} shrink-0 group relative z-10`}
       title="Drag to resize panels"
     >
-      <div className="absolute inset-y-0 -inset-x-1 group-hover:bg-soul/30 transition-colors rounded-sm" />
+      <div className={`absolute ${isVert ? 'inset-y-0 -inset-x-1' : 'inset-x-0 -inset-y-1'} group-hover:bg-soul/30 transition-colors rounded-sm`} />
     </div>
   );
 }
@@ -94,6 +94,7 @@ interface HorizontalRailProps {
   heightVh: number;
   tab: HorizontalRailTab;
   chatSplitPct: number;
+  drawerLayout: DrawerLayout;
   position: 'bottom' | 'top';
   onToggleExpand: () => void;
   onSetTab: (tab: HorizontalRailTab) => void;
@@ -134,6 +135,7 @@ interface HorizontalRailProps {
   autoInjectContext?: boolean;
   showContextChip?: boolean;
   inlineBadgesEnabled?: boolean;
+  visiblePanels?: 'both' | 'chat' | 'tasks';
 }
 
 export default function HorizontalRail({
@@ -141,6 +143,7 @@ export default function HorizontalRail({
   heightVh,
   tab,
   chatSplitPct,
+  drawerLayout,
   position,
   onToggleExpand,
   onSetTab,
@@ -176,6 +179,7 @@ export default function HorizontalRail({
   autoInjectContext,
   showContextChip,
   inlineBadgesEnabled,
+  visiblePanels = 'both',
 }: HorizontalRailProps) {
   const dragRef = useRef<{ startY: number; startVh: number } | null>(null);
   const railContainerRef = useRef<HTMLDivElement | null>(null);
@@ -183,6 +187,33 @@ export default function HorizontalRail({
   const [showNewForm, setShowNewForm] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reauthStatus, setReauthStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+
+  // Independent mode: track which panels are expanded
+  const [chatOpen, setChatOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+
+  const showChat = visiblePanels === 'both' || visiblePanels === 'chat';
+  const showTasks = visiblePanels === 'both' || visiblePanels === 'tasks';
+  const singlePanel = visiblePanels !== 'both';
+
+  // Sync with parent expanded state (e.g. when parent collapses all)
+  useEffect(() => {
+    if (!expanded) {
+      setChatOpen(false);
+      setTasksOpen(false);
+    }
+  }, [expanded]);
+
+  // Single-panel mode: sync local open state with parent expanded
+  useEffect(() => {
+    if (visiblePanels === 'chat') {
+      setChatOpen(expanded);
+      setTasksOpen(false);
+    } else if (visiblePanels === 'tasks') {
+      setTasksOpen(expanded);
+      setChatOpen(false);
+    }
+  }, [expanded, visiblePanels]);
 
   // Inline rail chat
   const { sendMessage, isStreaming } = useChat();
@@ -288,21 +319,11 @@ export default function HorizontalRail({
     if (updated && updated !== selectedTask) setSelectedTask(updated);
   }, [tasks, selectedTask]);
 
-  // ── Rail bar (collapsed) ──
-  const railBar = (
-    <div
-      ref={railContainerRef}
-      data-testid="horizontal-rail"
-      className="flex items-stretch h-12 bg-surface select-none shrink-0"
-      style={{
-        borderTopWidth: position === 'bottom' ? 1 : 0,
-        borderBottomWidth: position === 'top' ? 1 : 0,
-        borderColor: 'var(--color-border-subtle)',
-        borderStyle: 'solid',
-      }}
-    >
-      {/* ── Left: Chat input with model/type/send/voice ── */}
-      <div className="flex items-center px-2 gap-1.5 min-w-0 flex-1">
+  const isIndependent = drawerLayout === 'independent';
+
+  // ── Chat rail content (reused in both modes) ──
+  const chatRailContent = (
+    <div className="flex items-center px-2 gap-1.5 min-w-0 flex-1">
         {/* Model selector */}
         {railModels.length > 0 && (
           <select
@@ -383,89 +404,120 @@ export default function HorizontalRail({
             </button>
           ) : null}
         </form>
-      </div>
+    </div>
+  );
 
-      {/* ── Center: Gold expand button ── */}
+  // ── Task rail content ──
+  const taskRailContent = (
+    <div className="flex items-center px-2 gap-1.5 min-w-0 overflow-x-auto flex-1 justify-end">
+      {stageCounts.map(({ stage, count }) => (
+        <span
+          key={stage}
+          className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0 ${STAGE_COLORS[stage]}`}
+        >
+          {count} {stage}
+        </span>
+      ))}
+      {stageCounts.length === 0 && (
+        <span className="text-[10px] text-fg-muted shrink-0">No tasks</span>
+      )}
+      <div className="w-px h-4 bg-border-subtle shrink-0" />
       <button
         type="button"
-        onClick={onToggleExpand}
-        className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm"
-        title={expanded ? 'Collapse drawer' : 'Expand drawer'}
+        onClick={() => setShowNewForm(true)}
+        className="w-6 h-6 flex items-center justify-center rounded bg-soul/10 text-soul hover:bg-soul/20 transition-colors cursor-pointer shrink-0"
+        title="New task"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-        >
-          <path d="M3 9l4-4 4 4" />
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M6 2v8M2 6h8" />
         </svg>
       </button>
+      <button
+        type="button"
+        onClick={onSyncProductFilterToggle}
+        title={syncProductFilter ? 'Sync ON — showing active product tasks' : 'Sync OFF — showing all tasks'}
+        className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
+          syncProductFilter ? 'bg-soul/15 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+        }`}
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          {syncProductFilter ? (
+            <><path d="M8 2v12" /><path d="M3 5l3-3 3 3" /><path d="M7 11l3 3 3-3" /></>
+          ) : (
+            <><path d="M4 2v12" /><path d="M1 5l3-3 3 3" /><path d="M12 14V2" /><path d="M9 11l3 3 3-3" /></>
+          )}
+        </svg>
+      </button>
+    </div>
+  );
 
-      {/* ── Right: Stage pills + New Task + Sync ── */}
-      <div className="flex items-center px-2 gap-1.5 min-w-0 overflow-x-auto flex-1 justify-end">
-        {/* Stage count pills */}
-        {stageCounts.map(({ stage, count }) => (
-          <span
-            key={stage}
-            className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0 ${STAGE_COLORS[stage]}`}
-          >
-            {count} {stage}
-          </span>
-        ))}
-        {stageCounts.length === 0 && (
-          <span className="text-[10px] text-fg-muted shrink-0">No tasks</span>
-        )}
+  // ── Expand/collapse button ──
+  const expandButton = (
+    <button
+      type="button"
+      onClick={onToggleExpand}
+      className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm"
+      title={expanded ? 'Collapse drawer' : 'Expand drawer'}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+      >
+        <path d="M3 9l4-4 4 4" />
+      </svg>
+    </button>
+  );
 
-        {/* Divider */}
-        <div className="w-px h-4 bg-border-subtle shrink-0" />
+  // ── Rail bar (collapsed) ──
+  const railBorder = {
+    borderTopWidth: position === 'bottom' ? 1 : 0,
+    borderBottomWidth: position === 'top' ? 1 : 0,
+    borderColor: 'var(--color-border-subtle)',
+    borderStyle: 'solid' as const,
+  };
 
-        {/* New Task button */}
-        <button
-          type="button"
-          onClick={() => setShowNewForm(true)}
-          className="w-6 h-6 flex items-center justify-center rounded bg-soul/10 text-soul hover:bg-soul/20 transition-colors cursor-pointer shrink-0"
-          title="New task"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <path d="M6 2v8M2 6h8" />
-          </svg>
-        </button>
+  const toggleChat = useCallback(() => {
+    if (singlePanel) { onToggleExpand(); return; }
+    const next = !chatOpen;
+    setChatOpen(next);
+    if (next && !expanded) onSetTab('chat'); // auto-expands via setRailTab
+    if (!next && !tasksOpen) onToggleExpand(); // collapse all if neither open
+  }, [singlePanel, chatOpen, tasksOpen, expanded, onSetTab, onToggleExpand]);
 
-        {/* Sync Filter toggle */}
-        <button
-          type="button"
-          onClick={onSyncProductFilterToggle}
-          title={syncProductFilter ? 'Sync ON — showing active product tasks' : 'Sync OFF — showing all tasks'}
-          className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
-            syncProductFilter
-              ? 'bg-soul/15 text-soul'
-              : 'text-fg-secondary hover:text-fg hover:bg-elevated'
-          }`}
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            {syncProductFilter ? (
-              <>
-                <path d="M8 2v12" />
-                <path d="M3 5l3-3 3 3" />
-                <path d="M7 11l3 3 3-3" />
-              </>
-            ) : (
-              <>
-                <path d="M4 2v12" />
-                <path d="M1 5l3-3 3 3" />
-                <path d="M12 14V2" />
-                <path d="M9 11l3 3 3-3" />
-              </>
-            )}
-          </svg>
-        </button>
-      </div>
+  const toggleTasks = useCallback(() => {
+    if (singlePanel) { onToggleExpand(); return; }
+    const next = !tasksOpen;
+    setTasksOpen(next);
+    if (next && !expanded) onSetTab('tasks');
+    if (!next && !chatOpen) onToggleExpand();
+  }, [singlePanel, tasksOpen, chatOpen, expanded, onSetTab, onToggleExpand]);
+
+  const upChevron = <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l4-4 4 4" /></svg>;
+  const downChevron = <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5l4 4 4-4" /></svg>;
+
+  const railBar = isIndependent ? (
+    <div data-testid="horizontal-rail" className="flex flex-col bg-surface select-none shrink-0" style={railBorder}>
+      {showChat && (
+        <div className={`flex items-stretch h-12 ${showTasks ? 'border-b border-border-subtle' : ''}`}>
+          {chatRailContent}
+          <button type="button" onClick={toggleChat} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
+            {upChevron}
+          </button>
+        </div>
+      )}
+      {showTasks && (
+        <div className="flex items-stretch h-12">
+          {taskRailContent}
+          <button type="button" onClick={toggleTasks} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
+            {upChevron}
+          </button>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div ref={railContainerRef} data-testid="horizontal-rail" className="flex items-stretch h-12 bg-surface select-none shrink-0" style={railBorder}>
+      {chatRailContent}
+      {expandButton}
+      {taskRailContent}
     </div>
   );
 
@@ -492,12 +544,12 @@ export default function HorizontalRail({
         />
       )}
 
-      {/* Split tab bar — left half = Chat, right half = Tasks */}
-      <div className="flex items-stretch border-b border-border-subtle shrink-0 h-10">
+      {/* Tab bar — side-by-side (split) or stacked (independent) */}
+      <div className={`flex ${isIndependent ? 'flex-col' : ''} items-stretch border-b border-border-subtle shrink-0 ${isIndependent ? '' : 'h-10'}`}>
         {/* Chat tab header */}
         <div
-          className="flex items-center px-4 gap-0 min-w-0"
-          style={{ width: `${chatSplitPct}%` }}
+          className={`flex items-center px-4 gap-0 min-w-0 ${isIndependent ? 'h-10 border-b border-border-subtle' : ''}`}
+          style={isIndependent ? undefined : { width: `${chatSplitPct}%` }}
         >
           <button
             type="button"
@@ -550,6 +602,15 @@ export default function HorizontalRail({
               <path d="M8 4.5V8l2.5 2" />
             </svg>
           </button>
+          {/* New chat button */}
+          <button
+            type="button"
+            onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }}
+            className="w-7 h-7 flex items-center justify-center rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer"
+            title="New chat (Ctrl+Shift+N)"
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg>
+          </button>
           {/* Collapse button — gold circle */}
           <button
             type="button"
@@ -563,13 +624,13 @@ export default function HorizontalRail({
           </button>
         </div>
 
-        {/* Movable divider */}
-        <SplitDivider onSplitChange={onChatSplitChange} containerRef={railContainerRef} />
+        {/* Movable divider (only in split mode header) */}
+        {!isIndependent && <SplitDivider onSplitChange={onChatSplitChange} containerRef={railContainerRef} />}
 
         {/* Tasks tab header */}
         <div
-          className="flex items-center px-2 gap-0 min-w-0"
-          style={{ width: `${100 - chatSplitPct}%` }}
+          className={`flex items-center px-2 gap-0 min-w-0 ${isIndependent ? 'h-10' : ''}`}
+          style={isIndependent ? undefined : { width: `${100 - chatSplitPct}%` }}
         >
           {/* Tasks tab label */}
           <button
@@ -734,11 +795,11 @@ export default function HorizontalRail({
       </div>
 
       {/* Content split: Chat | Tasks */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className={`flex ${isIndependent ? 'flex-col' : ''} flex-1 min-h-0 overflow-hidden`}>
         {/* Chat pane */}
         <div
           className="flex flex-col min-h-0 overflow-hidden relative"
-          style={{ width: `${chatSplitPct}%` }}
+          style={isIndependent ? { height: `${chatSplitPct}%` } : { width: `${chatSplitPct}%` }}
         >
           <ChatView
             activeSessionId={activeSessionId}
@@ -754,19 +815,22 @@ export default function HorizontalRail({
               sessions={sessions}
               activeSessionId={activeSessionId}
               onSelect={(id) => { onSessionSelect(id); setHistoryOpen(false); }}
-              onNew={() => { onNewSession(); setHistoryOpen(false); }}
               onClose={() => setHistoryOpen(false)}
             />
           )}
         </div>
 
         {/* Movable split divider in content area */}
-        <SplitDivider onSplitChange={onChatSplitChange} containerRef={railContainerRef} />
+        <SplitDivider
+          onSplitChange={onChatSplitChange}
+          containerRef={railContainerRef}
+          direction={isIndependent ? 'horizontal' : 'vertical'}
+        />
 
         {/* Tasks pane */}
         <div
           className="flex flex-col min-h-0 overflow-hidden"
-          style={{ width: `${100 - chatSplitPct}%` }}
+          style={isIndependent ? { height: `${100 - chatSplitPct}%` } : { width: `${100 - chatSplitPct}%` }}
         >
           <TaskContent
             taskView={taskView}
@@ -792,9 +856,146 @@ export default function HorizontalRail({
     </div>
   );
 
+  // ── Independent expanded: only expand the active tab's panel ──
+  const chatCollapsedBar = (
+    <div className="flex items-stretch h-12 bg-surface border-b border-border-subtle shrink-0">
+      {chatRailContent}
+      <button type="button" onClick={toggleChat} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
+        {upChevron}
+      </button>
+    </div>
+  );
+
+  const tasksCollapsedBar = (
+    <div className="flex items-stretch h-12 bg-surface shrink-0">
+      {taskRailContent}
+      <button type="button" onClick={toggleTasks} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
+        {upChevron}
+      </button>
+    </div>
+  );
+
+  const independentExpandedPanel = (
+    <div
+      ref={railContainerRef}
+      data-testid="horizontal-rail"
+      className="flex flex-col bg-surface shrink-0"
+      style={{
+        borderTopWidth: position === 'bottom' ? 1 : 0,
+        borderBottomWidth: position === 'top' ? 1 : 0,
+        borderColor: 'var(--color-border-subtle)',
+        borderStyle: 'solid',
+      }}
+    >
+      {/* Chat section */}
+      {showChat && (chatOpen ? (
+        <div className="flex flex-col shrink-0" style={{ height: `${heightVh}vh` }}>
+          {position === 'bottom' && (
+            <div onMouseDown={onDragStart} className="h-1 w-full cursor-row-resize shrink-0 hover:bg-soul/30 transition-colors" title="Drag to resize" />
+          )}
+          <div className="flex items-center px-4 gap-1.5 min-w-0 h-10 border-b border-border-subtle shrink-0">
+            <span className="flex items-center gap-1.5 px-2 h-full text-xs font-display font-semibold text-soul">
+              <span className="text-base leading-none">&#9670;</span> Chat
+            </span>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={async () => {
+                try { const res = await fetch('/api/reauth', { method: 'POST' }); setReauthStatus(res.ok ? 'ok' : 'error'); } catch { setReauthStatus('error'); }
+                setTimeout(() => setReauthStatus('idle'), 2000);
+              }}
+              className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}
+              title="Refresh AI credentials"
+            >
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" /><path d="M1 1v3h3M13 13v-3h-3" />
+              </svg>
+              Refresh
+            </button>
+            <button type="button" onClick={() => setHistoryOpen((o) => !o)} className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.5 2" /></svg>
+              History
+            </button>
+            <button type="button" onClick={() => { setHistoryOpen(false); toggleChat(); }} className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse chat">
+              {downChevron} Collapse
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <ChatView activeSessionId={activeSessionId} onSessionCreated={onSessionCreated} activeProduct={activeProduct} buildContextString={buildContextString} autoInjectContext={autoInjectContext} showContextChip={showContextChip} />
+            {historyOpen && (
+              <SessionDrawer sessions={sessions} activeSessionId={activeSessionId} onSelect={(id) => { onSessionSelect(id); setHistoryOpen(false); }} onClose={() => setHistoryOpen(false)} />
+            )}
+          </div>
+        </div>
+      ) : chatCollapsedBar)}
+
+      {/* Tasks section */}
+      {showTasks && (tasksOpen ? (
+        <div className="flex flex-col shrink-0" style={{ height: `${heightVh}vh` }}>
+          {position === 'bottom' && (
+            <div onMouseDown={onDragStart} className="h-1 w-full cursor-row-resize shrink-0 hover:bg-soul/30 transition-colors" title="Drag to resize" />
+          )}
+          <div className="flex items-center px-2 gap-1 min-w-0 h-10 border-b border-border-subtle shrink-0">
+            <span className="flex items-center gap-1.5 px-2 h-full text-xs font-display font-semibold text-soul shrink-0">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4l2 2 4-4" /><path d="M3 10l2 2 4-4" /></svg>
+              Tasks
+            </span>
+            <div className="w-px h-4 bg-border-subtle mx-0.5 shrink-0" />
+            {([
+              { view: 'list' as TaskView, label: 'List', icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 4h10M3 8h10M3 12h10" /></svg> },
+              { view: 'kanban' as TaskView, label: 'Kanban', icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 3v10M8 3v7M13 3v10" /></svg> },
+              { view: 'grid' as TaskView, label: 'Grid', icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg> },
+              { view: 'table' as TaskView, label: 'Table', icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="1" /><path d="M2 5.5h12" /><path d="M6 5.5v8.5" /></svg> },
+            ] as { view: TaskView; label: string; icon: React.ReactNode }[]).map(({ view, label, icon }) => (
+              <button key={view} type="button" onClick={() => setTaskView(view)} title={`${label} view`} className={`flex items-center gap-1 px-1.5 h-6 rounded cursor-pointer text-[10px] font-display transition-colors shrink-0 ${taskView === view ? 'bg-overlay text-fg' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}>
+                {icon} {label}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-border-subtle mx-0.5 shrink-0" />
+            <select className="soul-select text-[11px] h-6 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer" value={filters.stage} onChange={(e) => setFilters({ stage: e.target.value as TaskStage | 'all' })} title="Filter by stage">
+              <option value="all">All Stages</option>
+              <option value="backlog">Backlog</option>
+              <option value="brainstorm">Brainstorm</option>
+              <option value="active">Active</option>
+              <option value="blocked">Blocked</option>
+              <option value="validation">Validation</option>
+              <option value="done">Done</option>
+            </select>
+            <select className="soul-select text-[11px] h-6 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer ml-1" value={filters.priority === 'all' ? 'all' : String(filters.priority)} onChange={(e) => { const val = e.target.value; setFilters({ priority: val === 'all' ? 'all' : Number(val) }); }} title="Filter by priority">
+              <option value="all">All Priority</option>
+              <option value="3">Critical</option>
+              <option value="2">High</option>
+              <option value="1">Normal</option>
+              <option value="0">Low</option>
+            </select>
+            <div className="w-px h-4 bg-border-subtle mx-0.5 shrink-0" />
+            <button type="button" onClick={onSyncProductFilterToggle} title={syncProductFilter ? 'Sync filter ON' : 'Sync filter OFF'} className={`flex items-center gap-1 px-1.5 h-6 rounded cursor-pointer text-[10px] font-display transition-colors shrink-0 ${syncProductFilter ? 'bg-soul/15 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {syncProductFilter ? (<><path d="M8 2v12" /><path d="M3 5l3-3 3 3" /><path d="M7 11l3 3 3-3" /></>) : (<><path d="M4 2v12" /><path d="M1 5l3-3 3 3" /><path d="M12 14V2" /><path d="M9 11l3 3 3-3" /></>)}
+              </svg>
+              Sync
+            </button>
+            <div className="flex-1" />
+            <button type="button" onClick={() => setShowNewForm(true)} className="text-xs bg-soul/10 hover:bg-soul/20 text-soul px-2 py-0.5 rounded font-display font-semibold transition-colors cursor-pointer shrink-0 whitespace-nowrap">+ New</button>
+            <div className="w-2 shrink-0" />
+            <button type="button" onClick={toggleTasks} className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse tasks">
+              {downChevron} Collapse
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <TaskContent taskView={taskView} filteredTasks={filteredTasks} tasksByStage={tasksByStage} gridSubView={gridSubView} onGridSubViewChange={setGridSubView} onTaskClick={setSelectedTask} onClearFilters={() => setFilters({ stage: 'all', priority: 'all' })} taskActivities={taskActivities} />
+          </div>
+          {position === 'top' && (
+            <div onMouseDown={onDragStart} className="h-1 w-full cursor-row-resize shrink-0 hover:bg-soul/30 transition-colors" title="Drag to resize" />
+          )}
+        </div>
+      ) : tasksCollapsedBar)}
+    </div>
+  );
+
   return (
     <>
-      {expanded ? expandedPanel : railBar}
+      {!expanded ? railBar : isIndependent ? independentExpandedPanel : expandedPanel}
 
       {/* Task detail modal */}
       {selectedTask && (

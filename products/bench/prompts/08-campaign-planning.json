@@ -1,0 +1,32 @@
+[
+  {
+    "id": "campaign-plan-01",
+    "task": "campaign_planning",
+    "prompt": "You are a campaign orchestrator for soul-outreach, an email outreach platform. Plan the CLI command sequence for the following campaign.\n\nCampaign goal: Send a one-time cold outreach email to 50 new leads imported from a CSV file.\n\nAvailable CLI commands and their purpose:\n- import: Load contacts from a CSV file into the database\n- enrich: Fetch additional data (company info, job title) for each contact\n- validate: Check contacts against the Do Not Contact (DNC) list\n- draft: Use AI to generate personalized email drafts for each contact\n- review: Present drafts to the operator for approval or editing\n- send: Dispatch approved emails via the configured SMTP provider\n\nRules:\n- Always import before enriching\n- Always draft before reviewing\n- Always review before sending\n- Enrichment must happen before drafting\n- Only include steps that are necessary for this campaign\n\nList the steps in order, one per line, using only the command names from the list above. No explanations, no numbering — just the command names.",
+    "expected_answer": "import\nenrich\ndraft\nreview\nsend",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["import", "enrich", "draft", "review", "send"]
+    }
+  },
+  {
+    "id": "campaign-plan-02",
+    "task": "campaign_planning",
+    "prompt": "You are a campaign orchestrator for soul-outreach, an email outreach platform. Plan the CLI command sequence for the following campaign.\n\nCampaign goal: Send an initial outreach email to 30 leads, then send a follow-up email 7 days later to leads who did not reply.\n\nAvailable CLI commands and their purpose:\n- import: Load contacts from a CSV file into the database\n- enrich: Fetch additional data (company info, job title) for each contact\n- validate: Check contacts against the Do Not Contact (DNC) list\n- draft: Use AI to generate personalized email drafts for each contact\n- review: Present drafts to the operator for approval or editing\n- send: Dispatch approved emails via the configured SMTP provider\n- followup_draft: Generate follow-up email drafts for non-responders\n- followup_send: Send follow-up emails to non-responders\n\nRules:\n- Always import before enriching\n- Always draft before reviewing\n- Always review before sending\n- Enrichment must happen before drafting\n- Follow-up must come after the initial send\n- Only include steps that are necessary for this campaign\n\nList the steps in order, one per line, using only the command names from the list above. No explanations, no numbering — just the command names.",
+    "expected_answer": "import\nenrich\ndraft\nreview\nsend\nfollowup_draft\nfollowup_send",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["import", "enrich", "draft", "review", "send"]
+    }
+  },
+  {
+    "id": "campaign-plan-03",
+    "task": "campaign_planning",
+    "prompt": "You are a campaign orchestrator for soul-outreach, an email outreach platform. Plan the CLI command sequence for the following campaign.\n\nCampaign goal: Send a GDPR-compliant outreach campaign to 200 leads. The client's legal team requires that all contacts are validated against the Do Not Contact (DNC) list before any enrichment or email drafting occurs.\n\nAvailable CLI commands and their purpose:\n- import: Load contacts from a CSV file into the database\n- enrich: Fetch additional data (company info, job title) for each contact\n- validate: Check contacts against the Do Not Contact (DNC) list and remove flagged entries\n- draft: Use AI to generate personalized email drafts for each contact\n- review: Present drafts to the operator for approval or editing\n- send: Dispatch approved emails via the configured SMTP provider\n\nRules:\n- Always import before enriching\n- Always draft before reviewing\n- Always review before sending\n- Enrichment must happen before drafting\n- DNC validation must occur before enrichment or drafting (legal requirement)\n- Only include steps that are necessary for this campaign\n\nList the steps in order, one per line, using only the command names from the list above. No explanations, no numbering — just the command names.",
+    "expected_answer": "import\nvalidate\nenrich\ndraft\nreview\nsend",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["import", "validate", "enrich", "draft", "review", "send"]
+    }
+  }
+]

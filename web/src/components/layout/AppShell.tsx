@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useLayoutStore } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useSessions } from '../../hooks/useSessions.ts';
@@ -6,10 +6,11 @@ import { useWebSocket } from '../../hooks/useWebSocket.ts';
 import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useChat } from '../../hooks/useChat.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
-import type { PlannerTask, TaskStage, TaskFilters } from '../../lib/types.ts';
+import type { PlannerTask, TaskStage, TaskFilters, ProductInfo } from '../../lib/types.ts';
 import ProductRail, { RAIL_WIDTH, PANEL_WIDTH } from './ProductRail.tsx';
 import ProductView from './ProductView.tsx';
 import HorizontalRail from './HorizontalRail.tsx';
+import RightPanel from './RightPanel.tsx';
 import SessionsDrawer from './SessionsDrawer.tsx';
 import ToastStack from './ToastStack.tsx';
 import TaskDetail from '../planner/TaskDetail.tsx';
@@ -27,20 +28,72 @@ export default function AppShell() {
   const { messages } = useChat();
 
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
-  const [contextChipDismissed, setContextChipDismissed] = useState(false);
-  const prevProductRef = useRef<string | null>(null);
 
-  // Derive unique products dynamically from tasks (must be before useProductContext)
+  // Fetch registered products from API on mount
+  const [apiProducts, setApiProducts] = useState<ProductInfo[]>([]);
+  useEffect(() => {
+    fetch('/api/products')
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setApiProducts(data); })
+      .catch(() => {});
+  }, []);
+
+  // Merge API products with task-discovered products
+  // Only include task-discovered products that are also registered in the API
+  // 'soul' is always first, then the rest sorted alphabetically
   const products = useMemo(() => {
-    const set = new Set<string>(['compliance', 'compliance-go', 'scout']);
+    const set = new Set<string>();
+    set.add('soul'); // Soul is always present
+    for (const p of apiProducts) set.add(p.name);
+    // Only add task-discovered products if they exist in the API registry
+    const apiNames = new Set(apiProducts.map((p) => p.name));
+    apiNames.add('soul');
     for (const t of planner.tasks) {
-      // Exclude 'soul' — that's the platform itself, not a product
-      if (t.product && t.product.toLowerCase() !== 'soul') set.add(t.product);
+      if (t.product && apiNames.has(t.product)) set.add(t.product);
     }
-    return Array.from(set).sort();
-  }, [planner.tasks]);
+    const arr = Array.from(set);
+    const rest = arr.filter((p) => p.toLowerCase() !== 'soul').sort();
+    return ['soul', ...rest];
+  }, [apiProducts, planner.tasks]);
 
-  const { buildContextString, chipLabel, contextString } = useProductContext(planner.tasks, layout.activeProduct, products);
+  // Forced single-select: if no product is active, default to 'soul'
+  useEffect(() => {
+    if (!layout.activeProduct && products.length > 0) {
+      layout.setActiveProduct('soul');
+    }
+  }, [layout.activeProduct, products]);
+
+  // Build product metadata map for downstream components
+  const productMetadata = useMemo(() => {
+    const map = new Map<string, ProductInfo>();
+    for (const p of apiProducts) map.set(p.name, p);
+    return map;
+  }, [apiProducts]);
+
+  const { buildContextString } = useProductContext(planner.tasks, layout.activeProduct, products);
+
+  // Derive layout mode from panel positions
+  const isMixedPosition = layout.chatPosition !== layout.tasksPosition;
+  // Only force independent when both are horizontal but at different positions
+  const isMixedHorizontal = isMixedPosition
+    && layout.chatPosition !== 'right' && layout.tasksPosition !== 'right';
+  const effectiveDrawerLayout = isMixedHorizontal ? 'independent' as const : layout.drawerLayout;
+
+  // Which panels go where (horizontal rails)
+  const topPanel = isMixedPosition
+    ? (layout.chatPosition === 'top' ? 'chat' as const : layout.tasksPosition === 'top' ? 'tasks' as const : 'both' as const)
+    : 'both' as const;
+  const bottomPanel = isMixedPosition
+    ? (layout.chatPosition === 'bottom' ? 'chat' as const : layout.tasksPosition === 'bottom' ? 'tasks' as const : 'both' as const)
+    : 'both' as const;
+  const hasTopRail = layout.chatPosition === 'top' || layout.tasksPosition === 'top';
+  const hasBottomRail = layout.chatPosition === 'bottom' || layout.tasksPosition === 'bottom';
+
+  // Right panel detection
+  const hasRightPanel = layout.chatPosition === 'right' || layout.tasksPosition === 'right';
+  const rightPanels: 'both' | 'chat' | 'tasks' = (layout.chatPosition === 'right' && layout.tasksPosition === 'right')
+    ? 'both'
+    : layout.chatPosition === 'right' ? 'chat' : 'tasks';
 
   // Filtered tasks for the main product view
   const filteredTasks = useMemo(() => {
@@ -65,66 +118,110 @@ export default function AppShell() {
     return last.content.slice(0, 80) + (last.content.length > 80 ? '…' : '');
   }, [messages]);
 
-  // Active/blocked counts for horizontal rail pill
-  const activeTaskCount = useMemo(() => {
-    const tasks = layout.activeProduct
-      ? planner.tasks.filter((t) => t.product === layout.activeProduct)
-      : planner.tasks;
-    return tasks.filter((t) => t.stage === 'active').length;
-  }, [planner.tasks, layout.activeProduct]);
-
-  const blockedTaskCount = useMemo(() => {
-    const tasks = layout.activeProduct
-      ? planner.tasks.filter((t) => t.product === layout.activeProduct)
-      : planner.tasks;
-    return tasks.filter((t) => t.stage === 'blocked').length;
-  }, [planner.tasks, layout.activeProduct]);
-
-  // Show context chip when product switches in existing chat session
-  const showContextChipInBar = layout.showContextChip && !contextChipDismissed && !!chipLabel && messages.length > 0;
-
-  // Reset chip dismissed state on product change
-  useEffect(() => {
-    if (prevProductRef.current !== layout.activeProduct) {
-      setContextChipDismissed(false);
-      prevProductRef.current = layout.activeProduct;
-    }
-  }, [layout.activeProduct]);
-
-  const handleInjectContext = useCallback(() => {
-    setContextChipDismissed(true);
-  }, []);
-
-  const contextChips = showContextChipInBar
-    ? [{
-        label: chipLabel!,
-        onInject: handleInjectContext,
-        onDismiss: () => setContextChipDismissed(true),
-      }]
-    : [];
-
   const handleSessionCreated = useCallback((id: number) => {
     switchSession(id);
   }, [switchSession]);
 
+  // Shared props for HorizontalRail instances
+  const railBaseProps = {
+    tab: layout.railTab,
+    chatSplitPct: layout.chatSplitPct,
+    onSetTab: layout.setRailTab,
+    onChatSplitChange: layout.setChatSplitPct,
+    activeSessionId,
+    sessions,
+    onSessionCreated: handleSessionCreated,
+    onSessionSelect: switchSession,
+    onNewSession: createSession,
+    lastChatSnippet,
+    tasks: planner.tasks,
+    activeProduct: layout.activeProduct,
+    taskActivities: planner.taskActivities,
+    taskStreams: planner.taskStreams,
+    taskComments: planner.taskComments,
+    updateTask: planner.updateTask,
+    moveTask: planner.moveTask,
+    deleteTask: planner.deleteTask,
+    fetchComments: planner.fetchComments,
+    addComment: planner.addComment,
+    products,
+    createTask: planner.createTask,
+    taskView: layout.taskView,
+    gridSubView: layout.gridSubView,
+    filters: layout.filters,
+    setTaskView: layout.setTaskView,
+    setGridSubView: layout.setGridSubView,
+    setFilters: (partial: Partial<TaskFilters>) => layout.setFilters(partial),
+    syncProductFilter: layout.syncProductFilter,
+    onSyncProductFilterToggle: () => layout.setSyncProductFilter(!layout.syncProductFilter),
+    buildContextString,
+    autoInjectContext: layout.autoInjectContext,
+    showContextChip: layout.showContextChip,
+    inlineBadgesEnabled: layout.inlineBadgesEnabled,
+  };
+
+  // Per-rail expand/height props for mixed mode
+  const railPropsForPanel = (panel: 'chat' | 'tasks') => {
+    if (panel === 'chat') {
+      return {
+        expanded: layout.chatRailExpanded,
+        heightVh: layout.chatRailHeightVh,
+        onToggleExpand: () => layout.setChatRailExpanded(!layout.chatRailExpanded),
+        onHeightChange: layout.setChatRailHeightVh,
+      };
+    }
+    return {
+      expanded: layout.tasksRailExpanded,
+      heightVh: layout.tasksRailHeightVh,
+      onToggleExpand: () => layout.setTasksRailExpanded(!layout.tasksRailExpanded),
+      onHeightChange: layout.setTasksRailHeightVh,
+    };
+  };
+
+  const railSpacer = <div className="shrink-0" style={{ width: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }} />;
+
+  const renderRail = (pos: 'top' | 'bottom', panels: 'both' | 'chat' | 'tasks') => (
+    <div className="flex min-w-0">
+      {railSpacer}
+      <div className="flex-1 min-w-0">
+        <HorizontalRail
+          {...railBaseProps}
+          position={pos}
+          drawerLayout={effectiveDrawerLayout}
+          visiblePanels={panels}
+          {...(isMixedHorizontal && panels !== 'both'
+            ? railPropsForPanel(panels as 'chat' | 'tasks')
+            : {
+                expanded: layout.railExpanded,
+                heightVh: layout.railHeightVh,
+                onToggleExpand: () => layout.setRailExpanded(!layout.railExpanded),
+                onHeightChange: layout.setRailHeightVh,
+              }
+          )}
+        />
+      </div>
+    </div>
+  );
+
   return (
-    <div
-      className={`h-screen bg-deep text-fg font-body noise overflow-hidden flex ${
-        layout.railPosition === 'bottom' ? 'flex-col' : 'flex-col-reverse'
-      }`}
-    >
+    <div className="h-screen bg-deep text-fg font-body noise overflow-hidden flex flex-col">
       {/* ── Left Product Rail (fixed position) ── */}
       <ProductRail
           products={products}
           activeProduct={layout.activeProduct}
           tasks={planner.tasks}
-          onProductSelect={layout.setActiveProduct}
+          productMetadata={productMetadata}
+          onProductSelect={(p) => { if (p) layout.setActiveProduct(p); }}
           expanded={layout.panelExpanded}
           onToggleExpanded={() => layout.setPanelExpanded(!layout.panelExpanded)}
           settingsOpen={layout.settingsOpen}
           onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
-          railPosition={layout.railPosition}
-          setRailPosition={layout.setRailPosition}
+          chatPosition={layout.chatPosition}
+          setChatPosition={layout.setChatPosition}
+          tasksPosition={layout.tasksPosition}
+          setTasksPosition={layout.setTasksPosition}
+          drawerLayout={layout.drawerLayout}
+          setDrawerLayout={layout.setDrawerLayout}
           autoInjectContext={layout.autoInjectContext}
           setAutoInjectContext={layout.setAutoInjectContext}
           showContextChip={layout.showContextChip}
@@ -135,12 +232,15 @@ export default function AppShell() {
           setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
       />
 
+      {/* ── Top rail (if any panel lives here) ── */}
+      {hasTopRail && renderRail('top', topPanel)}
+
       {/* ── Main area ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative" style={{ marginLeft: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }}>
-        {/* Product content — fills remaining space */}
         <div className="flex-1 min-w-0 overflow-hidden">
           <ProductView
             activeProduct={layout.activeProduct}
+            productMetadata={productMetadata}
             taskView={layout.taskView}
             gridSubView={layout.gridSubView}
             panelWidth={layout.panelWidth}
@@ -153,6 +253,7 @@ export default function AppShell() {
             filteredTasks={filteredTasks}
             tasksByStage={filteredByStage}
             products={products}
+            productMetadata={productMetadata}
             loading={planner.loading}
             createTask={planner.createTask}
             updateTask={planner.updateTask}
@@ -166,7 +267,6 @@ export default function AppShell() {
           />
         </div>
 
-        {/* Overlay drawers — rendered inside the main area */}
         {layout.sessionsOpen && (
           <SessionsDrawer
             onClose={() => layout.setSessionsOpen(false)}
@@ -178,34 +278,47 @@ export default function AppShell() {
           />
         )}
 
-      </div>
-
-      {/* ── Horizontal Rail: Chat + Tasks (bottom or top) ── */}
-      <div className="flex min-w-0">
-        <div className="shrink-0" style={{ width: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }} />
-        <div className="flex-1 min-w-0">
-          <HorizontalRail
-            expanded={layout.railExpanded}
-            heightVh={layout.railHeightVh}
-            tab={layout.railTab}
+        {hasRightPanel && (
+          <RightPanel
+            visiblePanels={rightPanels}
+            drawerLayout={effectiveDrawerLayout}
+            chatExpanded={layout.rightChatExpanded}
+            onToggleChatExpanded={() => layout.setRightChatExpanded(!layout.rightChatExpanded)}
+            tasksExpanded={layout.rightTasksExpanded}
+            onToggleTasksExpanded={() => layout.setRightTasksExpanded(!layout.rightTasksExpanded)}
+            width={
+              layout.rightChatExpanded && layout.rightTasksExpanded ? layout.rightPanelWidth
+              : layout.rightChatExpanded ? layout.rightChatWidth
+              : layout.rightTasksExpanded ? layout.rightTasksWidth
+              : layout.rightPanelWidth
+            }
+            onWidthChange={
+              layout.rightChatExpanded && layout.rightTasksExpanded ? layout.setRightPanelWidth
+              : layout.rightChatExpanded ? layout.setRightChatWidth
+              : layout.rightTasksExpanded ? layout.setRightTasksWidth
+              : layout.setRightPanelWidth
+            }
             chatSplitPct={layout.chatSplitPct}
-            position={layout.railPosition}
-            onToggleExpand={() => layout.setRailExpanded(!layout.railExpanded)}
-            onSetTab={layout.setRailTab}
-            onHeightChange={layout.setRailHeightVh}
             onChatSplitChange={layout.setChatSplitPct}
             activeSessionId={activeSessionId}
             sessions={sessions}
             onSessionCreated={handleSessionCreated}
             onSessionSelect={switchSession}
             onNewSession={createSession}
-            lastChatSnippet={lastChatSnippet}
-            activeTaskCount={activeTaskCount}
-            blockedTaskCount={blockedTaskCount}
-            contextChips={contextChips}
-            contextString={layout.autoInjectContext ? contextString : undefined}
-            tasks={planner.tasks}
             activeProduct={layout.activeProduct}
+            buildContextString={buildContextString}
+            autoInjectContext={layout.autoInjectContext}
+            showContextChip={layout.showContextChip}
+            connected={connected}
+            messageCount={messages.length}
+            lastChatSnippet={lastChatSnippet}
+            tasks={planner.tasks}
+            taskView={layout.taskView}
+            gridSubView={layout.gridSubView}
+            filters={layout.filters}
+            setTaskView={layout.setTaskView}
+            setGridSubView={layout.setGridSubView}
+            setFilters={(partial: Partial<TaskFilters>) => layout.setFilters(partial)}
             taskActivities={planner.taskActivities}
             taskStreams={planner.taskStreams}
             taskComments={planner.taskComments}
@@ -215,21 +328,17 @@ export default function AppShell() {
             fetchComments={planner.fetchComments}
             addComment={planner.addComment}
             products={products}
+            productMetadata={productMetadata}
             createTask={planner.createTask}
-            taskView={layout.taskView}
-            gridSubView={layout.gridSubView}
-            filters={layout.filters}
-            setTaskView={layout.setTaskView}
-            setGridSubView={layout.setGridSubView}
-            setFilters={(partial: Partial<TaskFilters>) => layout.setFilters(partial)}
-            buildContextString={buildContextString}
-            autoInjectContext={layout.autoInjectContext}
-            showContextChip={layout.showContextChip}
+            syncProductFilter={layout.syncProductFilter}
+            onSyncProductFilterToggle={() => layout.setSyncProductFilter(!layout.syncProductFilter)}
             inlineBadgesEnabled={layout.inlineBadgesEnabled}
-            onTaskClick={setSelectedTask}
           />
-        </div>
+        )}
       </div>
+
+      {/* ── Bottom rail (if any panel lives here) ── */}
+      {hasBottomRail && renderRail('bottom', bottomPanel)}
 
       {/* ── Toast notifications ── */}
       {layout.toastsEnabled && <ToastStack notifications={notifications} onDismiss={dismiss} />}
@@ -255,6 +364,7 @@ export default function AppShell() {
           activities={planner.taskActivities[selectedTask.id] || []}
           streamContent={planner.taskStreams[selectedTask.id] || ''}
           products={products}
+          productMetadata={productMetadata}
           comments={planner.taskComments[selectedTask.id]}
           onFetchComments={planner.fetchComments}
           onAddComment={planner.addComment}
