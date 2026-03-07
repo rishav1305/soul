@@ -1,0 +1,224 @@
+"""FastAPI server for the soul-mesh hub.
+
+Exposes REST endpoints for health checks, cluster status, node listing,
+and node identity, plus a WebSocket endpoint for agent heartbeats.
+FastAPI is an optional dependency (``pip install soul-mesh[server]``),
+so we import it inside ``create_app`` to avoid hard failures when only
+the core library is used.
+
+Note: ``from __future__ import annotations`` is intentionally omitted.
+PEP 563 deferred evaluation turns type hints into strings, which breaks
+FastAPI's ``WebSocket`` parameter injection (it sees the string
+``"WebSocket"`` instead of the class).  Python 3.10+ supports ``X | Y``
+union syntax natively, so the future import is not needed here.
+"""
+
+import asyncio
+import json
+
+import structlog
+
+from soul_mesh.auth import verify_mesh_token
+from soul_mesh.db import MeshDB
+from soul_mesh.executor import CommandRelay
+from soul_mesh.hub import Hub
+from soul_mesh.node import NodeInfo
+from soul_mesh.resources import get_system_snapshot
+
+logger = structlog.get_logger("soul-mesh.server")
+
+
+async def _stale_sweep_loop(hub, interval: int) -> None:
+    """Periodically mark nodes with no recent heartbeat as stale."""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await hub.mark_stale_nodes(timeout_seconds=interval)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.warning("stale_sweep_error", error=str(exc))
+
+
+async def _hub_self_heartbeat_loop(hub: Hub, node_id: str, interval: int) -> None:
+    """Periodically send a self-heartbeat for the hub node."""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            snapshot = await get_system_snapshot()
+            await hub.process_heartbeat(node_id, snapshot)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.warning("hub_self_heartbeat_error", error=str(exc))
+
+
+def create_app(db: MeshDB, node: NodeInfo | None = None, *, secret: str = "", stale_interval: int = 30):
+    """Create and return a FastAPI application wired to the given database.
+
+    Parameters
+    ----------
+    db : MeshDB
+        The mesh database (tables must already exist via ``ensure_tables``).
+    node : NodeInfo | None
+        Optional local node identity.  When provided, ``/api/mesh/identity``
+        returns this node's info.
+    secret : str
+        HMAC secret for verifying JWT mesh tokens on the WebSocket endpoint.
+        Defaults to empty string (WebSocket auth will reject all tokens).
+    """
+    from contextlib import asynccontextmanager
+
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+    from pydantic import BaseModel
+
+    @asynccontextmanager
+    async def lifespan(app):
+        sweep_task = asyncio.create_task(_stale_sweep_loop(app.state.hub, stale_interval))
+        hb_task = None
+
+        # Register hub itself as a node with role='hub'
+        if node is not None:
+            snapshot = await get_system_snapshot()
+            await app.state.hub.register_node({
+                "node_id": node.id,
+                "name": node.name,
+                "host": node.host,
+                "port": node.port,
+                "role": "hub",
+                "platform": node.platform,
+                "arch": node.arch,
+                **snapshot,
+            })
+            logger.info("hub_self_registered", node_id=node.id[:8], name=node.name)
+            hb_task = asyncio.create_task(
+                _hub_self_heartbeat_loop(app.state.hub, node.id, stale_interval)
+            )
+
+        yield
+
+        sweep_task.cancel()
+        try:
+            await sweep_task
+        except asyncio.CancelledError:
+            pass
+        if hb_task is not None:
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
+
+    app = FastAPI(title="soul-mesh", version="0.2.0", lifespan=lifespan)
+
+    # Store shared state on the app so route handlers can access it.
+    app.state.db = db
+    app.state.hub = Hub(db)
+    app.state.node = node
+    app.state.secret = secret
+    app.state.relay = CommandRelay()
+
+    @app.get("/api/mesh/health")
+    async def health():
+        return {"status": "ok"}
+
+    @app.get("/api/mesh/status")
+    async def status():
+        return await app.state.hub.cluster_totals()
+
+    @app.get("/api/mesh/nodes")
+    async def nodes():
+        return await app.state.hub.list_nodes()
+
+    @app.get("/api/mesh/nodes/{node_id}/heartbeats")
+    async def node_heartbeats(node_id: str, limit: int = 30):
+        return await app.state.hub.heartbeat_history(node_id, limit=max(1, min(limit, 100)))
+
+    @app.get("/api/mesh/identity")
+    async def identity():
+        n = app.state.node
+        if n is None:
+            return {"error": "no node identity configured"}
+        return {
+            "node_id": n.id,
+            "name": n.name,
+            "port": n.port,
+            "platform": n.platform,
+            "arch": n.arch,
+        }
+
+    class RunCommandRequest(BaseModel):
+        node_id: str
+        command: str
+
+    @app.post("/api/mesh/run")
+    async def run_command_endpoint(req: RunCommandRequest):
+        # WARNING: This endpoint grants shell access to connected nodes.
+        # It is intended for trusted LAN use only (dashboard remote shell).
+        # Future: add JWT auth or API key requirement.
+        try:
+            result = await app.state.relay.send_command(req.node_id, req.command)
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Command timed out")
+
+    @app.websocket("/api/mesh/ws")
+    async def websocket_heartbeat(websocket: WebSocket):
+        token = websocket.query_params.get("token")
+
+        # Reject missing token
+        if not token:
+            await websocket.accept()
+            await websocket.close(code=4001, reason="missing token")
+            return
+
+        # Validate JWT
+        try:
+            claims = verify_mesh_token(token, app.state.secret)
+        except Exception:
+            await websocket.accept()
+            await websocket.close(code=4003, reason="invalid token")
+            return
+
+        await websocket.accept()
+        node_id = claims["node_id"]
+        first_message = True
+
+        logger.info("ws_connected", node_id=node_id)
+        app.state.relay.register(node_id, websocket)
+
+        try:
+            while True:
+                try:
+                    data = await websocket.receive_json()
+                except json.JSONDecodeError:
+                    await websocket.send_json({"error": "invalid JSON"})
+                    continue
+
+                # Handle command results from the agent before heartbeat processing.
+                if data.get("type") == "command_result":
+                    cmd_id = data.get("cmd_id")
+                    if cmd_id:
+                        app.state.relay.deliver_result(cmd_id, data)
+                    else:
+                        logger.warning("command_result_missing_cmd_id")
+                    await websocket.send_json({"status": "ok"})
+                    continue
+
+                if first_message:
+                    if data.get("node_id") != node_id:
+                        await websocket.close(code=4002, reason="node_id mismatch")
+                        return
+                    await app.state.hub.register_node(data)
+                    first_message = False
+                else:
+                    await app.state.hub.process_heartbeat(node_id, data)
+
+                await websocket.send_json({"status": "ok"})
+        except WebSocketDisconnect:
+            app.state.relay.unregister(node_id)
+            logger.info("ws_disconnected", node_id=node_id)
+
+    return app
