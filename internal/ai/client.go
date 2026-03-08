@@ -121,20 +121,42 @@ func (c *Client) SendStream(ctx context.Context, req Request) (io.ReadCloser, er
 	return resp.Body, nil
 }
 
-// CompleteSimple makes a non-streaming API call and returns the text response.
-// Useful for quick, lightweight tasks like verification where streaming isn't needed.
-func (c *Client) CompleteSimple(ctx context.Context, model, prompt string) (string, error) {
+// CompleteRequest configures a non-streaming API call.
+type CompleteRequest struct {
+	Model    string          // Model override (falls back to client default)
+	Prompt   string          // User message content
+	System   string          // System prompt (optional)
+	Thinking *ThinkingConfig // Extended thinking config (optional)
+	MaxTokens int            // Max response tokens (default 1024)
+}
+
+// Complete makes a non-streaming API call and returns the text response.
+// Supports system prompts, thinking config, model override, and custom max tokens.
+func (c *Client) Complete(ctx context.Context, opts CompleteRequest) (string, error) {
+	model := opts.Model
 	if model == "" {
 		model = c.model
 	}
 
+	maxTokens := opts.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 1024
+	}
+
+	// When thinking is enabled, ensure sufficient token budget.
+	if opts.Thinking != nil && maxTokens < 16384 {
+		maxTokens = 16384
+	}
+
 	apiReq := Request{
 		Model:     model,
-		MaxTokens: 1024,
+		MaxTokens: maxTokens,
+		System:    opts.System,
 		Messages: []Message{
-			{Role: "user", Content: prompt},
+			{Role: "user", Content: opts.Prompt},
 		},
-		Stream: false,
+		Stream:   false,
+		Thinking: opts.Thinking,
 	}
 
 	body, err := json.Marshal(apiReq)
@@ -187,6 +209,12 @@ func (c *Client) CompleteSimple(ctx context.Context, model, prompt string) (stri
 		}
 	}
 	return result, nil
+}
+
+// CompleteSimple makes a non-streaming API call and returns the text response.
+// Useful for quick, lightweight tasks like verification where streaming isn't needed.
+func (c *Client) CompleteSimple(ctx context.Context, model, prompt string) (string, error) {
+	return c.Complete(ctx, CompleteRequest{Model: model, Prompt: prompt})
 }
 
 // AuthMode returns how this client authenticates.

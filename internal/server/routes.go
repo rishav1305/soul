@@ -44,10 +44,14 @@ func (s *Server) registerRoutes() {
 	// Screenshot serving — serves E2E screenshots from ~/.soul/screenshots/
 	s.mux.HandleFunc("GET /api/screenshots/", s.handleScreenshot)
 
+	// Screenshot serving — serves E2E screenshots by absolute path (query param).
+	s.mux.HandleFunc("GET /api/screenshot", handleScreenshotByPath)
+
 	// Chat session endpoints.
 	s.mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleSessionMessages)
+	s.mux.HandleFunc("PATCH /api/sessions/{id}/read", s.handleSessionRead)
 
 	// Auth endpoints.
 	s.mux.HandleFunc("POST /api/reauth", s.handleReauth)

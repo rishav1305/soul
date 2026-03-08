@@ -52,7 +52,7 @@ When creating tasks with task_create, ALWAYS follow these rules:
 - Set priority based on impact: 3=Critical (broken/blocking), 2=High (important), 1=Normal (default), 0=Low (nice-to-have).
 - Set product when known (soul, scout, compliance).
 - Before creating, check if a similar task already exists: use task_list to verify.
-- For large tasks (3+ files, multiple concerns), create a parent task + subtasks instead of one monolith.
+- NEVER create tasks or subtasks unless the user explicitly asks. If a task looks large, propose decomposition and wait for user approval.
 - When decomposing, create a parent task first, then subtasks referencing the parent.
 
 # Board management
@@ -62,13 +62,19 @@ When the user asks to groom, triage, plan, or review the board:
 - Flag stuck tasks (active >48h with no progress, blocked >5 days).
 - Identify tasks missing descriptions or acceptance criteria.
 - For sprint planning: recommend 3-5 tasks based on priority (highest first), then age (oldest first).
-- Act directly on safe actions (create subtasks, add comments, fix priorities). Ask permission for destructive actions (delete, merge duplicates).
+- Act directly on safe actions (add comments, fix priorities). Ask permission for all task creation and destructive actions (delete, merge duplicates, create subtasks).
 
 # Persistent memory
 - You have persistent memory that survives across conversations: memory_store, memory_search, memory_list, memory_delete.
 - When the user asks you to remember something, use memory_store. When asked to recall, use memory_search or memory_list.
 - Your memories are automatically loaded into your context at the start of each conversation (shown below in the Persistent Memory section if any exist).
 - Do NOT say you cannot remember things or that you lose context between sessions. You have persistent memory.
+
+# Task tracking consistency
+- If you start tracking or managing tasks in a conversation, you MUST continue until the conversation ends.
+- Before any context gets compressed, summarize current task status.
+- Update task stage/status in real-time as work progresses.
+- If you use tools to work on a task, always report completion or failure — never leave a task in limbo.
 
 # Custom tools
 - You can create new tools using tool_create. Custom tools persist across sessions and execute shell commands with parameter substitution.
@@ -122,6 +128,7 @@ type AgentLoop struct {
 	projectRoot   string // when set, enables code_* tools for file operations
 	autonomous    bool   // strips E2E self-verify instructions from prompt
 	maxIter       int    // max tool iterations (0 = use default maxToolIterations)
+	modelOverride string // when set, overrides the client's default model for this agent run
 	contextBudget int    // estimated max context tokens (default 200000)
 	taskMemory    map[string]string // task-scoped key-value memory
 	hooks         *HookRunner       // pre/post tool execution hooks
@@ -232,6 +239,12 @@ func (a *AgentLoop) RunWithHistory(ctx context.Context, sessionID, userMessage, 
 func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, disabledTools []string, thinking bool, skillContent string, sendEvent func(WSMessage)) {
 	sess := a.sessions.GetOrCreate(sessionID)
 
+	// Determine the effective model: modelOverride takes precedence over the default.
+	effectiveModel := a.model
+	if a.modelOverride != "" {
+		effectiveModel = a.modelOverride
+	}
+
 	// Build a set of disabled tool names for fast lookup.
 	disabledSet := make(map[string]bool, len(disabledTools))
 	for _, name := range disabledTools {
@@ -295,7 +308,7 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	}
 
 	// Build the system prompt with model identity and available tool names.
-	sysPrompt := systemPrompt + fmt.Sprintf("\n\nYou are powered by %s.", a.model)
+	sysPrompt := systemPrompt + fmt.Sprintf("\n\nYou are powered by %s.", effectiveModel)
 	if len(claudeTools) > 0 {
 		var toolNames []string
 		for _, t := range claudeTools {
@@ -355,7 +368,7 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 	// Determine max tokens and thinking config.
 	maxTokens := 16384
 	var thinkingConfig *ai.ThinkingConfig
-	if thinking && strings.Contains(a.model, "opus") {
+	if thinking && strings.Contains(effectiveModel, "opus") {
 		maxTokens = 32000
 		thinkingConfig = &ai.ThinkingConfig{
 			Type:         "enabled",
@@ -408,6 +421,7 @@ func (a *AgentLoop) runLoop(ctx context.Context, sessionID, chatType string, dis
 		}
 
 		req := ai.Request{
+			Model:     a.modelOverride, // empty string lets ai.Client use its default
 			MaxTokens: maxTokens,
 			System:    sysPrompt,
 			Messages:  messages,

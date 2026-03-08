@@ -12,7 +12,7 @@ const TOOL_ICONS: Record<string, string> = {
   code_read: '📄', code_write: '✏️', code_edit: '✏️',
   code_search: '🔍', code_grep: '🔍', code_exec: '⚡',
   task_update: '📋', task_create: '📋',
-  e2e_assert: '🧪', e2e_dom: '🧪',
+  e2e_assert: '🧪', e2e_dom: '🧪', e2e_screenshot: '📸',
 };
 
 function toolIcon(name: string): string {
@@ -65,8 +65,21 @@ function isDiffOutput(name: string, output: string): boolean {
 }
 
 function extractImagePath(output: string): string | null {
-  const match = output.match(/\/(api\/screenshots\/[^\s]+|[^\s]+\.(png|jpg|jpeg|gif|webp|svg))/i);
-  return match ? (match[0].startsWith('/') ? match[0] : '/' + match[0]) : null;
+  // Check for path in JSON output like {"path":"/tmp/soul-e2e-screenshot.png","size":12345}
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed.path && /\.(png|jpg|jpeg|gif|webp)$/i.test(parsed.path)) {
+      return `/api/screenshot?path=${encodeURIComponent(parsed.path)}`;
+    }
+  } catch {
+    // not JSON — continue to fallback
+  }
+  // Check for /api/screenshots/ paths (existing endpoint)
+  const apiMatch = output.match(/\/(api\/screenshots\/[^\s"]+)/i);
+  if (apiMatch) return '/' + apiMatch[1];
+  // Fallback: check for plain absolute image path
+  const match = output.match(/(\/[^\s"]+\.(?:png|jpg|jpeg|gif|webp))/i);
+  return match ? `/api/screenshot?path=${encodeURIComponent(match[1])}` : null;
 }
 
 export default function ToolCall({ toolCall }: ToolCallProps) {
@@ -171,7 +184,7 @@ export default function ToolCall({ toolCall }: ToolCallProps) {
             if (imgSrc) {
               return (
                 <div className="p-2">
-                  <img src={imgSrc} alt="Tool output" className="max-w-full max-h-60 rounded border border-border-subtle" loading="lazy" />
+                  <img src={imgSrc} alt="E2E Screenshot" className="max-w-full rounded border border-border-subtle" loading="lazy" />
                 </div>
               );
             }

@@ -255,18 +255,24 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 		maxE2ERetries = 3
 	}
 
-	agent := NewAgentLoop(tp.server.ai, tp.products, tp.sessions, tp.planner, tp.broadcast, tp.model, taskRoot)
-	agent.autonomous = true
-	agent.pm = tp.server.pm
-	switch workflow {
-	case "micro":
-		agent.maxIter = 15
-	case "quick":
-		agent.maxIter = 30
-	default:
-		agent.maxIter = 40
+	phaseConfig := DefaultPhaseConfig()
+	serverURL := ""
+	e2eHost := ""
+	e2eRunnerPath := ""
+	if tp.server != nil {
+		serverURL = fmt.Sprintf("http://localhost:%d", tp.server.cfg.Port+1)
+		e2eHost = tp.server.cfg.E2EHost
+		e2eRunnerPath = tp.server.cfg.E2ERunnerPath
 	}
 
+	phaseRunner := NewPhaseRunner(
+		tp.server.ai, tp.products, tp.sessions, tp.planner, tp.broadcast,
+		phaseConfig, tp.projectRoot, taskRoot, workflow,
+		sendEvent, tp.sendActivity,
+		serverURL, e2eHost, e2eRunnerPath,
+	)
+
+	var agent *AgentLoop
 	hasChanges := false
 
 	for attempt := 0; attempt <= maxE2ERetries; attempt++ {
@@ -277,7 +283,10 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 			tp.sendActivity(taskID, "status", fmt.Sprintf("E2E retry %d/%d — re-running agent with gap report...", attempt, maxE2ERetries))
 		}
 
-		agent.Run(ctx, sessionID, runPrompt, "code", nil, false, sendEvent)
+		agent = phaseRunner.RunTask(ctx, taskID, sessionID, task, runPrompt)
+		if tp.server != nil {
+			agent.pm = tp.server.pm
+		}
 
 		// Check if cancelled mid-run.
 		if ctx.Err() != nil {
@@ -353,7 +362,14 @@ func (tp *TaskProcessor) processTask(ctx context.Context, taskID int64) {
 								hasChanges = false
 								mergeRetry = true
 							} else {
-								tp.sendActivity(taskID, "status", "Dev smoke test PASSED — all checks green")
+								tp.sendActivity(taskID, "status", "Smoke test PASSED — running runtime gate...")
+								if rtErr := RuntimeGate(devURL, tp.server.cfg.E2EHost, tp.server.cfg.E2ERunnerPath); rtErr != nil {
+									log.Printf("[autonomous] runtime gate FAILED for task %d: %v", taskID, rtErr)
+									tp.sendActivity(taskID, "status", fmt.Sprintf("Runtime gate warning: %v", rtErr))
+									tp.postVerificationComment(taskID, fmt.Sprintf("**Runtime Warning**: %v", rtErr))
+								} else {
+									tp.sendActivity(taskID, "status", "All verification gates PASSED")
+								}
 							}
 						}
 					}
@@ -484,6 +500,19 @@ func (tp *TaskProcessor) buildTaskPrompt(task planner.Task, taskRoot, workflow s
 	b.WriteString("- Estimated changes: [N files, ~M lines]\n")
 	b.WriteString("```\n\n")
 	b.WriteString("Do NOT call any code tools before outputting this plan. If you skip the plan, you will be warned.\n\n")
+
+	b.WriteString("## Verification Spec\n")
+	b.WriteString("After your plan, output a verification spec that describes what should be tested:\n\n")
+	b.WriteString("```yaml\n")
+	b.WriteString("verify:\n")
+	b.WriteString("  build: true  # tsc + vite must pass\n")
+	b.WriteString("  runtime_errors: 0  # no JS console errors\n")
+	b.WriteString("  checks:\n")
+	b.WriteString("    - description: \"Brief description of what to verify\"\n")
+	b.WriteString("      selector: \"CSS selector or DOM check\"\n")
+	b.WriteString("      assertion: \"exists|visible|text_contains|count\"\n")
+	b.WriteString("```\n\n")
+	b.WriteString("The pipeline uses this spec for automated feature verification after your changes.\n\n")
 
 	// Workflow-specific instructions.
 	if workflow == "full" {
