@@ -289,7 +289,7 @@ export default function Message({ message, onRetry, onEdit, isStreaming, searchQ
 
   return (
     <div className={`group flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-fade-in`}>
-      <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'} max-w-[85%]`}>
+      <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row w-full'} max-w-[85%]`}>
         {/* Role icon */}
         <div className="shrink-0 mt-3">
           {isUser ? (

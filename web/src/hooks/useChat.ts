@@ -60,19 +60,9 @@ export function useChat() {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant') {
-              // If the last assistant message has tool calls and content that
-              // doesn't already end with a newline, we're at the seam between
-              // tool calls and post-tool text. Insert a paragraph break so the
-              // text doesn't run onto the preceding content (e.g. "Now:Binary").
-              const atSeam =
-                last.toolCalls &&
-                last.toolCalls.length > 0 &&
-                last.content.length > 0 &&
-                !last.content.endsWith('\n');
-              const prefix = atSeam ? '\n\n' : '';
               return [
                 ...prev.slice(0, -1),
-                { ...last, content: last.content + prefix + token },
+                { ...last, content: last.content + token },
               ];
             }
             // Create new assistant message if none exists
@@ -207,14 +197,25 @@ export function useChat() {
 
         case 'tool.complete': {
           const data = msg.data as { id: string; output: string };
-          setMessages((prev) =>
-            updateAssistantToolCall(prev, data.id, (tc) => ({
+          setMessages((prev) => {
+            const updated = updateAssistantToolCall(prev, data.id, (tc) => ({
               ...tc,
               status: 'complete',
               progress: 100,
               output: data.output,
-            })),
-          );
+            }));
+            // Insert paragraph break at the seam between tool output and
+            // upcoming text so they don't run together (e.g. "file.The").
+            // Done here once per tool, NOT per token.
+            const last = updated[updated.length - 1];
+            if (last?.role === 'assistant' && last.content && !last.content.endsWith('\n')) {
+              return [
+                ...updated.slice(0, -1),
+                { ...last, content: last.content + '\n\n' },
+              ];
+            }
+            return updated;
+          });
           break;
         }
 
