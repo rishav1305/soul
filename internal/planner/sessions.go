@@ -191,7 +191,14 @@ func (s *Store) AddMessage(sessionID int64, role, content string) error {
 }
 
 // UpdateSessionStatus updates the status field of a chat session.
+// Valid statuses: "idle", "running", "completed_unread".
 func (s *Store) UpdateSessionStatus(id int64, status string) error {
+	switch status {
+	case "idle", "running", "completed_unread":
+		// valid
+	default:
+		return fmt.Errorf("invalid session status: %q", status)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.Exec(
 		`UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?`,
@@ -203,6 +210,20 @@ func (s *Store) UpdateSessionStatus(id int64, status string) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkSessionRead transitions a session from "completed_unread" → "idle".
+// Safe to call on already-idle sessions (no-op).
+func (s *Store) MarkSessionRead(id int64) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`UPDATE chat_sessions SET status = 'idle', updated_at = ? WHERE id = ? AND status = 'completed_unread'`,
+		now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("mark session read: %w", err)
 	}
 	return nil
 }

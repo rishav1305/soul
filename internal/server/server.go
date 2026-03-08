@@ -49,6 +49,9 @@ type Server struct {
 	// wsClients tracks connected WebSocket clients for broadcasting.
 	wsMu      sync.Mutex
 	wsClients map[*websocket.Conn]context.Context
+
+	// registry tracks background agent goroutines keyed by DB session ID.
+	registry *AgentRegistry
 }
 
 // New creates a Server with all routes registered.
@@ -71,6 +74,7 @@ func New(cfg config.Config, pm *products.Manager, aiClient *ai.Client, plannerSt
 		projectRoot: projectRoot,
 		worktrees:   wm,
 		wsClients:   make(map[*websocket.Conn]context.Context),
+		registry:    NewAgentRegistry(),
 	}
 	s.skillStore = skills.Load()
 	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
@@ -130,6 +134,7 @@ func NewWithWebFS(cfg config.Config, pm *products.Manager, aiClient *ai.Client, 
 		webFS:          webFS,
 		productConfigs: productConfigs,
 		wsClients:      make(map[*websocket.Conn]context.Context),
+		registry:       NewAgentRegistry(),
 	}
 	s.skillStore = skills.Load()
 	log.Printf("[skills] loaded %d skills: %v", len(s.skillStore.Names()), s.skillStore.Names())
@@ -311,6 +316,16 @@ func (s *Server) broadcast(msg WSMessage) {
 }
 
 // broadcastTaskEvent marshals data to JSON and broadcasts a task event.
+// broadcastSessionStatusChanged sends a session.status_changed event to all WS clients.
+func (s *Server) broadcastSessionStatusChanged(sessionID int64, status string) {
+	data, _ := json.Marshal(map[string]string{"status": status})
+	s.broadcast(WSMessage{
+		Type:      "session.status_changed",
+		SessionID: fmt.Sprintf("%d", sessionID),
+		Data:      data,
+	})
+}
+
 func (s *Server) broadcastTaskEvent(eventType string, data any) {
 	raw, err := json.Marshal(data)
 	if err != nil {

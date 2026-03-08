@@ -51,7 +51,28 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessions)
 }
 
-// handleSessionMessages handles GET /api/sessions/{id}/messages — returns messages for a session.
+// handleSessionRead handles PATCH /api/sessions/{id}/read — marks a session as read (completed_unread → idle).
+func (s *Server) handleSessionRead(w http.ResponseWriter, r *http.Request) {
+	if s.planner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "planner not configured"})
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid session id"})
+		return
+	}
+	if err := s.planner.MarkSessionRead(id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	// Broadcast the status change to all connected clients.
+	s.broadcastSessionStatusChanged(id, "idle")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "idle"})
+}
+
+
 func (s *Server) handleSessionMessages(w http.ResponseWriter, r *http.Request) {
 	if s.planner == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "planner not configured"})

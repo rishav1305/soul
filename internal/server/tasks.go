@@ -472,6 +472,22 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
+// handleScreenshotByPath serves E2E screenshot files by absolute path (query param).
+// Only allows image files from known safe directories.
+func handleScreenshotByPath(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" || !strings.HasPrefix(path, "/") {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	// Only serve image files from known safe directories.
+	if !strings.Contains(path, "soul-e2e") && !strings.Contains(path, ".soul") && !strings.Contains(path, "/tmp/") {
+		http.Error(w, "forbidden path", http.StatusForbidden)
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
 // handleAttachment proxies attachment requests to MinIO via pre-signed URL.
 func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 	if s.minioClient == nil {

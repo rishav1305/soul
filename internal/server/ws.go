@@ -69,7 +69,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "chat.send", "chat.message":
-			// Cancel any previous stream and wait for it to finish.
+			// For same-session re-sends: cancel the old agent for this specific session.
+			// We need the session ID from the message to check the registry.
+			// For cross-session sends: do NOT cancel agents from other sessions.
 			cs.mu.Lock()
 			if cs.cancel != nil {
 				cs.cancel()
@@ -80,7 +82,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				<-prevDone
 			}
 
-			chatCtx, cancel := context.WithCancel(ctx)
+			// Agent context is decoupled from WS connection — uses context.Background()
+			// so the agent survives tab switches and WS reconnections.
+			agentCtx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			cs.mu.Lock()
 			cs.cancel = cancel
@@ -91,7 +95,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			chatMsg := msg
 			go func() {
 				defer close(done)
-				s.handleChatSend(chatCtx, conn, &chatMsg)
+				s.handleChatSend(agentCtx, conn, &chatMsg)
 				cs.mu.Lock()
 				if cs.done == done {
 					cs.cancel = nil
@@ -108,6 +112,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				cs.cancel = nil
 			}
 			cs.mu.Unlock()
+
+		case "chat.cancel":
+			// Cancel a specific session's agent by DB session ID (cross-connection safe).
+			if msg.SessionID != "" {
+				if id, err := strconv.ParseInt(msg.SessionID, 10, 64); err == nil && id > 0 {
+					log.Printf("[ws] cancel request for session %d", id)
+					s.registry.Cancel(id)
+				}
+			}
 
 		default:
 			log.Printf("[ws] unknown message type: %q", msg.Type)
@@ -173,6 +186,7 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 			dbSessionID = id
 			if s.planner != nil {
 				_ = s.planner.UpdateSessionStatus(dbSessionID, "running")
+				s.broadcastSessionStatusChanged(dbSessionID, "running")
 			}
 		}
 	}
@@ -190,6 +204,21 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 		} else {
 			log.Printf("[ws] failed to create DB session: %v", err)
 		}
+	}
+
+	// Register this agent in the registry so it can be cancelled independently
+	// of the WebSocket connection (enables background survival on tab switch).
+	// ctx here is already context.Background()-derived (set by handleWebSocket),
+	// so closing the WS connection does NOT cancel this agent.
+	if dbSessionID > 0 && s.registry != nil {
+		regDone := make(chan struct{})
+		_, regCancel := context.WithCancel(ctx)
+		s.registry.Register(dbSessionID, regCancel, regDone)
+		defer func() {
+			regCancel()
+			close(regDone)
+			s.registry.Unregister(dbSessionID)
+		}()
 	}
 
 	// Load prior history from DB to resume context.
@@ -296,9 +325,11 @@ func (s *Server) handleChatSend(ctx context.Context, conn *websocket.Conn, msg *
 			log.Printf("[ws] failed to persist final assistant message: %v", err)
 		}
 	}
-	// Always reset status to idle.
+	// Always reset status to completed_unread (agent finished, user hasn't seen it yet).
+	// The frontend marks it idle via PATCH /api/sessions/{id}/read when user views it.
 	if dbSessionID > 0 && s.planner != nil {
-		_ = s.planner.UpdateSessionStatus(dbSessionID, "idle")
+		_ = s.planner.UpdateSessionStatus(dbSessionID, "completed_unread")
+		s.broadcastSessionStatusChanged(dbSessionID, "completed_unread")
 	}
 
 	// Generate smart title + summary in the background after the first complete exchange.
