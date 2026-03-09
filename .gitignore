@@ -1,1 +1,22 @@
+# Go
 /soul
+*.exe
+
+# Node
+web/node_modules/
+web/dist/
+
+# OS
+.DS_Store
+*.swp
+
+# IDE
+.idea/
+.vscode/
+
+# Build artifacts
+*.log
+
+# Secrets
+.env
+.env.*
