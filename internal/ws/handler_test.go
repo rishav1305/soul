@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -670,5 +671,188 @@ func TestNewMessageHandler(t *testing.T) {
 	}
 	if handler.hub != hub {
 		t.Error("expected handler.hub to match")
+	}
+}
+
+// --- Security: Input Validation Tests ---
+
+func TestSecurity_ChatSend_OversizedContent(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Create content larger than 32KB.
+	bigContent := strings.Repeat("x", 33*1024)
+	chatMsg := `{"type":"chat.send","sessionId":"` + sess.ID + `","content":"` + bigContent + `"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "message too large" {
+		t.Errorf("expected 'message too large', got %v", data["error"])
+	}
+
+	// Verify message was NOT stored.
+	messages, err := store.GetMessages(sess.ID)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Errorf("expected 0 messages (oversized content rejected), got %d", len(messages))
+	}
+}
+
+func TestSecurity_ChatSend_WhitespaceOnlyContent(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Send whitespace-only content.
+	chatMsg := `{"type":"chat.send","sessionId":"` + sess.ID + `","content":"   \n\t  "}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "message content required" {
+		t.Errorf("expected 'message content required', got %v", data["error"])
+	}
+}
+
+func TestSecurity_ChatSend_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Send chat.send with invalid UUID format.
+	chatMsg := `{"type":"chat.send","sessionId":"not-a-valid-uuid","content":"hello"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %v", data["error"])
+	}
+}
+
+func TestSecurity_SessionSwitch_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	switchMsg := `{"type":"session.switch","sessionId":"bad-uuid"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(switchMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %v", data["error"])
+	}
+}
+
+func TestSecurity_SessionDelete_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	deleteMsg := `{"type":"session.delete","sessionId":";;;DROP TABLE"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(deleteMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %v", data["error"])
+	}
+}
+
+func TestSecurity_MessageType_TooLong(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Send message with type field longer than 50 chars.
+	longType := strings.Repeat("a", 51)
+	chatMsg := `{"type":"` + longType + `"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid message type" {
+		t.Errorf("expected 'invalid message type', got %v", data["error"])
 	}
 }

@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -275,6 +276,148 @@ func TestMarshalOutbound_ConnectionReady(t *testing.T) {
 	dataMap := result["data"].(map[string]interface{})
 	if dataMap["clientId"] != "ws-00000001-abcd" {
 		t.Errorf("expected clientId ws-00000001-abcd, got %v", dataMap["clientId"])
+	}
+}
+
+func TestParseInboundMessage_TypeTooLong(t *testing.T) {
+	longType := strings.Repeat("a", 51)
+	raw := []byte(`{"type":"` + longType + `"}`)
+	_, err := ParseInboundMessage(raw)
+	if err == nil {
+		t.Fatal("expected error for type field longer than 50 chars")
+	}
+	if err.Error() != "invalid message type" {
+		t.Errorf("expected 'invalid message type', got %q", err.Error())
+	}
+}
+
+func TestParseInboundMessage_TypeExactly50(t *testing.T) {
+	exactType := strings.Repeat("a", 50)
+	raw := []byte(`{"type":"` + exactType + `"}`)
+	msg, err := ParseInboundMessage(raw)
+	if err != nil {
+		t.Fatalf("unexpected error for 50-char type: %v", err)
+	}
+	if msg.Type != exactType {
+		t.Errorf("expected type %q, got %q", exactType, msg.Type)
+	}
+}
+
+func TestValidateChatContent_Valid(t *testing.T) {
+	content, err := ValidateChatContent("hello world")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != "hello world" {
+		t.Errorf("expected 'hello world', got %q", content)
+	}
+}
+
+func TestValidateChatContent_TrimsWhitespace(t *testing.T) {
+	content, err := ValidateChatContent("  hello  ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != "hello" {
+		t.Errorf("expected 'hello', got %q", content)
+	}
+}
+
+func TestValidateChatContent_Empty(t *testing.T) {
+	_, err := ValidateChatContent("")
+	if err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+func TestValidateChatContent_WhitespaceOnly(t *testing.T) {
+	_, err := ValidateChatContent("   \n\t  ")
+	if err == nil {
+		t.Fatal("expected error for whitespace-only content")
+	}
+}
+
+func TestValidateChatContent_TooLarge(t *testing.T) {
+	big := strings.Repeat("x", 33*1024)
+	_, err := ValidateChatContent(big)
+	if err == nil {
+		t.Fatal("expected error for oversized content")
+	}
+	if err.Error() != "message too large" {
+		t.Errorf("expected 'message too large', got %q", err.Error())
+	}
+}
+
+func TestValidateChatContent_ExactlyAtLimit(t *testing.T) {
+	exact := strings.Repeat("x", 32*1024)
+	content, err := ValidateChatContent(exact)
+	if err != nil {
+		t.Fatalf("unexpected error for content at exact limit: %v", err)
+	}
+	if content != exact {
+		t.Error("expected content at exact limit to pass unchanged")
+	}
+}
+
+func TestValidateSessionTitle_Normal(t *testing.T) {
+	title := ValidateSessionTitle("My Chat Session")
+	if title != "My Chat Session" {
+		t.Errorf("expected 'My Chat Session', got %q", title)
+	}
+}
+
+func TestValidateSessionTitle_StripsControlChars(t *testing.T) {
+	title := ValidateSessionTitle("Hello\x00World\x01Test")
+	if title != "HelloWorldTest" {
+		t.Errorf("expected 'HelloWorldTest', got %q", title)
+	}
+}
+
+func TestValidateSessionTitle_PreservesWhitespace(t *testing.T) {
+	title := ValidateSessionTitle("Hello\tWorld\nTest")
+	if title != "Hello\tWorld\nTest" {
+		t.Errorf("expected tabs and newlines preserved, got %q", title)
+	}
+}
+
+func TestValidateSessionTitle_TruncatesLong(t *testing.T) {
+	long := strings.Repeat("a", 300)
+	title := ValidateSessionTitle(long)
+	if len(title) != 200 {
+		t.Errorf("expected title truncated to 200 chars, got %d", len(title))
+	}
+}
+
+func TestValidateSessionTitle_Empty(t *testing.T) {
+	title := ValidateSessionTitle("")
+	if title != "" {
+		t.Errorf("expected empty title to remain empty, got %q", title)
+	}
+}
+
+func TestIsValidUUID_Valid(t *testing.T) {
+	if !IsValidUUID("00000000-0000-0000-0000-000000000000") {
+		t.Error("expected valid UUID to pass")
+	}
+	if !IsValidUUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890") {
+		t.Error("expected valid UUID to pass")
+	}
+}
+
+func TestIsValidUUID_Invalid(t *testing.T) {
+	cases := []string{
+		"",
+		"not-a-uuid",
+		"00000000-0000-0000-0000-00000000000",  // too short
+		"00000000-0000-0000-0000-0000000000000", // too long
+		"0000000000000000000000000000000000000",  // no dashes
+		"00000000-0000-0000-0000-00000000000g",  // invalid hex char
+		";;;DROP TABLE sessions",
+	}
+	for _, c := range cases {
+		if IsValidUUID(c) {
+			t.Errorf("expected %q to be invalid UUID", c)
+		}
 	}
 }
 

@@ -70,8 +70,14 @@ func TestCSPHeaders(t *testing.T) {
 	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
 		t.Errorf("CSP missing style-src: %s", csp)
 	}
-	if !strings.Contains(csp, "connect-src 'self' ws://localhost:*") {
+	if !strings.Contains(csp, "connect-src 'self' ws://localhost:* ws://127.0.0.1:*") {
 		t.Errorf("CSP missing connect-src: %s", csp)
+	}
+	if !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("CSP missing frame-ancestors: %s", csp)
+	}
+	if !strings.Contains(csp, "base-uri 'self'") {
+		t.Errorf("CSP missing base-uri: %s", csp)
 	}
 }
 

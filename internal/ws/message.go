@@ -3,6 +3,8 @@ package ws
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 // Inbound message types sent by WebSocket clients.
@@ -11,6 +13,18 @@ const (
 	TypeSessionSwitch = "session.switch"
 	TypeSessionCreate = "session.create"
 	TypeSessionDelete = "session.delete"
+)
+
+// Input validation limits.
+const (
+	// maxTypeLength is the maximum allowed length for the message type field.
+	maxTypeLength = 50
+
+	// maxContentLength is the maximum allowed content length for chat.send (32KB).
+	maxContentLength = 32 * 1024
+
+	// maxTitleLength is the maximum allowed title length for session.create.
+	maxTitleLength = 200
 )
 
 // Outbound message types sent to WebSocket clients.
@@ -56,7 +70,64 @@ func ParseInboundMessage(raw []byte) (*InboundMessage, error) {
 		return nil, fmt.Errorf("missing message type")
 	}
 
+	if len(msg.Type) > maxTypeLength {
+		return nil, fmt.Errorf("invalid message type")
+	}
+
 	return &msg, nil
+}
+
+// ValidateChatContent validates and normalizes chat message content.
+// Returns the trimmed content or an error if validation fails.
+func ValidateChatContent(content string) (string, error) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "", fmt.Errorf("message content required")
+	}
+	if len(content) > maxContentLength {
+		return "", fmt.Errorf("message too large")
+	}
+	return trimmed, nil
+}
+
+// ValidateSessionTitle validates and sanitizes a session title.
+// It strips control characters and enforces a length limit.
+// An empty title is valid (the store assigns a default).
+func ValidateSessionTitle(title string) string {
+	// Strip control characters (except common whitespace).
+	cleaned := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return -1
+		}
+		return r
+	}, title)
+
+	cleaned = strings.TrimSpace(cleaned)
+
+	if len(cleaned) > maxTitleLength {
+		cleaned = cleaned[:maxTitleLength]
+	}
+
+	return cleaned
+}
+
+// IsValidUUID checks if a string is a valid UUID format (8-4-4-4-12 hex).
+func IsValidUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // MarshalOutbound serializes an OutboundMessage to JSON bytes.

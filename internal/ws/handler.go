@@ -82,10 +82,17 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		h.sendError(client, "", "session ID required")
 		return
 	}
-	if msg.Content == "" {
-		h.sendError(client, msg.SessionID, "message content required")
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
 		return
 	}
+
+	content, contentErr := ValidateChatContent(msg.Content)
+	if contentErr != nil {
+		h.sendError(client, msg.SessionID, contentErr.Error())
+		return
+	}
+	msg.Content = content
 
 	// Validate session exists.
 	_, err := h.sessionStore.GetSession(msg.SessionID)
@@ -290,6 +297,10 @@ func (h *MessageHandler) handleSessionSwitch(client *Client, msg *InboundMessage
 		h.sendError(client, "", "session ID required")
 		return
 	}
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
+		return
+	}
 
 	// Validate session exists.
 	sess, err := h.sessionStore.GetSession(msg.SessionID)
@@ -329,7 +340,8 @@ func (h *MessageHandler) handleSessionSwitch(client *Client, msg *InboundMessage
 // handleSessionCreate processes a session.create message. It creates a new
 // session and broadcasts the result to all connected clients.
 func (h *MessageHandler) handleSessionCreate(client *Client, msg *InboundMessage) {
-	sess, err := h.sessionStore.CreateSession("")
+	title := ValidateSessionTitle(msg.Content)
+	sess, err := h.sessionStore.CreateSession(title)
 	if err != nil {
 		log.Printf("ws: failed to create session: %v", err)
 		h.sendError(client, "", "failed to create session")
@@ -345,6 +357,10 @@ func (h *MessageHandler) handleSessionCreate(client *Client, msg *InboundMessage
 func (h *MessageHandler) handleSessionDelete(client *Client, msg *InboundMessage) {
 	if msg.SessionID == "" {
 		h.sendError(client, "", "session ID required")
+		return
+	}
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
 		return
 	}
 
