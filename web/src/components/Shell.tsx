@@ -3,6 +3,7 @@ import { useChat } from '../hooks/useChat';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SessionList } from './SessionList';
+import { ConnectionBanner } from './ConnectionBanner';
 
 function connectionDotClasses(status: ConnectionState): string {
   switch (status) {
@@ -34,7 +35,9 @@ export function Shell() {
     messages,
     isStreaming,
     status,
+    authError,
     sendMessage,
+    reauth,
     sessions,
     currentSessionID,
     createSession,
@@ -51,17 +54,29 @@ export function Shell() {
     >
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <h1 className="text-lg font-semibold tracking-tight">Soul v2</h1>
-        <div
-          data-testid="connection-status"
-          className="flex items-center gap-2 text-xs text-zinc-400"
-          title={connectionLabel(status)}
-        >
-          <span>{connectionLabel(status)}</span>
-          <span
-            className={`inline-block h-2 w-2 rounded-full ${connectionDotClasses(status)}`}
-          />
+        <div className="flex items-center gap-3">
+          {authError && (
+            <button
+              data-testid="reauth-button"
+              onClick={reauth}
+              className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600 text-zinc-100 transition-colors"
+            >
+              Re-authenticate
+            </button>
+          )}
+          <div
+            data-testid="connection-status"
+            className="flex items-center gap-2 text-xs text-zinc-400"
+            title={connectionLabel(status)}
+          >
+            <span>{connectionLabel(status)}</span>
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${connectionDotClasses(status)}`}
+            />
+          </div>
         </div>
       </header>
+      <ConnectionBanner status={status} />
       <div className="flex flex-1 min-h-0">
         <SessionList
           sessions={sessions}

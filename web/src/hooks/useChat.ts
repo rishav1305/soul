@@ -6,7 +6,9 @@ interface UseChatReturn {
   messages: Message[];
   isStreaming: boolean;
   status: ConnectionState;
+  authError: boolean;
   sendMessage: (content: string) => void;
+  reauth: () => Promise<void>;
   sessions: Session[];
   currentSessionID: string | null;
   createSession: () => void;
@@ -23,6 +25,7 @@ function generateTempId(): string {
 export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [authError, setAuthError] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionID, setCurrentSessionID] = useState<string | null>(null);
 
@@ -36,6 +39,8 @@ export function useChat(): UseChatReturn {
     (type: OutboundMessageType, data: unknown, sessionID: string) => {
       switch (type) {
         case 'connection.ready': {
+          // Clear auth error on reconnect.
+          setAuthError(false);
           // Auto-create a session on first connect if none exists.
           if (!sessionIDRef.current && !sessionCreationRequestedRef.current) {
             sessionCreationRequestedRef.current = true;
@@ -154,12 +159,17 @@ export function useChat(): UseChatReturn {
             ),
           );
           setIsStreaming(false);
+          setAuthError(false);
           break;
         }
 
         case 'chat.error': {
           const payload = data as { error: string } | undefined;
           const errorContent = payload?.error ?? 'An unknown error occurred';
+
+          if (errorContent.toLowerCase().includes('authentication')) {
+            setAuthError(true);
+          }
 
           setMessages(prev => {
             // If there's a streaming message, replace it with the error.
@@ -243,11 +253,22 @@ export function useChat(): UseChatReturn {
     [send],
   );
 
+  const reauth = useCallback(async () => {
+    try {
+      await fetch('/api/reauth', { method: 'POST' });
+      setAuthError(false);
+    } catch {
+      // Silently ignore — the next chat.error will re-set authError if still failing.
+    }
+  }, []);
+
   return {
     messages,
     isStreaming,
     status,
+    authError,
     sendMessage,
+    reauth,
     sessions,
     currentSessionID,
     createSession,
