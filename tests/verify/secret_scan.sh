@@ -28,6 +28,9 @@ declare -a DESCRIPTIONS
 PATTERNS+=(    'sk-ant-' )
 DESCRIPTIONS+=('Anthropic API key prefix' )
 
+PATTERNS+=(    'sk-proj-' )
+DESCRIPTIONS+=('OpenAI API key prefix' )
+
 PATTERNS+=(    'AKIA[0-9A-Z]{16}' )
 DESCRIPTIONS+=('AWS access key' )
 
