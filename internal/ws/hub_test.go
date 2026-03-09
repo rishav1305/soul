@@ -330,16 +330,22 @@ func TestHubShutdownClosesClients(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.HandleUpgrade(w, r)
 	}))
-	defer srv.Close()
 
 	wsURL := "ws" + srv.URL[len("http"):]
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	dialCtx, dialCancel := context.WithTimeout(ctx, 2*time.Second)
+	conn, _, err := websocket.Dial(dialCtx, wsURL, nil)
+	dialCancel()
 	if err != nil {
+		srv.Close()
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	time.Sleep(50 * time.Millisecond)
+
+	// Close the HTTP test server first to prevent new connections,
+	// then close the WS connection, then cancel hub context.
+	srv.Close()
+	conn.Close(websocket.StatusNormalClosure, "")
 
 	// Cancel context to trigger hub shutdown.
 	cancel()

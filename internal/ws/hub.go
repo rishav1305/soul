@@ -27,10 +27,19 @@ type Hub struct {
 	unregister     chan *Client
 	countReq       chan chan int
 	findReq        chan chan []*Client
+	broadcastCh    chan []byte
+	sessionBcastCh chan sessionBroadcast
 	metrics        *metrics.EventLogger
 	sessionStore   *session.Store
+	handler        *MessageHandler
 	allowedOrigins []string
 	clientCounter  uint64
+}
+
+// sessionBroadcast wraps a session-scoped broadcast request.
+type sessionBroadcast struct {
+	sessionID string
+	msg       []byte
 }
 
 // HubOption configures a Hub.
@@ -44,6 +53,11 @@ func WithMetricsLogger(l *metrics.EventLogger) HubOption {
 // WithSessionStore sets the session store for session operations.
 func WithSessionStore(s *session.Store) HubOption {
 	return func(h *Hub) { h.sessionStore = s }
+}
+
+// WithMessageHandler sets the message handler for dispatching inbound messages.
+func WithMessageHandler(mh *MessageHandler) HubOption {
+	return func(h *Hub) { h.handler = mh }
 }
 
 // WithAllowedOrigins sets the list of allowed origins for WebSocket upgrades.
@@ -67,11 +81,13 @@ func defaultAllowedOrigins() []string {
 // NewHub creates a new Hub with the given options.
 func NewHub(opts ...HubOption) *Hub {
 	h := &Hub{
-		clients:    make(map[*Client]bool),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		countReq:   make(chan chan int),
-		findReq:    make(chan chan []*Client),
+		clients:        make(map[*Client]bool),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		countReq:       make(chan chan int),
+		findReq:        make(chan chan []*Client),
+		broadcastCh:    make(chan []byte, 256),
+		sessionBcastCh: make(chan sessionBroadcast, 256),
 	}
 
 	for _, opt := range opts {
@@ -113,6 +129,16 @@ func (h *Hub) Run(ctx context.Context) {
 				clients = append(clients, c)
 			}
 			reply <- clients
+		case msg := <-h.broadcastCh:
+			for client := range h.clients {
+				client.Send(msg)
+			}
+		case sb := <-h.sessionBcastCh:
+			for client := range h.clients {
+				if client.SessionID() == sb.sessionID {
+					client.Send(sb.msg)
+				}
+			}
 		}
 	}
 }
@@ -167,6 +193,25 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 	// Start read and write pumps in separate goroutines.
 	go client.WritePump()
 	go client.ReadPump()
+
+	// Send connection.ready message with the client ID.
+	readyMsg := NewConnectionReady(clientID)
+	if data, err := MarshalOutbound(readyMsg); err == nil {
+		client.Send(data)
+	}
+
+	// Send session.list if a session store is configured.
+	if h.sessionStore != nil {
+		sessions, err := h.sessionStore.ListSessions()
+		if err != nil {
+			log.Printf("ws: failed to list sessions for new client %s: %v", clientID, err)
+		} else {
+			listMsg := NewSessionList(sessions)
+			if data, err := MarshalOutbound(listMsg); err == nil {
+				client.Send(data)
+			}
+		}
+	}
 }
 
 // ClientCount returns the number of currently connected clients.
@@ -183,6 +228,34 @@ func (h *Hub) Clients() []*Client {
 	reply := make(chan []*Client, 1)
 	h.findReq <- reply
 	return <-reply
+}
+
+// Broadcast sends a message to all connected clients. The operation is
+// serialized through the hub event loop to avoid data races on the clients map.
+// Non-blocking: if the broadcast channel is full, the message is dropped.
+func (h *Hub) Broadcast(msg []byte) {
+	select {
+	case h.broadcastCh <- msg:
+	default:
+		log.Printf("ws: broadcast channel full, message dropped")
+	}
+}
+
+// BroadcastToSession sends a message only to clients subscribed to the given
+// session. The operation is serialized through the hub event loop.
+// Non-blocking: if the channel is full, the message is dropped.
+func (h *Hub) BroadcastToSession(sessionID string, msg []byte) {
+	select {
+	case h.sessionBcastCh <- sessionBroadcast{sessionID: sessionID, msg: msg}:
+	default:
+		log.Printf("ws: session broadcast channel full, message dropped for session %s", sessionID)
+	}
+}
+
+// SetHandler sets the message handler for dispatching inbound messages.
+// Must be called before Run() starts — not safe for concurrent use.
+func (h *Hub) SetHandler(mh *MessageHandler) {
+	h.handler = mh
 }
 
 // isOriginAllowed checks whether the request origin is in the allowed list.

@@ -83,10 +83,14 @@ func (c *Client) Send(msg []byte) {
 // ReadPump blocks until the connection is closed or an error occurs.
 func (c *Client) ReadPump() {
 	defer func() {
-		// Use select to avoid blocking on unregister if hub has stopped.
+		// Always attempt to unregister with the hub. Use a timeout rather
+		// than the client context — the context may already be cancelled
+		// (e.g. from client.Close()) but the hub still needs to remove us.
+		unregCtx, unregCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer unregCancel()
 		select {
 		case c.hub.unregister <- c:
-		case <-c.ctx.Done():
+		case <-unregCtx.Done():
 		}
 		c.conn.Close(websocket.StatusNormalClosure, "")
 		c.cancel()
@@ -122,8 +126,12 @@ func (c *Client) ReadPump() {
 			return
 		}
 
-		// For now (Step 3.1), just log the message. Message routing comes in Step 3.2.
-		log.Printf("ws: client %s received %d bytes", c.id, len(data))
+		// Dispatch inbound message to the handler if one is configured.
+		if c.hub.handler != nil {
+			c.hub.handler.HandleMessage(c, data)
+		} else {
+			log.Printf("ws: client %s received %d bytes (no handler)", c.id, len(data))
+		}
 	}
 }
 

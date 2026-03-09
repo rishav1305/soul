@@ -97,7 +97,7 @@ func TestClientClose(t *testing.T) {
 	}
 	_ = conn
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Get the client from the hub via the safe Clients() method.
 	clients := h.Clients()
@@ -109,11 +109,16 @@ func TestClientClose(t *testing.T) {
 	// Close the client directly.
 	client.Close()
 
-	// Wait for cleanup.
-	time.Sleep(100 * time.Millisecond)
-	if count := h.ClientCount(); count != 0 {
-		t.Errorf("expected 0 clients after Close, got %d", count)
+	// Wait for cleanup — poll with backoff since ReadPump needs to detect
+	// context cancel, exit, and send to unregister channel.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if h.ClientCount() == 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+	t.Errorf("expected 0 clients after Close, got %d", h.ClientCount())
 }
 
 func TestClientID(t *testing.T) {
@@ -142,6 +147,11 @@ func TestClientReadPumpRejectsBinary(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
+
+	// Drain the connection.ready message (no session store, so no session.list).
+	readCtx, readCancel := context.WithTimeout(ctx, 2*time.Second)
+	_, _, _ = conn.Read(readCtx)
+	readCancel()
 
 	// Send a binary frame — should cause the server to close the connection.
 	err = conn.Write(ctx, websocket.MessageBinary, []byte("binary data"))
@@ -178,6 +188,11 @@ func TestClientWritePump(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	time.Sleep(50 * time.Millisecond)
+
+	// Read the connection.ready message (no session store, so only one initial message).
+	readCtx1, readCancel1 := context.WithTimeout(ctx, 2*time.Second)
+	_, _, _ = conn.Read(readCtx1)
+	readCancel1()
 
 	// Get the client via the safe Clients() method and send a message.
 	clients := h.Clients()
