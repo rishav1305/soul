@@ -1,0 +1,24 @@
+[Unit]
+Description=Soul v2 — AI Chat Interface
+After=network.target
+
+[Service]
+Type=simple
+User=rishav
+Group=rishav
+WorkingDirectory=/home/rishav/soul-v2
+ExecStart=/home/rishav/soul-v2/soul serve
+Restart=on-failure
+RestartSec=5
+Environment=SOUL_V2_HOST=0.0.0.0
+Environment=SOUL_V2_PORT=3002
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rishav/.soul-v2
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

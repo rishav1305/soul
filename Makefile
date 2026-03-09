@@ -1,4 +1,4 @@
-.PHONY: build build-go web serve types clean
+.PHONY: build build-go web serve types clean deploy
 .PHONY: verify verify-static verify-unit verify-integ verify-e2e verify-review
 .PHONY: check-bundle check-secrets check-deps
 
@@ -41,3 +41,7 @@ check-deps:
 	@if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo "SKIP: govulncheck not installed"; fi
 	@echo "Checking npm vulnerabilities..."
 	@cd web && npm audit --audit-level=high 2>/dev/null || echo "WARN: npm audit found issues"
+
+# Deploy to systemd
+deploy:
+	bash deploy/deploy.sh
