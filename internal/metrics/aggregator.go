@@ -1,0 +1,386 @@
+package metrics
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"time"
+)
+
+// Aggregator reads JSONL events and computes derived metrics reports.
+type Aggregator struct {
+	dataDir string
+}
+
+// StatusReport provides a system overview: uptime, sessions, messages, errors.
+type StatusReport struct {
+	Uptime        string
+	TotalSessions int
+	TotalMessages int
+	ActiveStreams  int
+	TotalErrors   int
+	LastEvent     time.Time
+}
+
+// QualityEntry represents a single quality rating from an override.quality event.
+type QualityEntry struct {
+	Step   string
+	Rating int
+	Notes  string
+}
+
+// QualityReport provides error taxonomy counts and quality ratings.
+type QualityReport struct {
+	ErrorCounts    map[string]int
+	QualityRatings []QualityEntry
+	TotalErrors    int
+	FalsePositives int
+}
+
+// GateResult holds pass/fail/retry counts for a single gate name.
+type GateResult struct {
+	Gate    string
+	Pass    int
+	Fail    int
+	Retry   int
+	Total   int
+}
+
+// LayersReport provides gate pass/fail/retry rates per layer.
+type LayersReport struct {
+	GateResults []GateResult
+}
+
+// CostReport provides token usage and estimated cost.
+type CostReport struct {
+	InputTokens   int
+	OutputTokens  int
+	TotalRequests int
+	EstimatedCost float64
+}
+
+// LatencyReport provides streaming performance percentiles.
+type LatencyReport struct {
+	FirstTokenP50 time.Duration
+	FirstTokenP95 time.Duration
+	FirstTokenP99 time.Duration
+	StreamP50     time.Duration
+	StreamP95     time.Duration
+	StreamP99     time.Duration
+	SampleCount   int
+}
+
+// Cost estimation rates (rough, Sonnet pricing).
+const (
+	inputCostPerMToken  = 3.0  // $3 per million input tokens
+	outputCostPerMToken = 15.0 // $15 per million output tokens
+)
+
+// NewAggregator creates a new Aggregator for the given data directory.
+func NewAggregator(dataDir string) *Aggregator {
+	return &Aggregator{dataDir: dataDir}
+}
+
+// Status reads all events and computes a system overview.
+func (a *Aggregator) Status() (*StatusReport, error) {
+	events, err := ReadEvents(a.dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	report := &StatusReport{
+		Uptime: "unknown",
+	}
+
+	if len(events) == 0 {
+		return report, nil
+	}
+
+	report.LastEvent = events[len(events)-1].Timestamp
+
+	sessions := make(map[string]bool)
+	activeStreams := make(map[string]bool)
+	var startTime time.Time
+
+	for _, ev := range events {
+		switch ev.EventType {
+		case EventSystemStart:
+			startTime = ev.Timestamp
+		case EventWSConnect:
+			if clientID := getStringField(ev.Data, "client_id"); clientID != "" {
+				sessions[clientID] = true
+			} else if client := getStringField(ev.Data, "client"); client != "" {
+				sessions[client] = true
+			}
+			report.TotalSessions++
+		case EventWSStreamStart:
+			if id := getStringField(ev.Data, "stream_id"); id != "" {
+				activeStreams[id] = true
+			}
+		case EventWSStreamEnd:
+			if id := getStringField(ev.Data, "stream_id"); id != "" {
+				delete(activeStreams, id)
+			}
+		case EventAPIRequest:
+			report.TotalMessages++
+		case EventAPIError, EventOverrideError:
+			report.TotalErrors++
+		}
+	}
+
+	report.ActiveStreams = len(activeStreams)
+
+	if !startTime.IsZero() {
+		report.Uptime = time.Since(startTime).Truncate(time.Second).String()
+	}
+
+	return report, nil
+}
+
+// Quality reads override events and computes error taxonomy counts and quality ratings.
+func (a *Aggregator) Quality() (*QualityReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "override")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	report := &QualityReport{
+		ErrorCounts: make(map[string]int),
+	}
+
+	for _, ev := range events {
+		switch ev.EventType {
+		case EventOverrideError:
+			errType := getStringField(ev.Data, "type")
+			if errType == ErrorFalsePositive {
+				report.FalsePositives++
+			} else {
+				report.TotalErrors++
+				if errType != "" {
+					report.ErrorCounts[errType]++
+				} else {
+					report.ErrorCounts["unknown"]++
+				}
+			}
+		case EventOverrideQuality:
+			entry := QualityEntry{
+				Step:   getStringField(ev.Data, "step"),
+				Notes:  getStringField(ev.Data, "notes"),
+				Rating: getIntField(ev.Data, "rating"),
+			}
+			report.QualityRatings = append(report.QualityRatings, entry)
+		}
+	}
+
+	return report, nil
+}
+
+// Layers reads gate events and computes pass/fail/retry counts per gate.
+func (a *Aggregator) Layers() (*LayersReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "gate")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	gateMap := make(map[string]*GateResult)
+
+	for _, ev := range events {
+		gateName := getStringField(ev.Data, "gate")
+		if gateName == "" {
+			gateName = getStringField(ev.Data, "name")
+		}
+		if gateName == "" {
+			gateName = "unknown"
+		}
+
+		result, ok := gateMap[gateName]
+		if !ok {
+			result = &GateResult{Gate: gateName}
+			gateMap[gateName] = result
+		}
+
+		switch ev.EventType {
+		case EventGatePass:
+			result.Pass++
+			result.Total++
+		case EventGateFail:
+			result.Fail++
+			result.Total++
+		case EventGateRetry:
+			result.Retry++
+			result.Total++
+		case EventGateRun:
+			result.Total++
+		}
+	}
+
+	report := &LayersReport{}
+	for _, r := range gateMap {
+		report.GateResults = append(report.GateResults, *r)
+	}
+
+	// Sort by gate name for deterministic output.
+	sort.Slice(report.GateResults, func(i, j int) bool {
+		return report.GateResults[i].Gate < report.GateResults[j].Gate
+	})
+
+	return report, nil
+}
+
+// Cost reads api.request events and computes token usage and estimated cost.
+func (a *Aggregator) Cost() (*CostReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "api")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	report := &CostReport{}
+
+	for _, ev := range events {
+		if ev.EventType != EventAPIRequest {
+			continue
+		}
+		report.TotalRequests++
+		report.InputTokens += getIntField(ev.Data, "input_tokens")
+		report.OutputTokens += getIntField(ev.Data, "output_tokens")
+	}
+
+	report.EstimatedCost = estimateCost(report.InputTokens, report.OutputTokens)
+
+	return report, nil
+}
+
+// Latency reads ws.stream.token and ws.stream.end events and computes percentiles.
+func (a *Aggregator) Latency() (*LatencyReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "ws.stream")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+
+	var firstTokenMs []float64
+	var streamMs []float64
+
+	for _, ev := range events {
+		switch ev.EventType {
+		case EventWSStreamToken:
+			if v := getFloatField(ev.Data, "first_token_ms"); v > 0 {
+				firstTokenMs = append(firstTokenMs, v)
+			}
+		case EventWSStreamEnd:
+			if v := getFloatField(ev.Data, "duration_ms"); v > 0 {
+				streamMs = append(streamMs, v)
+			}
+		}
+	}
+
+	report := &LatencyReport{
+		SampleCount: len(firstTokenMs),
+	}
+
+	if len(firstTokenMs) > 0 {
+		sort.Float64s(firstTokenMs)
+		report.FirstTokenP50 = msToDuration(percentile(firstTokenMs, 50))
+		report.FirstTokenP95 = msToDuration(percentile(firstTokenMs, 95))
+		report.FirstTokenP99 = msToDuration(percentile(firstTokenMs, 99))
+	}
+
+	if len(streamMs) > 0 {
+		sort.Float64s(streamMs)
+		report.StreamP50 = msToDuration(percentile(streamMs, 50))
+		report.StreamP95 = msToDuration(percentile(streamMs, 95))
+		report.StreamP99 = msToDuration(percentile(streamMs, 99))
+	}
+
+	return report, nil
+}
+
+// estimateCost calculates rough USD cost based on Sonnet pricing.
+func estimateCost(inputTokens, outputTokens int) float64 {
+	inputCost := float64(inputTokens) / 1_000_000 * inputCostPerMToken
+	outputCost := float64(outputTokens) / 1_000_000 * outputCostPerMToken
+	return math.Round((inputCost+outputCost)*10000) / 10000 // 4 decimal places
+}
+
+// percentile returns the p-th percentile from a sorted slice of float64 values.
+// Uses nearest-rank method. The slice must be sorted in ascending order.
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+	rank := (p / 100) * float64(len(sorted))
+	idx := int(math.Ceil(rank)) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
+}
+
+// msToDuration converts milliseconds (float64) to time.Duration.
+func msToDuration(ms float64) time.Duration {
+	return time.Duration(ms * float64(time.Millisecond))
+}
+
+// getStringField safely extracts a string value from the event data map.
+func getStringField(data map[string]interface{}, key string) string {
+	if data == nil {
+		return ""
+	}
+	v, ok := data[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+// getIntField safely extracts an integer value from the event data map.
+// JSON numbers are decoded as float64 by encoding/json, so we handle that.
+func getIntField(data map[string]interface{}, key string) int {
+	if data == nil {
+		return 0
+	}
+	v, ok := data[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+// getFloatField safely extracts a float64 value from the event data map.
+func getFloatField(data map[string]interface{}, key string) float64 {
+	if data == nil {
+		return 0
+	}
+	v, ok := data[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
+}

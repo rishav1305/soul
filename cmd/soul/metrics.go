@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/rishav1305/soul-v2/internal/metrics"
 )
@@ -14,20 +16,179 @@ import (
 func runMetrics(args []string) {
 	if len(args) < 1 {
 		fmt.Println("usage: soul metrics <subcommand>")
-		fmt.Println("subcommands: tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
 		os.Exit(1)
 	}
 
 	switch args[0] {
+	case "status":
+		runMetricsStatus()
+	case "quality":
+		runMetricsQuality()
+	case "layers":
+		runMetricsLayers()
+	case "cost":
+		runMetricsCost()
+	case "latency":
+		runMetricsLatency()
 	case "tail":
 		runMetricsTail(args[1:])
 	case "log":
 		runMetricsLog(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown metrics subcommand: %s\n", args[0])
-		fmt.Println("subcommands: tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
 		os.Exit(1)
 	}
+}
+
+// runMetricsStatus handles: soul metrics status
+func runMetricsStatus() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+
+	report, err := agg.Status()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("=== System Status ===")
+	fmt.Printf("  Uptime:          %s\n", report.Uptime)
+	fmt.Printf("  Total Sessions:  %d\n", report.TotalSessions)
+	fmt.Printf("  Total Messages:  %d\n", report.TotalMessages)
+	fmt.Printf("  Active Streams:  %d\n", report.ActiveStreams)
+	fmt.Printf("  Total Errors:    %d\n", report.TotalErrors)
+	if !report.LastEvent.IsZero() {
+		fmt.Printf("  Last Event:      %s\n", report.LastEvent.Format("2006-01-02T15:04:05Z07:00"))
+	} else {
+		fmt.Printf("  Last Event:      (none)\n")
+	}
+}
+
+// runMetricsQuality handles: soul metrics quality
+func runMetricsQuality() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+
+	report, err := agg.Quality()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("=== Quality Report ===")
+	fmt.Printf("  Total Errors:     %d\n", report.TotalErrors)
+	fmt.Printf("  False Positives:  %d\n", report.FalsePositives)
+
+	if len(report.ErrorCounts) > 0 {
+		fmt.Println("\n  Error Counts by Type:")
+
+		// Sort keys for deterministic output.
+		keys := make([]string, 0, len(report.ErrorCounts))
+		for k := range report.ErrorCounts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			fmt.Printf("    %-16s %d\n", k, report.ErrorCounts[k])
+		}
+	}
+
+	if len(report.QualityRatings) > 0 {
+		fmt.Println("\n  Quality Ratings:")
+		fmt.Printf("    %-20s %-8s %s\n", "STEP", "RATING", "NOTES")
+		fmt.Printf("    %-20s %-8s %s\n", strings.Repeat("-", 20), strings.Repeat("-", 6), strings.Repeat("-", 30))
+		for _, q := range report.QualityRatings {
+			step := q.Step
+			if len(step) > 20 {
+				step = step[:17] + "..."
+			}
+			fmt.Printf("    %-20s %-8d %s\n", step, q.Rating, q.Notes)
+		}
+	}
+}
+
+// runMetricsLayers handles: soul metrics layers
+func runMetricsLayers() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+
+	report, err := agg.Layers()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("=== Gate Layers Report ===")
+	if len(report.GateResults) == 0 {
+		fmt.Println("  No gate events recorded.")
+		return
+	}
+
+	fmt.Printf("  %-16s %-8s %-8s %-8s %-8s %s\n", "GATE", "PASS", "FAIL", "RETRY", "TOTAL", "PASS%")
+	fmt.Printf("  %-16s %-8s %-8s %-8s %-8s %s\n",
+		strings.Repeat("-", 16), strings.Repeat("-", 6),
+		strings.Repeat("-", 6), strings.Repeat("-", 6),
+		strings.Repeat("-", 6), strings.Repeat("-", 6))
+
+	for _, r := range report.GateResults {
+		passRate := "N/A"
+		if r.Total > 0 {
+			passRate = fmt.Sprintf("%.0f%%", float64(r.Pass)/float64(r.Total)*100)
+		}
+		fmt.Printf("  %-16s %-8d %-8d %-8d %-8d %s\n",
+			r.Gate, r.Pass, r.Fail, r.Retry, r.Total, passRate)
+	}
+}
+
+// runMetricsCost handles: soul metrics cost
+func runMetricsCost() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+
+	report, err := agg.Cost()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("=== Cost Report ===")
+	fmt.Printf("  Total Requests:   %d\n", report.TotalRequests)
+	fmt.Printf("  Input Tokens:     %d\n", report.InputTokens)
+	fmt.Printf("  Output Tokens:    %d\n", report.OutputTokens)
+	fmt.Printf("  Estimated Cost:   $%.4f\n", report.EstimatedCost)
+}
+
+// runMetricsLatency handles: soul metrics latency
+func runMetricsLatency() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+
+	report, err := agg.Latency()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("=== Latency Report ===")
+	fmt.Printf("  Sample Count:     %d\n", report.SampleCount)
+
+	if report.SampleCount == 0 {
+		fmt.Println("  No latency data recorded.")
+		return
+	}
+
+	fmt.Println("\n  First Token Latency:")
+	fmt.Printf("    P50:  %s\n", report.FirstTokenP50)
+	fmt.Printf("    P95:  %s\n", report.FirstTokenP95)
+	fmt.Printf("    P99:  %s\n", report.FirstTokenP99)
+
+	fmt.Println("\n  Stream Duration:")
+	fmt.Printf("    P50:  %s\n", report.StreamP50)
+	fmt.Printf("    P95:  %s\n", report.StreamP95)
+	fmt.Printf("    P99:  %s\n", report.StreamP99)
 }
 
 // runMetricsTail handles: soul metrics tail [--type PREFIX] [-n COUNT]
