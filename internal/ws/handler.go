@@ -1,6 +1,9 @@
 package ws
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -151,7 +154,8 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 	ch, err := h.streamClient.Stream(ctx, req)
 	if err != nil {
 		log.Printf("ws: stream error for session %s: %v", sessionID, err)
-		h.sendError(client, sessionID, "failed to start stream")
+		h.logAPIError(sessionID, err)
+		h.sendClassifiedError(client, sessionID, err)
 		return
 	}
 
@@ -208,11 +212,21 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 
 		case "error":
 			errMsg := "stream error"
+			statusCode := 0
 			if evt.Error != nil {
 				errMsg = evt.Error.Message
+				statusCode = evt.Error.StatusCode
 			}
 			log.Printf("ws: stream error event for session %s: %s", sessionID, errMsg)
-			h.sendError(client, sessionID, errMsg)
+			if h.metrics != nil {
+				_ = h.metrics.Log(metrics.EventAPIError, map[string]interface{}{
+					"session_id":    sessionID,
+					"error_type":    "stream",
+					"status_code":   statusCode,
+					"error_message": errMsg,
+				})
+			}
+			h.sendError(client, sessionID, "stream interrupted — please try again")
 			return
 
 		case "message_stop":
@@ -223,6 +237,14 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 	// If stream ended without message_stop, it was truncated.
 	if !gotMessageStop {
 		log.Printf("ws: stream ended without message_stop for session %s", sessionID)
+		if h.metrics != nil {
+			_ = h.metrics.Log(metrics.EventAPIError, map[string]interface{}{
+				"session_id":    sessionID,
+				"error_type":    "incomplete_stream",
+				"status_code":   0,
+				"error_message": "stream ended without message_stop",
+			})
+		}
 		h.sendError(client, sessionID, "stream ended unexpectedly")
 		return
 	}
@@ -364,4 +386,74 @@ func (h *MessageHandler) broadcast(msg *OutboundMessage) {
 		return
 	}
 	h.hub.Broadcast(data)
+}
+
+// logAPIError logs an api.error metric event with error classification.
+func (h *MessageHandler) logAPIError(sessionID string, err error) {
+	if h.metrics == nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"session_id": sessionID,
+	}
+
+	var authErr *stream.AuthError
+	var rateLimitErr *stream.RateLimitError
+	var serverErr *stream.ServerError
+	var apiErr *stream.APIError
+
+	switch {
+	case errors.As(err, &authErr):
+		data["error_type"] = "auth"
+		data["status_code"] = 401
+		data["error_message"] = authErr.Error()
+	case errors.As(err, &rateLimitErr):
+		data["error_type"] = "rate_limit"
+		data["status_code"] = 429
+		data["error_message"] = rateLimitErr.Error()
+		data["retry_after_ms"] = rateLimitErr.RetryAfter.Milliseconds()
+	case errors.As(err, &serverErr):
+		data["error_type"] = "server"
+		data["status_code"] = serverErr.StatusCode
+		data["error_message"] = serverErr.Error()
+	case errors.Is(err, context.DeadlineExceeded):
+		data["error_type"] = "timeout"
+		data["status_code"] = 0
+		data["error_message"] = err.Error()
+	case errors.As(err, &apiErr):
+		data["error_type"] = "unknown"
+		data["status_code"] = apiErr.StatusCode
+		data["error_message"] = apiErr.Error()
+	default:
+		data["error_type"] = "unknown"
+		data["status_code"] = 0
+		data["error_message"] = err.Error()
+	}
+
+	_ = h.metrics.Log(metrics.EventAPIError, data)
+}
+
+// sendClassifiedError sends a user-friendly chat.error message based on the error type.
+func (h *MessageHandler) sendClassifiedError(client *Client, sessionID string, err error) {
+	var authErr *stream.AuthError
+	var rateLimitErr *stream.RateLimitError
+	var serverErr *stream.ServerError
+
+	switch {
+	case errors.As(err, &authErr):
+		h.sendError(client, sessionID, "authentication failed — please re-authenticate")
+	case errors.As(err, &rateLimitErr):
+		msg := "rate limited — please wait"
+		if rateLimitErr.RetryAfter > 0 {
+			msg = fmt.Sprintf("rate limited — please wait %v", rateLimitErr.RetryAfter)
+		}
+		h.sendError(client, sessionID, msg)
+	case errors.As(err, &serverErr):
+		h.sendError(client, sessionID, "Claude API temporarily unavailable")
+	case errors.Is(err, context.DeadlineExceeded):
+		h.sendError(client, sessionID, "request timed out — please try again")
+	default:
+		h.sendError(client, sessionID, "failed to start stream")
+	}
 }
