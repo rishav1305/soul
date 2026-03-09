@@ -11,3 +11,9 @@ if (root) {
     </StrictMode>,
   );
 }
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Service worker registration failed — app works without it
+  });
+}
