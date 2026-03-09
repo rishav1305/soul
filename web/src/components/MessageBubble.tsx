@@ -1,4 +1,5 @@
 import type { MessageBubbleProps } from '../lib/types';
+import { Markdown } from './Markdown';
 
 export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const isUser = message.role === 'user';
@@ -14,12 +15,18 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
       <div
         className={`rounded-lg px-4 py-3 ${isUser ? 'bg-zinc-800' : 'bg-zinc-900'}`}
       >
-        <p className="whitespace-pre-wrap break-words text-zinc-100">
-          {message.content}
-          {isStreaming && !isUser && (
-            <span className="animate-pulse">&#9612;</span>
-          )}
-        </p>
+        {isUser ? (
+          <p className="whitespace-pre-wrap break-words text-zinc-100">
+            {message.content}
+          </p>
+        ) : (
+          <div className="relative">
+            <Markdown content={message.content} />
+            {isStreaming && (
+              <span className="animate-pulse inline">&#9612;</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
