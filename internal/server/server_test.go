@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rishav1305/soul-v2/internal/auth"
 )
 
 // newTestServer creates a Server suitable for testing (no metrics, no auth).
@@ -462,4 +465,212 @@ func TestIsHashedAsset(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Reauth endpoint tests ---
+
+func TestReauth_ReturnsAuthStatusWhenConfigured(t *testing.T) {
+	dir := t.TempDir()
+	expiry := time.Now().Add(1 * time.Hour).UnixMilli()
+	credJSON := `{"claudeAiOauth":{"accessToken":"test-tok","refreshToken":"test-refresh","expiresAt":` + intToStr(expiry) + `}}`
+	credPath := filepath.Join(dir, ".credentials.json")
+	if err := os.WriteFile(credPath, []byte(credJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	src := auth.NewOAuthTokenSource(credPath, nil)
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv := newTestServer(t, WithAuth(src))
+
+	req := httptest.NewRequest("POST", "/api/reauth", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected application/json, got %q", ct)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	if body["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", body["status"])
+	}
+
+	authMap, ok := body["auth"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected auth to be a map, got %T", body["auth"])
+	}
+	if authMap["state"] != "connected" {
+		t.Errorf("expected auth.state=connected, got %v", authMap["state"])
+	}
+}
+
+func TestReauth_ReloadsCredentialsFromDisk(t *testing.T) {
+	dir := t.TempDir()
+	// Start with token A.
+	expiry := time.Now().Add(1 * time.Hour).UnixMilli()
+	credJSON := `{"claudeAiOauth":{"accessToken":"token-A","refreshToken":"refresh-A","expiresAt":` + intToStr(expiry) + `}}`
+	credPath := filepath.Join(dir, ".credentials.json")
+	if err := os.WriteFile(credPath, []byte(credJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	src := auth.NewOAuthTokenSource(credPath, nil)
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv := newTestServer(t, WithAuth(src))
+
+	// Verify initial state via /api/auth/status.
+	req := httptest.NewRequest("GET", "/api/auth/status", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var statusBefore map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&statusBefore)
+	if statusBefore["state"] != "connected" {
+		t.Fatalf("expected initial state=connected, got %v", statusBefore["state"])
+	}
+
+	// Externally update credentials file to expired token.
+	expiredAt := time.Now().Add(-1 * time.Hour).UnixMilli()
+	newCredJSON := `{"claudeAiOauth":{"accessToken":"token-B","refreshToken":"refresh-B","expiresAt":` + intToStr(expiredAt) + `}}`
+	if err := os.WriteFile(credPath, []byte(newCredJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call reauth to reload from disk.
+	req2 := httptest.NewRequest("POST", "/api/reauth", nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec2.Code)
+	}
+
+	var reauthBody map[string]interface{}
+	json.NewDecoder(rec2.Body).Decode(&reauthBody)
+
+	authMap := reauthBody["auth"].(map[string]interface{})
+	// After reload, the token is expired, so state should be "expired".
+	if authMap["state"] != "expired" {
+		t.Errorf("expected auth.state=expired after reloading expired token, got %v", authMap["state"])
+	}
+}
+
+func TestReauth_ReturnsErrorWhenAuthNil(t *testing.T) {
+	srv := newTestServer(t) // no auth configured
+
+	req := httptest.NewRequest("POST", "/api/reauth", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	if body["error"] != "authentication not configured" {
+		t.Errorf("expected error='authentication not configured', got %v", body["error"])
+	}
+}
+
+func TestAuthStatus_CorrectStateAfterReauth(t *testing.T) {
+	dir := t.TempDir()
+	expiry := time.Now().Add(1 * time.Hour).UnixMilli()
+	credJSON := `{"claudeAiOauth":{"accessToken":"initial-tok","refreshToken":"initial-refresh","expiresAt":` + intToStr(expiry) + `}}`
+	credPath := filepath.Join(dir, ".credentials.json")
+	if err := os.WriteFile(credPath, []byte(credJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	src := auth.NewOAuthTokenSource(credPath, nil)
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv := newTestServer(t, WithAuth(src))
+
+	// Update credentials file to a new valid token with different expiry.
+	newExpiry := time.Now().Add(2 * time.Hour).UnixMilli()
+	newCredJSON := `{"claudeAiOauth":{"accessToken":"new-tok","refreshToken":"new-refresh","expiresAt":` + intToStr(newExpiry) + `}}`
+	if err := os.WriteFile(credPath, []byte(newCredJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Trigger reauth.
+	req := httptest.NewRequest("POST", "/api/reauth", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reauth expected 200, got %d", rec.Code)
+	}
+
+	// Now check /api/auth/status reflects the reloaded state.
+	req2 := httptest.NewRequest("GET", "/api/auth/status", nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("auth/status expected 200, got %d", rec2.Code)
+	}
+
+	var status map[string]interface{}
+	json.NewDecoder(rec2.Body).Decode(&status)
+	if status["state"] != "connected" {
+		t.Errorf("expected state=connected, got %v", status["state"])
+	}
+}
+
+func TestReauth_NonPOSTMethodReturns405(t *testing.T) {
+	dir := t.TempDir()
+	expiry := time.Now().Add(1 * time.Hour).UnixMilli()
+	credJSON := `{"claudeAiOauth":{"accessToken":"tok","refreshToken":"ref","expiresAt":` + intToStr(expiry) + `}}`
+	credPath := filepath.Join(dir, ".credentials.json")
+	if err := os.WriteFile(credPath, []byte(credJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	src := auth.NewOAuthTokenSource(credPath, nil)
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	srv := newTestServer(t, WithAuth(src))
+
+	// GET should not match the POST route.
+	methods := []string{"GET", "PUT", "DELETE", "PATCH"}
+	for _, method := range methods {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/api/reauth", nil)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			// Go 1.22+ method-based routing returns 405 for wrong method on matched path.
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s /api/reauth: expected 405, got %d", method, rec.Code)
+			}
+		})
+	}
+}
+
+// intToStr converts an int64 to a string for JSON embedding.
+func intToStr(n int64) string {
+	return fmt.Sprintf("%d", n)
 }

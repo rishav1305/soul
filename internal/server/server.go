@@ -92,6 +92,7 @@ func New(opts ...Option) *Server {
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("/api/reauth", s.handleReauth)
 	// SPA fallback — all other paths.
 	s.mux.Handle("/", s.spaHandler())
 
@@ -166,6 +167,37 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.auth.Status())
+}
+
+// handleReauth reloads OAuth credentials from disk and returns the new auth status.
+func (s *Server) handleReauth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{
+			"error": "method not allowed",
+		})
+		return
+	}
+
+	if s.auth == nil {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"error": "authentication not configured",
+		})
+		return
+	}
+
+	s.auth.ReloadFromDisk()
+
+	if s.metrics != nil {
+		_ = s.metrics.Log(metrics.EventOAuthReload, map[string]interface{}{
+			"source": "api",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"auth":   s.auth.Status(),
+	})
 }
 
 // --- SPA handler ---
