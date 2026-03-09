@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Request represents a Claude API request.
@@ -160,4 +161,57 @@ type Response struct {
 	Model      string         `json:"model"`
 	StopReason string         `json:"stop_reason"`
 	Usage      *Usage         `json:"usage,omitempty"`
+}
+
+// AuthError is returned when authentication fails (401).
+type AuthError struct {
+	Err error
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("authentication failed: %v", e.Err)
+}
+
+func (e *AuthError) Unwrap() error {
+	return e.Err
+}
+
+// RateLimitError is returned when the API rate limit is hit (429).
+type RateLimitError struct {
+	RetryAfter time.Duration
+	Err        error
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("rate limited (retry after %v): %v", e.RetryAfter, e.Err)
+}
+
+func (e *RateLimitError) Unwrap() error {
+	return e.Err
+}
+
+// ServerError is returned for retryable server errors (500/502/503).
+type ServerError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *ServerError) Error() string {
+	return fmt.Sprintf("server error (%d): %v", e.StatusCode, e.Err)
+}
+
+func (e *ServerError) Unwrap() error {
+	return e.Err
+}
+
+// IncompleteStreamError is returned when the stream ends without message_stop.
+type IncompleteStreamError struct {
+	LastEvent *SSEEvent
+}
+
+func (e *IncompleteStreamError) Error() string {
+	if e.LastEvent != nil {
+		return fmt.Sprintf("stream ended without message_stop (last event: %s)", e.LastEvent.Type)
+	}
+	return "stream ended without message_stop"
 }

@@ -3,28 +3,47 @@ package ws
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/rishav1305/soul-v2/internal/metrics"
 	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/stream"
 )
 
 // MessageHandler processes inbound WebSocket messages and dispatches them
 // to the appropriate session and hub operations. It is safe for concurrent
 // use from multiple ReadPump goroutines because it only reads its own fields
-// (hub, sessionStore, metrics) and delegates state mutations to the hub
-// event loop or the thread-safe session store.
+// (hub, sessionStore, streamClient, metrics) and delegates state mutations
+// to the hub event loop or the thread-safe session store.
 type MessageHandler struct {
 	hub          *Hub
 	sessionStore *session.Store
+	streamClient *stream.Client
 	metrics      *metrics.EventLogger
 }
 
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
-func NewMessageHandler(hub *Hub, store *session.Store, mel *metrics.EventLogger) *MessageHandler {
-	return &MessageHandler{
+// The streamClient parameter may be nil — if so, chat.send will store the user
+// message and immediately return chat.done without streaming (Phase 3 behavior).
+func NewMessageHandler(hub *Hub, store *session.Store, mel *metrics.EventLogger, opts ...MessageHandlerOption) *MessageHandler {
+	h := &MessageHandler{
 		hub:          hub,
 		sessionStore: store,
 		metrics:      mel,
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// MessageHandlerOption configures a MessageHandler.
+type MessageHandlerOption func(*MessageHandler)
+
+// WithStreamClient sets the Claude API streaming client on the handler.
+func WithStreamClient(sc *stream.Client) MessageHandlerOption {
+	return func(h *MessageHandler) {
+		h.streamClient = sc
 	}
 }
 
@@ -53,8 +72,8 @@ func (h *MessageHandler) HandleMessage(client *Client, raw []byte) {
 }
 
 // handleChatSend processes a chat.send message. It validates the session exists,
-// stores the user message, and sends a chat.done acknowledgement. Claude streaming
-// integration comes in Phase 4.
+// stores the user message, builds conversation history, and streams the response
+// from the Claude API back to the client as chat.token events.
 func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 	if msg.SessionID == "" {
 		h.sendError(client, "", "session ID required")
@@ -80,9 +99,166 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		return
 	}
 
-	// For now, echo back a chat.done. Claude streaming comes in Phase 4.
-	out := NewChatDone(msg.SessionID, stored.ID)
-	h.sendToClient(client, out)
+	// If no stream client is configured, fall back to immediate chat.done.
+	if h.streamClient == nil {
+		out := NewChatDone(msg.SessionID, stored.ID)
+		h.sendToClient(client, out)
+		return
+	}
+
+	// Build conversation history from session messages.
+	sessionMsgs, err := h.sessionStore.GetMessages(msg.SessionID)
+	if err != nil {
+		log.Printf("ws: failed to get session messages: %v", err)
+		h.sendError(client, msg.SessionID, "failed to load conversation history")
+		return
+	}
+
+	apiMessages := make([]stream.Message, 0, len(sessionMsgs))
+	for _, sm := range sessionMsgs {
+		if sm.Role != "user" && sm.Role != "assistant" {
+			continue
+		}
+		apiMessages = append(apiMessages, stream.Message{
+			Role: sm.Role,
+			Content: []stream.ContentBlock{
+				{Type: "text", Text: sm.Content},
+			},
+		})
+	}
+
+	req := &stream.Request{
+		MaxTokens: 4096,
+		Messages:  apiMessages,
+	}
+
+	// Generate a message ID for the assistant response ahead of time.
+	// We'll use the stored user message ID as a reference, and create
+	// the assistant message after streaming completes.
+	sessionID := msg.SessionID
+
+	// Stream in a goroutine so we don't block the ReadPump.
+	go h.runStream(client, sessionID, req)
+}
+
+// runStream executes the Claude API streaming call and forwards events to the client.
+func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request) {
+	startTime := time.Now()
+
+	// Use the client's context so the stream is cancelled on disconnect.
+	ctx := client.Context()
+
+	ch, err := h.streamClient.Stream(ctx, req)
+	if err != nil {
+		log.Printf("ws: stream error for session %s: %v", sessionID, err)
+		h.sendError(client, sessionID, "failed to start stream")
+		return
+	}
+
+	// Log stream start.
+	if h.metrics != nil {
+		_ = h.metrics.Log(metrics.EventWSStreamStart, map[string]interface{}{
+			"session_id": sessionID,
+			"client_id":  client.ID(),
+		})
+	}
+
+	var fullText strings.Builder
+	var messageID string
+	var model string
+	var totalInputTokens int
+	var totalOutputTokens int
+	var firstTokenLogged bool
+	var gotMessageStop bool
+
+	for evt := range ch {
+		switch evt.Type {
+		case "message_start":
+			if evt.Message != nil {
+				messageID = evt.Message.ID
+				model = evt.Message.Model
+				if evt.Message.Usage != nil {
+					totalInputTokens = evt.Message.Usage.InputTokens
+				}
+			}
+
+		case "content_block_delta":
+			if evt.Delta != nil && evt.Delta.Text != "" {
+				token := evt.Delta.Text
+				fullText.WriteString(token)
+				tokenMsg := NewChatToken(sessionID, token, messageID)
+				h.sendToClient(client, tokenMsg)
+
+				// Log first token only (per spec: ws.stream.token).
+				if !firstTokenLogged && h.metrics != nil {
+					firstTokenLogged = true
+					_ = h.metrics.Log(metrics.EventWSStreamToken, map[string]interface{}{
+						"session_id":     sessionID,
+						"client_id":      client.ID(),
+						"message_id":     messageID,
+						"first_token_ms": time.Since(startTime).Milliseconds(),
+					})
+				}
+			}
+
+		case "message_delta":
+			if evt.Usage != nil {
+				totalOutputTokens = evt.Usage.OutputTokens
+			}
+
+		case "error":
+			errMsg := "stream error"
+			if evt.Error != nil {
+				errMsg = evt.Error.Message
+			}
+			log.Printf("ws: stream error event for session %s: %s", sessionID, errMsg)
+			h.sendError(client, sessionID, errMsg)
+			return
+
+		case "message_stop":
+			gotMessageStop = true
+		}
+	}
+
+	// If stream ended without message_stop, it was truncated.
+	if !gotMessageStop {
+		log.Printf("ws: stream ended without message_stop for session %s", sessionID)
+		h.sendError(client, sessionID, "stream ended unexpectedly")
+		return
+	}
+
+	// Store the assistant response.
+	if fullText.Len() > 0 {
+		assistantMsg, err := h.sessionStore.AddMessage(sessionID, "assistant", fullText.String())
+		if err != nil {
+			log.Printf("ws: failed to store assistant message: %v", err)
+		} else if messageID == "" {
+			messageID = assistantMsg.ID
+		}
+	}
+
+	// Send chat.done.
+	doneMsg := NewChatDone(sessionID, messageID)
+	h.sendToClient(client, doneMsg)
+
+	// Log stream end + API request metrics.
+	if h.metrics != nil {
+		duration := time.Since(startTime).Milliseconds()
+		_ = h.metrics.Log(metrics.EventWSStreamEnd, map[string]interface{}{
+			"session_id":   sessionID,
+			"client_id":    client.ID(),
+			"message_id":   messageID,
+			"total_tokens": totalOutputTokens,
+			"duration_ms":  duration,
+		})
+		_ = h.metrics.Log(metrics.EventAPIRequest, map[string]interface{}{
+			"session_id":    sessionID,
+			"model":         model,
+			"input_tokens":  totalInputTokens,
+			"output_tokens": totalOutputTokens,
+			"duration_ms":   duration,
+		})
+	}
 }
 
 // handleSessionSwitch processes a session.switch message. It validates the
