@@ -1,0 +1,465 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// newTestServer creates a Server suitable for testing (no metrics, no auth).
+func newTestServer(t *testing.T, opts ...Option) *Server {
+	t.Helper()
+	return New(opts...)
+}
+
+func TestHealthEndpoint(t *testing.T) {
+	srv := newTestServer(t)
+	// Set startTime so uptime is deterministic.
+	srv.startTime = time.Now().Add(-5 * time.Second)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	if body["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", body["status"])
+	}
+	if body["version"] != version {
+		t.Errorf("expected version=%s, got %v", version, body["version"])
+	}
+	if body["uptime"] == nil || body["uptime"] == "" {
+		t.Error("expected non-empty uptime")
+	}
+}
+
+func TestCSPHeaders(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("expected Content-Security-Policy header")
+	}
+	if !strings.Contains(csp, "default-src 'self'") {
+		t.Errorf("CSP missing default-src: %s", csp)
+	}
+	if !strings.Contains(csp, "script-src 'self'") {
+		t.Errorf("CSP missing script-src: %s", csp)
+	}
+	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Errorf("CSP missing style-src: %s", csp)
+	}
+	if !strings.Contains(csp, "connect-src 'self' ws://localhost:*") {
+		t.Errorf("CSP missing connect-src: %s", csp)
+	}
+}
+
+func TestXContentTypeOptions(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options=nosniff, got %q", got)
+	}
+}
+
+func TestXFrameOptions(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("expected X-Frame-Options=DENY, got %q", got)
+	}
+}
+
+func TestRateLimiterRejectsAfterThreshold(t *testing.T) {
+	// Create server with low RPM for testing.
+	srv := New()
+	// We'll craft a handler with a very low limit to test quickly.
+	// Since the default is 60, we need to either make 61 requests or
+	// use a custom rate limit. Let's replace the middleware.
+
+	// Instead, let's test the rateLimitMiddleware directly.
+	handler := rateLimitMiddleware(5)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First 5 requests should succeed.
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("GET", "/api/test", nil)
+		req.RemoteAddr = "192.168.1.1:12345"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i+1, rec.Code)
+		}
+	}
+
+	// 6th request should be rate-limited.
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+
+	if got := rec.Header().Get("Retry-After"); got != "60" {
+		t.Errorf("expected Retry-After=60, got %q", got)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["error"] != "rate limit exceeded" {
+		t.Errorf("expected rate limit error, got %v", body["error"])
+	}
+
+	// Different IP should not be rate-limited.
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	req2.RemoteAddr = "192.168.1.2:12345"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Errorf("different IP should not be rate-limited, got %d", rec2.Code)
+	}
+
+	_ = srv // keep the variable used for context
+}
+
+func TestRateLimiterSkipsStaticFiles(t *testing.T) {
+	handler := rateLimitMiddleware(1)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Static file requests should never be rate-limited even after exceeding API limit.
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("GET", "/index.html", nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("static request %d: expected 200, got %d", i+1, rec.Code)
+		}
+	}
+}
+
+func TestRecoveryMiddleware(t *testing.T) {
+	handler := recoveryMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	}))
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["error"] != "internal server error" {
+		t.Errorf("expected internal server error, got %v", body["error"])
+	}
+}
+
+func TestSPAFallbackServesIndexHTML(t *testing.T) {
+	// Create a temp directory with an index.html.
+	dir := t.TempDir()
+	indexContent := `<!DOCTYPE html><html><body>SPA</body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(indexContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newTestServer(t, WithStaticDir(dir))
+
+	// Request a path that doesn't exist as a file → should get index.html.
+	req := httptest.NewRequest("GET", "/some/client/route", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "SPA") {
+		t.Errorf("expected SPA content, got %q", body)
+	}
+
+	// Check no-cache header on index.html.
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("expected Cache-Control=no-cache for SPA fallback, got %q", got)
+	}
+}
+
+func TestSPADoesNotServeIndexForAPIPaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("SPA"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newTestServer(t, WithStaticDir(dir))
+
+	// Unknown API path should get 404 JSON, not index.html.
+	req := httptest.NewRequest("GET", "/api/nonexistent", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["error"] != "not found" {
+		t.Errorf("expected 'not found' error, got %v", body["error"])
+	}
+}
+
+func TestStaticFileServing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("SPA"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create assets subdirectory.
+	assetsDir := filepath.Join(dir, "assets")
+	if err := os.Mkdir(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	jsContent := `console.log("hello");`
+	if err := os.WriteFile(filepath.Join(assetsDir, "main.a1b2c3d4.js"), []byte(jsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newTestServer(t, WithStaticDir(dir))
+
+	req := httptest.NewRequest("GET", "/assets/main.a1b2c3d4.js", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "javascript") {
+		t.Errorf("expected javascript content type, got %q", ct)
+	}
+
+	// Hashed asset should get long cache.
+	cc := rec.Header().Get("Cache-Control")
+	if !strings.Contains(cc, "max-age=31536000") {
+		t.Errorf("expected long cache for hashed asset, got %q", cc)
+	}
+}
+
+func TestAuthStatusMissing(t *testing.T) {
+	srv := newTestServer(t) // no auth configured
+
+	req := httptest.NewRequest("GET", "/api/auth/status", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["state"] != "missing" {
+		t.Errorf("expected state=missing, got %v", body["state"])
+	}
+}
+
+func TestRequestIDHeader(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	rid := rec.Header().Get("X-Request-ID")
+	if rid == "" {
+		t.Fatal("expected X-Request-ID header to be present")
+	}
+
+	// Make a second request — should get a different ID.
+	req2 := httptest.NewRequest("GET", "/api/health", nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	rid2 := rec2.Header().Get("X-Request-ID")
+	if rid2 == "" {
+		t.Fatal("expected X-Request-ID header on second request")
+	}
+	if rid == rid2 {
+		t.Errorf("expected different request IDs, got same: %s", rid)
+	}
+}
+
+func TestCSPHeadersOnStaticFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("SPA"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newTestServer(t, WithStaticDir(dir))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if csp := rec.Header().Get("Content-Security-Policy"); csp == "" {
+		t.Error("expected CSP header on static file response")
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("expected nosniff on static response, got %q", got)
+	}
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("expected DENY on static response, got %q", got)
+	}
+}
+
+func TestDefaultsFromEnv(t *testing.T) {
+	t.Setenv("SOUL_V2_PORT", "9999")
+	t.Setenv("SOUL_V2_HOST", "0.0.0.0")
+
+	srv := New()
+	if srv.port != 9999 {
+		t.Errorf("expected port 9999 from env, got %d", srv.port)
+	}
+	if srv.host != "0.0.0.0" {
+		t.Errorf("expected host 0.0.0.0 from env, got %s", srv.host)
+	}
+}
+
+func TestOptionOverridesEnv(t *testing.T) {
+	t.Setenv("SOUL_V2_PORT", "9999")
+
+	srv := New(WithPort(8080))
+	if srv.port != 8080 {
+		t.Errorf("expected port 8080 from option, got %d", srv.port)
+	}
+}
+
+func TestNoStaticDirReturns404(t *testing.T) {
+	srv := newTestServer(t) // no staticDir set
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHealthEndpointContentType(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected application/json content type, got %q", ct)
+	}
+}
+
+func TestClientIPExtraction(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		xff        string
+		want       string
+	}{
+		{
+			name:       "from RemoteAddr",
+			remoteAddr: "192.168.1.1:12345",
+			want:       "192.168.1.1",
+		},
+		{
+			name:       "from X-Forwarded-For single",
+			remoteAddr: "10.0.0.1:1234",
+			xff:        "203.0.113.50",
+			want:       "203.0.113.50",
+		},
+		{
+			name:       "from X-Forwarded-For chain",
+			remoteAddr: "10.0.0.1:1234",
+			xff:        "203.0.113.50, 70.41.3.18, 150.172.238.178",
+			want:       "203.0.113.50",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tc.remoteAddr
+			if tc.xff != "" {
+				req.Header.Set("X-Forwarded-For", tc.xff)
+			}
+			got := clientIP(req)
+			if got != tc.want {
+				t.Errorf("clientIP() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsHashedAsset(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"main.a1b2c3.js", true},
+		{"style.abc123.css", true},
+		{"index.html", false},
+		{"favicon.ico", false},
+		{"robots.txt", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsHashedAsset(tc.name); got != tc.want {
+				t.Errorf("IsHashedAsset(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}
