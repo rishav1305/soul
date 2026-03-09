@@ -7,5 +7,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-markdown': ['react-markdown', 'remark-gfm'],
+        },
+      },
+    },
   },
 });

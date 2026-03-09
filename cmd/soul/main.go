@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -31,7 +32,7 @@ func main() {
 	case "metrics":
 		if len(os.Args) < 3 {
 			fmt.Println("usage: soul metrics <subcommand>")
-			fmt.Println("subcommands: tail, log")
+			fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
 			os.Exit(1)
 		}
 		runMetrics(os.Args[2:])
@@ -42,6 +43,9 @@ func main() {
 }
 
 func runServe() {
+	// Soft memory limit — triggers more aggressive GC before hitting 256MB.
+	debug.SetMemoryLimit(256 * 1024 * 1024)
+
 	dataDir := os.Getenv("SOUL_V2_DATA_DIR")
 	if dataDir == "" {
 		home, err := os.UserHomeDir()

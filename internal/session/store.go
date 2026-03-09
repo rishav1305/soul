@@ -117,6 +117,10 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("session: enable foreign keys: %w", err)
 	}
 
+	// Serialize all operations through a single connection.
+	// SQLite is single-writer; this avoids BUSY contention under concurrent writes.
+	db.SetMaxOpenConns(1)
+
 	s := &Store{db: db, dbPath: path}
 
 	if err := s.Migrate(); err != nil {
