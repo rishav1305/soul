@@ -19,21 +19,23 @@ import (
 
 	"github.com/rishav1305/soul-v2/internal/auth"
 	"github.com/rishav1305/soul-v2/internal/metrics"
+	"github.com/rishav1305/soul-v2/internal/session"
 )
 
 const version = "0.1.0"
 
 // Server is the soul-v2 HTTP server. It serves the SPA, health endpoint,
-// auth status, and (in later phases) session/WebSocket routes.
+// auth status, session CRUD, and (in later phases) WebSocket routes.
 type Server struct {
-	port       int
-	host       string
-	mux        *http.ServeMux
-	auth       *auth.OAuthTokenSource
-	metrics    *metrics.EventLogger
-	staticDir  string
-	httpServer *http.Server
-	startTime  time.Time
+	port         int
+	host         string
+	mux          *http.ServeMux
+	auth         *auth.OAuthTokenSource
+	metrics      *metrics.EventLogger
+	sessionStore *session.Store
+	staticDir    string
+	httpServer   *http.Server
+	startTime    time.Time
 }
 
 // Option configures a Server.
@@ -57,6 +59,11 @@ func WithAuth(a *auth.OAuthTokenSource) Option {
 // WithMetrics sets the event logger for system events.
 func WithMetrics(l *metrics.EventLogger) Option {
 	return func(s *Server) { s.metrics = l }
+}
+
+// WithSessionStore sets the session store for session CRUD endpoints.
+func WithSessionStore(store *session.Store) Option {
+	return func(s *Server) { s.sessionStore = store }
 }
 
 // WithStaticDir sets the directory for SPA static files.
@@ -93,6 +100,13 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 	s.mux.HandleFunc("/api/reauth", s.handleReauth)
+
+	// Session routes.
+	s.mux.HandleFunc("GET /api/sessions", s.handleListSessions)
+	s.mux.HandleFunc("POST /api/sessions", s.handleCreateSession)
+	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
+	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleGetMessages)
+
 	// SPA fallback — all other paths.
 	s.mux.Handle("/", s.spaHandler())
 
@@ -198,6 +212,172 @@ func (s *Server) handleReauth(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"auth":   s.auth.Status(),
 	})
+}
+
+// --- Session handlers ---
+
+// handleListSessions returns all sessions ordered by UpdatedAt descending.
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	if s.sessionStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "session store not configured",
+		})
+		return
+	}
+
+	sessions, err := s.sessionStore.ListSessions()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to list sessions",
+		})
+		return
+	}
+
+	// Return empty array instead of null when no sessions exist.
+	if sessions == nil {
+		sessions = []*session.Session{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"sessions": sessions,
+	})
+}
+
+// handleCreateSession creates a new session.
+func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	if s.sessionStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "session store not configured",
+		})
+		return
+	}
+
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid JSON body",
+		})
+		return
+	}
+
+	sess, err := s.sessionStore.CreateSession(body.Title)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to create session",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"session": sess,
+	})
+}
+
+// handleDeleteSession deletes a session and its messages.
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	if s.sessionStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "session store not configured",
+		})
+		return
+	}
+
+	id := r.PathValue("id")
+	if !isValidUUID(id) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid session ID",
+		})
+		return
+	}
+
+	err := s.sessionStore.DeleteSession(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "session not found",
+			})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to delete session",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"deleted": true,
+	})
+}
+
+// handleGetMessages returns all messages for a session.
+func (s *Server) handleGetMessages(w http.ResponseWriter, r *http.Request) {
+	if s.sessionStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "session store not configured",
+		})
+		return
+	}
+
+	id := r.PathValue("id")
+	if !isValidUUID(id) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid session ID",
+		})
+		return
+	}
+
+	// Verify session exists first.
+	_, err := s.sessionStore.GetSession(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "session not found",
+			})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to get session",
+		})
+		return
+	}
+
+	messages, err := s.sessionStore.GetMessages(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to get messages",
+		})
+		return
+	}
+
+	// Return empty array instead of null when no messages exist.
+	if messages == nil {
+		messages = []*session.Message{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"messages": messages,
+	})
+}
+
+// isValidUUID checks if a string is a valid UUID v4 format.
+func isValidUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // --- SPA handler ---

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/internal/auth"
+	"github.com/rishav1305/soul-v2/internal/session"
 )
 
 // newTestServer creates a Server suitable for testing (no metrics, no auth).
@@ -673,4 +674,340 @@ func TestReauth_NonPOSTMethodReturns405(t *testing.T) {
 // intToStr converts an int64 to a string for JSON embedding.
 func intToStr(n int64) string {
 	return fmt.Sprintf("%d", n)
+}
+
+// --- Session endpoint tests ---
+
+// newTestSessionStore creates a session store using a temp directory for tests.
+func newTestSessionStore(t *testing.T) *session.Store {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test-sessions.db")
+	store, err := session.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open session store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
+func TestListSessions_EmptyInitially(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	sessions, ok := body["sessions"].([]interface{})
+	if !ok {
+		t.Fatalf("expected sessions to be an array, got %T", body["sessions"])
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+}
+
+func TestCreateSession_DefaultTitle(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected application/json, got %q", ct)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	sess, ok := body["session"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected session to be an object, got %T", body["session"])
+	}
+	if sess["title"] != "New Session" {
+		t.Errorf("expected default title 'New Session', got %v", sess["title"])
+	}
+	if sess["id"] == nil || sess["id"] == "" {
+		t.Error("expected non-empty session ID")
+	}
+	if sess["status"] != "idle" {
+		t.Errorf("expected status=idle, got %v", sess["status"])
+	}
+}
+
+func TestCreateSession_CustomTitle(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{"title":"My Chat"}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	sess := body["session"].(map[string]interface{})
+	if sess["title"] != "My Chat" {
+		t.Errorf("expected title 'My Chat', got %v", sess["title"])
+	}
+}
+
+func TestListSessions_OrderedByUpdatedAtDesc(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	// Create sessions with small pauses to ensure different timestamps.
+	titles := []string{"First", "Second", "Third"}
+	for _, title := range titles {
+		req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{"title":"`+title+`"}`))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s: expected 201, got %d", title, rec.Code)
+		}
+		time.Sleep(10 * time.Millisecond) // ensure distinct timestamps
+	}
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	sessions := body["sessions"].([]interface{})
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(sessions))
+	}
+
+	// Most recently updated should be first (descending order).
+	first := sessions[0].(map[string]interface{})
+	last := sessions[2].(map[string]interface{})
+	if first["title"] != "Third" {
+		t.Errorf("expected first session to be 'Third', got %v", first["title"])
+	}
+	if last["title"] != "First" {
+		t.Errorf("expected last session to be 'First', got %v", last["title"])
+	}
+}
+
+func TestDeleteSession_Success(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	// Create a session first.
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{"title":"To Delete"}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+
+	var createBody map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&createBody)
+	sess := createBody["session"].(map[string]interface{})
+	id := sess["id"].(string)
+
+	// Delete the session.
+	req2 := httptest.NewRequest("DELETE", "/api/sessions/"+id, nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec2.Code)
+	}
+
+	var delBody map[string]interface{}
+	json.NewDecoder(rec2.Body).Decode(&delBody)
+	if delBody["deleted"] != true {
+		t.Errorf("expected deleted=true, got %v", delBody["deleted"])
+	}
+
+	// Verify it's gone.
+	req3 := httptest.NewRequest("GET", "/api/sessions", nil)
+	rec3 := httptest.NewRecorder()
+	srv.ServeHTTP(rec3, req3)
+
+	var listBody map[string]interface{}
+	json.NewDecoder(rec3.Body).Decode(&listBody)
+	sessions := listBody["sessions"].([]interface{})
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions after delete, got %d", len(sessions))
+	}
+}
+
+func TestDeleteSession_NotFound(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	// Use a valid UUID format that doesn't exist.
+	req := httptest.NewRequest("DELETE", "/api/sessions/00000000-0000-4000-8000-000000000000", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "session not found" {
+		t.Errorf("expected 'session not found', got %q", body["error"])
+	}
+}
+
+func TestDeleteSession_InvalidUUID(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("DELETE", "/api/sessions/not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %q", body["error"])
+	}
+}
+
+func TestGetMessages_EmptyForNewSession(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	// Create a session.
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var createBody map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&createBody)
+	sess := createBody["session"].(map[string]interface{})
+	id := sess["id"].(string)
+
+	// Get messages.
+	req2 := httptest.NewRequest("GET", "/api/sessions/"+id+"/messages", nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec2.Code)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(rec2.Body).Decode(&body)
+	messages := body["messages"].([]interface{})
+	if len(messages) != 0 {
+		t.Errorf("expected 0 messages, got %d", len(messages))
+	}
+}
+
+func TestGetMessages_NotFoundForNonexistentSession(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("GET", "/api/sessions/00000000-0000-4000-8000-000000000000/messages", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "session not found" {
+		t.Errorf("expected 'session not found', got %q", body["error"])
+	}
+}
+
+func TestCreateSession_InvalidJSON(t *testing.T) {
+	store := newTestSessionStore(t)
+	srv := newTestServer(t, WithSessionStore(store))
+
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(`{invalid json`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "invalid JSON body" {
+		t.Errorf("expected 'invalid JSON body', got %q", body["error"])
+	}
+}
+
+func TestSessionEndpoints_Return503WhenStoreNil(t *testing.T) {
+	srv := newTestServer(t) // no session store
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/api/sessions"},
+		{"POST", "/api/sessions"},
+		{"DELETE", "/api/sessions/00000000-0000-4000-8000-000000000000"},
+		{"GET", "/api/sessions/00000000-0000-4000-8000-000000000000/messages"},
+	}
+
+	for _, ep := range endpoints {
+		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
+			var body *strings.Reader
+			if ep.method == "POST" {
+				body = strings.NewReader(`{}`)
+			} else {
+				body = strings.NewReader("")
+			}
+			req := httptest.NewRequest(ep.method, ep.path, body)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("expected 503, got %d", rec.Code)
+			}
+
+			var respBody map[string]string
+			json.NewDecoder(rec.Body).Decode(&respBody)
+			if respBody["error"] != "session store not configured" {
+				t.Errorf("expected 'session store not configured', got %q", respBody["error"])
+			}
+		})
+	}
 }

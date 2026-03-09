@@ -13,6 +13,7 @@ import (
 	"github.com/rishav1305/soul-v2/internal/auth"
 	"github.com/rishav1305/soul-v2/internal/metrics"
 	"github.com/rishav1305/soul-v2/internal/server"
+	"github.com/rishav1305/soul-v2/internal/session"
 )
 
 func main() {
@@ -61,6 +62,14 @@ func runServe() {
 		log.Printf("auth: %v (server will report auth as missing)", err)
 	}
 
+	// Open session store.
+	dbPath := filepath.Join(dataDir, "sessions.db")
+	store, err := session.Open(dbPath)
+	if err != nil {
+		log.Fatalf("open session store: %v", err)
+	}
+	defer store.Close()
+
 	// Start system health sampler (30s interval).
 	sampler := metrics.NewSampler(logger, 30*time.Second)
 	sampler.Start()
@@ -69,6 +78,7 @@ func runServe() {
 	srv := server.New(
 		server.WithMetrics(logger),
 		server.WithAuth(authSource),
+		server.WithSessionStore(store),
 		server.WithStaticDir("web/dist"),
 	)
 
