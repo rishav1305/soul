@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/rishav1305/soul-v2/internal/auth"
 	"github.com/rishav1305/soul-v2/internal/metrics"
@@ -59,6 +60,11 @@ func runServe() {
 	if _, err := authSource.Load(); err != nil {
 		log.Printf("auth: %v (server will report auth as missing)", err)
 	}
+
+	// Start system health sampler (30s interval).
+	sampler := metrics.NewSampler(logger, 30*time.Second)
+	sampler.Start()
+	defer sampler.Stop()
 
 	srv := server.New(
 		server.WithMetrics(logger),
