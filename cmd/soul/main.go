@@ -14,6 +14,8 @@ import (
 	"github.com/rishav1305/soul-v2/internal/metrics"
 	"github.com/rishav1305/soul-v2/internal/server"
 	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/stream"
+	"github.com/rishav1305/soul-v2/internal/ws"
 )
 
 func main() {
@@ -75,10 +77,24 @@ func runServe() {
 	sampler.Start()
 	defer sampler.Stop()
 
+	// Create WebSocket hub, stream client, and message handler.
+	hub := ws.NewHub(
+		ws.WithMetricsLogger(logger),
+		ws.WithSessionStore(store),
+	)
+	streamClient := stream.NewClient(authSource)
+	handler := ws.NewMessageHandler(hub, store, logger, ws.WithStreamClient(streamClient))
+	hub.SetHandler(handler)
+
+	hubCtx, hubCancel := context.WithCancel(context.Background())
+	go hub.Run(hubCtx)
+	defer hubCancel()
+
 	srv := server.New(
 		server.WithMetrics(logger),
 		server.WithAuth(authSource),
 		server.WithSessionStore(store),
+		server.WithHub(hub),
 		server.WithStaticDir("web/dist"),
 	)
 

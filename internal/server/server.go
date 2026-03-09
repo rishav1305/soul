@@ -20,12 +20,13 @@ import (
 	"github.com/rishav1305/soul-v2/internal/auth"
 	"github.com/rishav1305/soul-v2/internal/metrics"
 	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/ws"
 )
 
 const version = "0.1.0"
 
 // Server is the soul-v2 HTTP server. It serves the SPA, health endpoint,
-// auth status, session CRUD, and (in later phases) WebSocket routes.
+// auth status, session CRUD, and WebSocket routes.
 type Server struct {
 	port         int
 	host         string
@@ -33,6 +34,7 @@ type Server struct {
 	auth         *auth.OAuthTokenSource
 	metrics      *metrics.EventLogger
 	sessionStore *session.Store
+	hub          *ws.Hub
 	staticDir    string
 	httpServer   *http.Server
 	startTime    time.Time
@@ -71,6 +73,11 @@ func WithStaticDir(dir string) Option {
 	return func(s *Server) { s.staticDir = dir }
 }
 
+// WithHub sets the WebSocket hub for real-time communication.
+func WithHub(hub *ws.Hub) Option {
+	return func(s *Server) { s.hub = hub }
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -106,6 +113,11 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
 	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleGetMessages)
+
+	// WebSocket route — must be registered before SPA fallback.
+	if s.hub != nil {
+		s.mux.HandleFunc("/ws", s.hub.HandleUpgrade)
+	}
 
 	// SPA fallback — all other paths.
 	s.mux.Handle("/", s.spaHandler())
