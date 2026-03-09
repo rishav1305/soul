@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -67,14 +69,15 @@ type AuthStatus struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-// OAuthTokenSource manages OAuth tokens with loading, validation, and (in Step 1.4) refresh.
+// OAuthTokenSource manages OAuth tokens with loading, validation, and refresh.
 type OAuthTokenSource struct {
-	credPath   string
-	creds      *OAuthCredentials
-	mu         sync.RWMutex
-	refreshMu  sync.Mutex
-	httpClient *http.Client
-	logger     *metrics.EventLogger
+	credPath         string
+	creds            *OAuthCredentials
+	mu               sync.RWMutex
+	refreshMu        sync.Mutex
+	httpClient       *http.Client
+	logger           *metrics.EventLogger
+	tokenURLOverride string // for testing — overrides OAuthTokenURL
 }
 
 // NewOAuthTokenSource creates a token source that loads credentials from credPath.
@@ -165,4 +168,287 @@ func (s *OAuthTokenSource) Status() AuthStatus {
 		State:     "connected",
 		ExpiresAt: time.UnixMilli(creds.ExpiresAt),
 	}
+}
+
+// --- Refresh types (internal) ---
+
+type oauthRefreshRequest struct {
+	GrantType    string `json:"grant_type"`
+	RefreshToken string `json:"refresh_token"`
+	ClientID     string `json:"client_id"`
+}
+
+type oauthRefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"` // seconds
+	TokenType    string `json:"token_type"`
+}
+
+// refreshBackoff defines the retry schedule for transient refresh failures.
+var refreshBackoff = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+
+// Token returns a valid access token. It refreshes if the cached token is
+// nearing expiry, and falls back to disk if refresh fails.
+// Token values are never logged.
+func (s *OAuthTokenSource) Token() (string, error) {
+	s.mu.RLock()
+	creds := s.creds
+	s.mu.RUnlock()
+
+	if creds == nil {
+		return "", fmt.Errorf("no credentials loaded — call Load() first")
+	}
+
+	// Fast path: valid and not near expiry.
+	if creds.Valid() && !creds.NeedsRefresh() {
+		return creds.AccessToken, nil
+	}
+
+	// Slow path: needs refresh.
+	err := s.Refresh()
+	if err == nil {
+		s.mu.RLock()
+		tok := s.creds.AccessToken
+		s.mu.RUnlock()
+		return tok, nil
+	}
+
+	// Refresh failed — try disk fallback.
+	if s.ReloadFromDisk() {
+		s.mu.RLock()
+		diskCreds := s.creds
+		s.mu.RUnlock()
+		if diskCreds.Valid() && !diskCreds.NeedsRefresh() {
+			return diskCreds.AccessToken, nil
+		}
+	}
+
+	// If the original cached token is still technically valid (just near expiry),
+	// return it rather than failing hard.
+	if creds.Valid() {
+		return creds.AccessToken, nil
+	}
+
+	return "", fmt.Errorf("token refresh failed and no valid fallback: %w", err)
+}
+
+// Refresh exchanges the refresh token for a new access token via the OAuth endpoint.
+// It retries with exponential backoff (1s, 2s, 4s) on transient failures.
+// Only one refresh is in-flight at a time (serialized via refreshMu).
+func (s *OAuthTokenSource) Refresh() error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	// Re-check under lock — another goroutine may have refreshed while we waited.
+	s.mu.RLock()
+	creds := s.creds
+	s.mu.RUnlock()
+	if creds != nil && creds.Valid() && !creds.NeedsRefresh() {
+		return nil
+	}
+
+	s.mu.RLock()
+	refreshToken := s.creds.RefreshToken
+	s.mu.RUnlock()
+
+	start := time.Now()
+	var lastErr error
+
+	for attempt, backoff := range refreshBackoff {
+		if attempt > 0 {
+			time.Sleep(backoff)
+		}
+
+		err := s.doRefresh(refreshToken)
+		if err == nil {
+			// Log success (never log token values).
+			if s.logger != nil {
+				_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
+					"success":  true,
+					"duration": time.Since(start).Milliseconds(),
+					"attempts": attempt + 1,
+				})
+			}
+			return nil
+		}
+		lastErr = err
+	}
+
+	// Log failure.
+	if s.logger != nil {
+		_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
+			"success":  false,
+			"duration": time.Since(start).Milliseconds(),
+			"attempts": len(refreshBackoff),
+			"error":    lastErr.Error(),
+		})
+	}
+
+	return fmt.Errorf("refresh failed after %d attempts: %w", len(refreshBackoff), lastErr)
+}
+
+// doRefresh performs a single refresh token exchange against the OAuth endpoint.
+func (s *OAuthTokenSource) doRefresh(refreshToken string) error {
+	reqBody := oauthRefreshRequest{
+		GrantType:    "refresh_token",
+		RefreshToken: refreshToken,
+		ClientID:     OAuthClientID,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal refresh request: %w", err)
+	}
+
+	// Use the tokenURL field if set (for testing), otherwise use the constant.
+	url := s.tokenURL()
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-beta", OAuthBetaHeader)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("refresh HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read refresh response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("refresh returned HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))
+	}
+
+	var tokenResp oauthRefreshResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return fmt.Errorf("parse refresh response: %w", err)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return fmt.Errorf("refresh response has empty access_token")
+	}
+
+	// ExpiresIn is in seconds — convert to milliseconds for ExpiresAt.
+	newExpiresAt := time.Now().UnixMilli() + tokenResp.ExpiresIn*1000
+
+	s.mu.Lock()
+	s.creds = &OAuthCredentials{
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: tokenResp.RefreshToken,
+		ExpiresAt:    newExpiresAt,
+		OrgID:        s.creds.OrgID, // preserve OrgID
+	}
+	s.mu.Unlock()
+
+	// Persist new creds to disk.
+	if err := s.Persist(); err != nil {
+		// Log but don't fail — the in-memory creds are still valid.
+		if s.logger != nil {
+			_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
+				"persist_error": err.Error(),
+			})
+		}
+	}
+
+	return nil
+}
+
+// tokenURL returns the OAuth token endpoint URL. It checks for an override
+// (used in tests) and falls back to the production constant.
+func (s *OAuthTokenSource) tokenURL() string {
+	if s.tokenURLOverride != "" {
+		return s.tokenURLOverride
+	}
+	return OAuthTokenURL
+}
+
+// Persist writes the current credentials to disk, preserving other fields
+// in the credentials file. The file is written with 0600 permissions.
+func (s *OAuthTokenSource) Persist() error {
+	s.mu.RLock()
+	creds := s.creds
+	s.mu.RUnlock()
+
+	if creds == nil {
+		return fmt.Errorf("no credentials to persist")
+	}
+
+	// Read existing file to preserve other fields.
+	var raw map[string]json.RawMessage
+	data, err := os.ReadFile(s.credPath)
+	if err == nil {
+		// Parse existing — ignore errors, we'll write a fresh file.
+		_ = json.Unmarshal(data, &raw)
+	}
+	if raw == nil {
+		raw = make(map[string]json.RawMessage)
+	}
+
+	// Marshal the OAuth creds.
+	oauthBytes, err := json.Marshal(creds)
+	if err != nil {
+		return fmt.Errorf("marshal credentials: %w", err)
+	}
+	raw["claudeAiOauth"] = oauthBytes
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal credentials file: %w", err)
+	}
+
+	if err := os.WriteFile(s.credPath, out, 0600); err != nil {
+		return fmt.Errorf("write credentials file: %w", err)
+	}
+
+	return nil
+}
+
+// ReloadFromDisk re-reads credentials from the disk file and updates the
+// cached credentials if the file contains a newer/different token.
+// Returns true if credentials were updated.
+func (s *OAuthTokenSource) ReloadFromDisk() bool {
+	data, err := os.ReadFile(s.credPath)
+	if err != nil {
+		return false
+	}
+
+	var cf credentialsFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		return false
+	}
+
+	if cf.ClaudeAIOAuth == nil || cf.ClaudeAIOAuth.AccessToken == "" {
+		return false
+	}
+
+	s.mu.Lock()
+	old := s.creds
+	s.creds = cf.ClaudeAIOAuth
+	s.mu.Unlock()
+
+	updated := old == nil || old.AccessToken != cf.ClaudeAIOAuth.AccessToken
+
+	if updated && s.logger != nil {
+		_ = s.logger.Log(metrics.EventOAuthReload, map[string]interface{}{
+			"path":    s.credPath,
+			"expired": cf.ClaudeAIOAuth.IsExpired(),
+		})
+	}
+
+	return updated
+}
+
+// truncate returns s truncated to maxLen characters.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
