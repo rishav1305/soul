@@ -255,3 +255,52 @@ func TestClientReadPumpAcceptsText(t *testing.T) {
 		t.Errorf("expected 1 client still connected, got %d", count)
 	}
 }
+
+func TestClientContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &Client{
+		id:     "test-ctx",
+		ctx:    ctx,
+		cancel: cancel,
+		send:   make(chan []byte, sendChannelCap),
+	}
+
+	// Context should be live.
+	select {
+	case <-c.Context().Done():
+		t.Fatal("context should not be done yet")
+	default:
+	}
+
+	// Cancel and verify context is done.
+	cancel()
+	select {
+	case <-c.Context().Done():
+		// expected
+	case <-time.After(time.Second):
+		t.Fatal("context should be done after cancel")
+	}
+}
+
+func TestClientSendAfterClose(t *testing.T) {
+	c := &Client{
+		id:   "test-closed",
+		send: make(chan []byte, sendChannelCap),
+	}
+
+	// Normal send should succeed.
+	if ok := c.Send([]byte("hello")); !ok {
+		t.Error("expected Send to return true on open channel")
+	}
+
+	// Close the send channel.
+	c.closeSend()
+
+	// Send after close should return false, not panic.
+	if ok := c.Send([]byte("world")); ok {
+		t.Error("expected Send to return false after closeSend")
+	}
+
+	// Double close should not panic.
+	c.closeSend()
+}

@@ -109,7 +109,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			// Close all remaining clients on shutdown.
 			for client := range h.clients {
-				close(client.send)
+				client.closeSend()
 				client.Close()
 				delete(h.clients, client)
 			}
@@ -119,7 +119,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
+				client.closeSend()
 			}
 		case reply := <-h.countReq:
 			reply <- len(h.clients)

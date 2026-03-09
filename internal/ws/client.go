@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,8 @@ type Client struct {
 	hub       *Hub
 	sessionID atomic.Value // stores string — safe for concurrent read/write
 	send      chan []byte
+	sendMu    sync.Mutex // protects send channel against concurrent send/close
+	sendDone  bool       // true once closeSend has been called
 	cancel    context.CancelFunc
 	ctx       context.Context
 	connTime  time.Time
@@ -41,6 +44,13 @@ type Client struct {
 // ID returns the client's unique identifier.
 func (c *Client) ID() string {
 	return c.id
+}
+
+// Context returns the client's context, which is cancelled when the client
+// disconnects or is closed. This allows external code (e.g. an agent) to
+// observe when the client goes away and cancel in-flight work.
+func (c *Client) Context() context.Context {
+	return c.ctx
 }
 
 // SessionID returns the currently subscribed session ID.
@@ -59,9 +69,18 @@ func (c *Client) Subscribe(sessionID string) {
 
 // Send queues a message for delivery to the client. If the send channel
 // is full, the oldest message is dropped and a warning is logged.
-func (c *Client) Send(msg []byte) {
+// Safe to call after the channel has been closed — returns false in that case.
+func (c *Client) Send(msg []byte) bool {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+
+	if c.sendDone {
+		return false
+	}
+
 	select {
 	case c.send <- msg:
+		return true
 	default:
 		// Channel full — drop oldest message.
 		select {
@@ -72,9 +91,23 @@ func (c *Client) Send(msg []byte) {
 		// Try to send again.
 		select {
 		case c.send <- msg:
+			return true
 		default:
 			log.Printf("ws: client %s send channel still full after drop, message lost", c.id)
+			return false
 		}
+	}
+}
+
+// closeSend closes the send channel, signalling WritePump to stop.
+// Safe to call multiple times — only the first call has any effect.
+func (c *Client) closeSend() {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+
+	if !c.sendDone {
+		c.sendDone = true
+		close(c.send)
 	}
 }
 
