@@ -318,6 +318,146 @@ func TestEventLogger_Rotate(t *testing.T) {
 	}
 }
 
+func TestLogger_Rotation_AutoRotatesOnDateChange(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewEventLogger(dir)
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	defer logger.Close()
+
+	// Start on day 1.
+	day1 := time.Date(2026, 3, 8, 23, 59, 0, 0, time.UTC)
+	day2 := time.Date(2026, 3, 9, 0, 1, 0, 0, time.UTC)
+
+	logger.nowFunc = func() time.Time { return day1 }
+	logger.lastDate = day1.UTC().Format("2006-01-02")
+
+	// Log an event on day 1.
+	if err := logger.Log(EventSystemStart, map[string]interface{}{"day": "1"}); err != nil {
+		t.Fatalf("Log day1: %v", err)
+	}
+
+	// Advance the clock to day 2.
+	logger.nowFunc = func() time.Time { return day2 }
+
+	// Log an event on day 2 — should trigger auto-rotation.
+	if err := logger.Log(EventSystemStop, map[string]interface{}{"day": "2"}); err != nil {
+		t.Fatalf("Log day2: %v", err)
+	}
+
+	// Verify rotated file exists with day 1's date.
+	rotatedPath := filepath.Join(dir, "metrics.2026-03-08.jsonl")
+	data, err := os.ReadFile(rotatedPath)
+	if err != nil {
+		t.Fatalf("rotated file should exist: %v", err)
+	}
+	if !strings.Contains(string(data), `"day":"1"`) {
+		t.Error("rotated file should contain day 1 event")
+	}
+	if strings.Contains(string(data), `"day":"2"`) {
+		t.Error("rotated file should NOT contain day 2 event")
+	}
+
+	// Verify current file has only day 2 event.
+	currentData, err := os.ReadFile(filepath.Join(dir, metricsFileName))
+	if err != nil {
+		t.Fatalf("ReadFile current: %v", err)
+	}
+	if !strings.Contains(string(currentData), `"day":"2"`) {
+		t.Error("current file should contain day 2 event")
+	}
+	if strings.Contains(string(currentData), `"day":"1"`) {
+		t.Error("current file should NOT contain day 1 event")
+	}
+}
+
+func TestLogger_Rotation_NoRotateOnSameDate(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewEventLogger(dir)
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	defer logger.Close()
+
+	fixedTime := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+	logger.nowFunc = func() time.Time { return fixedTime }
+	logger.lastDate = fixedTime.UTC().Format("2006-01-02")
+
+	// Log two events on the same date.
+	if err := logger.Log(EventSystemStart, nil); err != nil {
+		t.Fatalf("Log 1: %v", err)
+	}
+	if err := logger.Log(EventSystemStop, nil); err != nil {
+		t.Fatalf("Log 2: %v", err)
+	}
+
+	// Verify no rotated file was created.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != metricsFileName {
+			t.Errorf("unexpected rotated file: %s", entry.Name())
+		}
+	}
+
+	// Verify both events are in the current file.
+	data, err := os.ReadFile(filepath.Join(dir, metricsFileName))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestLogger_Rotation_MultiDayRotation(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewEventLogger(dir)
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	defer logger.Close()
+
+	day1 := time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	day3 := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+
+	logger.nowFunc = func() time.Time { return day1 }
+	logger.lastDate = day1.UTC().Format("2006-01-02")
+	_ = logger.Log(EventSystemStart, map[string]interface{}{"day": "1"})
+
+	logger.nowFunc = func() time.Time { return day2 }
+	_ = logger.Log(EventWSConnect, map[string]interface{}{"day": "2"})
+
+	logger.nowFunc = func() time.Time { return day3 }
+	_ = logger.Log(EventAPIRequest, map[string]interface{}{"day": "3"})
+
+	// Should have two rotated files and one current file.
+	if _, err := os.Stat(filepath.Join(dir, "metrics.2026-03-07.jsonl")); err != nil {
+		t.Errorf("expected metrics.2026-03-07.jsonl: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "metrics.2026-03-08.jsonl")); err != nil {
+		t.Errorf("expected metrics.2026-03-08.jsonl: %v", err)
+	}
+
+	// Current file should only have day 3 event.
+	currentData, err := os.ReadFile(filepath.Join(dir, metricsFileName))
+	if err != nil {
+		t.Fatalf("ReadFile current: %v", err)
+	}
+	if !strings.Contains(string(currentData), `"day":"3"`) {
+		t.Error("current file should contain day 3 event")
+	}
+	lines := strings.Split(strings.TrimSpace(string(currentData)), "\n")
+	if len(lines) != 1 {
+		t.Errorf("current file should have 1 line, got %d", len(lines))
+	}
+}
+
 func TestEventLogger_Log_RejectsEmptyType(t *testing.T) {
 	dir := t.TempDir()
 	logger, err := NewEventLogger(dir)

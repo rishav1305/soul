@@ -12,10 +12,20 @@ const metricsFileName = "metrics.jsonl"
 
 // EventLogger writes events as JSON Lines to an append-only file.
 // All writes are goroutine-safe via sync.Mutex.
+// On each Log() call it checks if the UTC date has changed since the last
+// write and, if so, rotates the current metrics.jsonl to
+// metrics.YYYY-MM-DD.jsonl before writing the new event.
 type EventLogger struct {
 	file    *os.File
 	mu      sync.Mutex
 	dataDir string
+
+	// lastDate tracks the UTC date (YYYY-MM-DD) of the most recent write.
+	// When this changes, checkRotate triggers a rotation.
+	lastDate string
+
+	// nowFunc is an injectable clock for testing rotation without real time changes.
+	nowFunc func() time.Time
 }
 
 // NewEventLogger creates a new EventLogger that writes to dataDir/metrics.jsonl.
@@ -32,17 +42,21 @@ func NewEventLogger(dataDir string) (*EventLogger, error) {
 	}
 
 	return &EventLogger{
-		file:    f,
-		dataDir: dataDir,
+		file:     f,
+		dataDir:  dataDir,
+		lastDate: time.Now().UTC().Format("2006-01-02"),
+		nowFunc:  time.Now,
 	}, nil
 }
 
 // Log writes an event with the given type and data to the JSONL file.
 // It creates the event with the current time, validates it, marshals to JSON,
 // writes a single line, and flushes immediately.
+// Before writing, it checks if the UTC date has changed and rotates if needed.
 func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
+	now := l.nowFunc()
 	ev := Event{
-		Timestamp: time.Now(),
+		Timestamp: now,
 		EventType: eventType,
 		Data:      data,
 	}
@@ -60,12 +74,58 @@ func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	// Check if the date has changed (rotation needed).
+	if err := l.checkRotate(now); err != nil {
+		// Log rotation failure to stderr but continue writing — losing
+		// events is worse than failing to rotate.
+		fmt.Fprintf(os.Stderr, "metrics: rotation failed: %v\n", err)
+	}
+
 	if _, err := l.file.Write(buf); err != nil {
 		return fmt.Errorf("write event: %w", err)
 	}
 	if err := l.file.Sync(); err != nil {
 		return fmt.Errorf("flush event: %w", err)
 	}
+
+	return nil
+}
+
+// checkRotate rotates the current metrics.jsonl to metrics.YYYY-MM-DD.jsonl
+// if the UTC date has changed since the last write. The caller must hold l.mu.
+func (l *EventLogger) checkRotate(now time.Time) error {
+	currentDate := now.UTC().Format("2006-01-02")
+	if currentDate == l.lastDate {
+		return nil
+	}
+
+	// Date has changed — rotate the file.
+	// The rotated file gets the *previous* date (the date of the data it contains).
+	previousDate := l.lastDate
+
+	if err := l.file.Sync(); err != nil {
+		return fmt.Errorf("flush before rotate: %w", err)
+	}
+
+	oldPath := filepath.Join(l.dataDir, metricsFileName)
+	newPath := filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", previousDate))
+
+	if err := l.file.Close(); err != nil {
+		return fmt.Errorf("close for rotate: %w", err)
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		// Re-open old file as fallback.
+		l.file, _ = os.OpenFile(oldPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		return fmt.Errorf("rename metrics file: %w", err)
+	}
+
+	f, err := os.OpenFile(oldPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return fmt.Errorf("open new metrics file: %w", err)
+	}
+	l.file = f
+	l.lastDate = currentDate
 
 	return nil
 }
@@ -96,7 +156,7 @@ func (l *EventLogger) Rotate() error {
 	}
 
 	oldPath := filepath.Join(l.dataDir, metricsFileName)
-	dateSuffix := time.Now().Format("2006-01-02")
+	dateSuffix := l.nowFunc().Format("2006-01-02")
 	newPath := filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", dateSuffix))
 
 	// Close current handle before rename.
@@ -115,6 +175,7 @@ func (l *EventLogger) Rotate() error {
 		return fmt.Errorf("open new metrics file: %w", err)
 	}
 	l.file = f
+	l.lastDate = l.nowFunc().UTC().Format("2006-01-02")
 
 	return nil
 }

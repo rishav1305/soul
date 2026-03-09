@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -41,21 +42,87 @@ func ReadLastNFiltered(dataDir string, typePrefix string, n int) ([]Event, error
 	return lastN(events, n), nil
 }
 
-// readEvents reads events from metrics.jsonl, optionally filtering by type prefix.
+// readEvents reads events from all metrics JSONL files in dataDir, optionally
+// filtering by type prefix. It reads rotated files (metrics.YYYY-MM-DD.jsonl)
+// in chronological order first, then the current metrics.jsonl, so that events
+// are returned in temporal order.
 func readEvents(dataDir string, typePrefix string) ([]Event, error) {
-	path := filepath.Join(dataDir, metricsFileName)
+	files, err := metricsFiles(dataDir)
+	if err != nil {
+		return nil, err
+	}
 
+	var events []Event
+	for _, path := range files {
+		fileEvents, err := readEventsFromFile(path, typePrefix)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, fileEvents...)
+	}
+
+	if events == nil {
+		events = []Event{}
+	}
+	return events, nil
+}
+
+// metricsFiles returns all metrics JSONL file paths in dataDir, sorted so that
+// rotated files (metrics.YYYY-MM-DD.jsonl) come first in chronological order,
+// followed by the current metrics.jsonl.
+func metricsFiles(dataDir string) ([]string, error) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read data dir: %w", err)
+	}
+
+	var rotated []string
+	hasCurrentFile := false
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == metricsFileName {
+			hasCurrentFile = true
+			continue
+		}
+		// Match rotated files: metrics.YYYY-MM-DD.jsonl
+		if strings.HasPrefix(name, "metrics.") && strings.HasSuffix(name, ".jsonl") {
+			rotated = append(rotated, filepath.Join(dataDir, name))
+		}
+	}
+
+	// Sort rotated files chronologically (the date is embedded in the filename).
+	sort.Strings(rotated)
+
+	// Append current file last (it contains the most recent events).
+	if hasCurrentFile {
+		rotated = append(rotated, filepath.Join(dataDir, metricsFileName))
+	}
+
+	return rotated, nil
+}
+
+// readEventsFromFile reads events from a single JSONL file, optionally filtering
+// by type prefix. Returns empty slice (not error) if the file does not exist.
+func readEventsFromFile(path string, typePrefix string) ([]Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []Event{}, nil
+			return nil, nil
 		}
-		return nil, fmt.Errorf("open metrics file: %w", err)
+		return nil, fmt.Errorf("open metrics file %s: %w", filepath.Base(path), err)
 	}
 	defer f.Close()
 
 	var events []Event
 	scanner := bufio.NewScanner(f)
+	fileName := filepath.Base(path)
 	lineNum := 0
 
 	for scanner.Scan() {
@@ -67,7 +134,7 @@ func readEvents(dataDir string, typePrefix string) ([]Event, error) {
 
 		ev, err := parseEventLine(line)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: metrics.jsonl line %d: %v\n", lineNum, err)
+			fmt.Fprintf(os.Stderr, "warning: %s line %d: %v\n", fileName, lineNum, err)
 			continue
 		}
 
@@ -79,12 +146,9 @@ func readEvents(dataDir string, typePrefix string) ([]Event, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read metrics file: %w", err)
+		return nil, fmt.Errorf("read %s: %w", fileName, err)
 	}
 
-	if events == nil {
-		events = []Event{}
-	}
 	return events, nil
 }
 

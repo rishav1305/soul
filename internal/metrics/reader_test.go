@@ -3,6 +3,7 @@ package metrics
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,6 +224,143 @@ func TestReadEvents_BlankLinesAreSkipped(t *testing.T) {
 	}
 	if len(events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+}
+
+func TestReader_MultipleFiles_ReadsAcrossRotatedFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create rotated files for two previous days.
+	day1Lines := []string{
+		`{"ts":"2026-03-07T10:00:00Z","event":"system.start","data":{"day":"1"}}`,
+		`{"ts":"2026-03-07T18:00:00Z","event":"ws.connect","data":{"day":"1"}}`,
+	}
+	day2Lines := []string{
+		`{"ts":"2026-03-08T10:00:00Z","event":"api.request","data":{"day":"2"}}`,
+	}
+	currentLines := []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"system.stop","data":{"day":"3"}}`,
+	}
+
+	// Write rotated files.
+	os.WriteFile(filepath.Join(dir, "metrics.2026-03-07.jsonl"),
+		[]byte(strings.Join(day1Lines, "\n")+"\n"), 0600)
+	os.WriteFile(filepath.Join(dir, "metrics.2026-03-08.jsonl"),
+		[]byte(strings.Join(day2Lines, "\n")+"\n"), 0600)
+	// Write current file.
+	os.WriteFile(filepath.Join(dir, metricsFileName),
+		[]byte(strings.Join(currentLines, "\n")+"\n"), 0600)
+
+	events, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events across 3 files, got %d", len(events))
+	}
+
+	// Verify chronological order: day1 events first, then day2, then current.
+	if events[0].EventType != "system.start" {
+		t.Errorf("events[0].EventType = %q, want system.start", events[0].EventType)
+	}
+	if events[1].EventType != "ws.connect" {
+		t.Errorf("events[1].EventType = %q, want ws.connect", events[1].EventType)
+	}
+	if events[2].EventType != "api.request" {
+		t.Errorf("events[2].EventType = %q, want api.request", events[2].EventType)
+	}
+	if events[3].EventType != "system.stop" {
+		t.Errorf("events[3].EventType = %q, want system.stop", events[3].EventType)
+	}
+}
+
+func TestReader_MultipleFiles_FilteredReadsAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create rotated file with mixed events.
+	os.WriteFile(filepath.Join(dir, "metrics.2026-03-08.jsonl"), []byte(
+		`{"ts":"2026-03-08T10:00:00Z","event":"ws.connect","data":{"client":"a"}}`+"\n"+
+			`{"ts":"2026-03-08T10:00:01Z","event":"system.start"}`+"\n",
+	), 0600)
+
+	// Current file with mixed events.
+	os.WriteFile(filepath.Join(dir, metricsFileName), []byte(
+		`{"ts":"2026-03-09T10:00:00Z","event":"ws.disconnect","data":{"client":"a"}}`+"\n"+
+			`{"ts":"2026-03-09T10:00:01Z","event":"api.request"}`+"\n",
+	), 0600)
+
+	events, err := ReadEventsFiltered(dir, "ws")
+	if err != nil {
+		t.Fatalf("ReadEventsFiltered: %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 ws events across files, got %d", len(events))
+	}
+	if events[0].EventType != "ws.connect" {
+		t.Errorf("events[0].EventType = %q, want ws.connect", events[0].EventType)
+	}
+	if events[1].EventType != "ws.disconnect" {
+		t.Errorf("events[1].EventType = %q, want ws.disconnect", events[1].EventType)
+	}
+}
+
+func TestReader_MultipleFiles_LastNAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Rotated file: 2 events.
+	os.WriteFile(filepath.Join(dir, "metrics.2026-03-08.jsonl"), []byte(
+		`{"ts":"2026-03-08T10:00:00Z","event":"system.start"}`+"\n"+
+			`{"ts":"2026-03-08T18:00:00Z","event":"ws.connect"}`+"\n",
+	), 0600)
+
+	// Current file: 1 event.
+	os.WriteFile(filepath.Join(dir, metricsFileName), []byte(
+		`{"ts":"2026-03-09T10:00:00Z","event":"system.stop"}`+"\n",
+	), 0600)
+
+	events, err := ReadLastN(dir, 2)
+	if err != nil {
+		t.Fatalf("ReadLastN: %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	// Last 2 of 3 total: ws.connect, system.stop
+	if events[0].EventType != "ws.connect" {
+		t.Errorf("events[0].EventType = %q, want ws.connect", events[0].EventType)
+	}
+	if events[1].EventType != "system.stop" {
+		t.Errorf("events[1].EventType = %q, want system.stop", events[1].EventType)
+	}
+}
+
+func TestReader_MultipleFiles_EmptyDirReturnsEmptySlice(t *testing.T) {
+	dir := t.TempDir()
+	events, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events, got %d", len(events))
+	}
+}
+
+func TestReader_MultipleFiles_OnlyRotatedNoCurrentFile(t *testing.T) {
+	dir := t.TempDir()
+
+	os.WriteFile(filepath.Join(dir, "metrics.2026-03-07.jsonl"), []byte(
+		`{"ts":"2026-03-07T10:00:00Z","event":"system.start"}`+"\n",
+	), 0600)
+
+	events, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event from rotated file, got %d", len(events))
 	}
 }
 
