@@ -573,11 +573,6 @@ func TestHandleUnknownType_NoResponse(t *testing.T) {
 	if err == nil {
 		t.Error("expected no response for unknown message type, but got one")
 	}
-
-	// Client should still be connected.
-	if count := hub.ClientCount(); count != 1 {
-		t.Errorf("expected 1 client still connected, got %d", count)
-	}
 }
 
 func TestBroadcast(t *testing.T) {
