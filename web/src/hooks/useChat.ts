@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { Message, OutboundMessageType, ConnectionState } from '../lib/types';
+import type { Message, Session, OutboundMessageType, ConnectionState } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 
 interface UseChatReturn {
@@ -7,9 +7,11 @@ interface UseChatReturn {
   isStreaming: boolean;
   status: ConnectionState;
   sendMessage: (content: string) => void;
+  sessions: Session[];
   currentSessionID: string | null;
   createSession: () => void;
   switchSession: (id: string) => void;
+  deleteSession: (id: string) => void;
 }
 
 const STREAMING_MESSAGE_ID = '__streaming__';
@@ -21,11 +23,13 @@ function generateTempId(): string {
 export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionID, setCurrentSessionID] = useState<string | null>(null);
 
   // Track session ID in a ref so the onMessage callback always sees the latest value
   // without needing to re-create (which would cause useWebSocket to reconnect).
   const sessionIDRef = useRef<string | null>(null);
+  const sessionsRef = useRef<Session[]>([]);
   const sessionCreationRequestedRef = useRef(false);
 
   const handleMessage = useCallback(
@@ -45,24 +49,70 @@ export function useChat(): UseChatReturn {
         }
 
         case 'session.created': {
-          const payload = data as { session: { id: string } } | undefined;
+          const payload = data as { session: Session } | undefined;
           if (payload?.session?.id) {
-            const id = payload.session.id;
-            sessionIDRef.current = id;
-            setCurrentSessionID(id);
+            const newSession = payload.session;
+            sessionIDRef.current = newSession.id;
+            setCurrentSessionID(newSession.id);
             setMessages([]);
             sessionCreationRequestedRef.current = false;
+
+            // Add to sessions list if not already present.
+            const alreadyExists = sessionsRef.current.some(s => s.id === newSession.id);
+            if (!alreadyExists) {
+              const updated = [newSession, ...sessionsRef.current];
+              sessionsRef.current = updated;
+              setSessions(updated);
+            }
           }
           break;
         }
 
         case 'session.updated': {
-          // Currently a no-op; session metadata updates handled in future steps.
+          const payload = data as { session: Session } | undefined;
+          if (payload?.session?.id) {
+            const updatedSession = payload.session;
+            const updated = sessionsRef.current.map(s =>
+              s.id === updatedSession.id ? updatedSession : s,
+            );
+            sessionsRef.current = updated;
+            setSessions(updated);
+          }
           break;
         }
 
         case 'session.list': {
-          // Will be used by SessionList in Step 5.7. Ignore for now.
+          const payload = data as { sessions: Session[] } | undefined;
+          if (payload?.sessions) {
+            sessionsRef.current = payload.sessions;
+            setSessions(payload.sessions);
+          }
+          break;
+        }
+
+        case 'session.deleted': {
+          const payload = data as { sessionId: string } | undefined;
+          if (payload?.sessionId) {
+            const deletedId = payload.sessionId;
+            const updated = sessionsRef.current.filter(s => s.id !== deletedId);
+            sessionsRef.current = updated;
+            setSessions(updated);
+
+            // If the deleted session was active, switch to another or clear.
+            if (sessionIDRef.current === deletedId) {
+              if (updated.length > 0) {
+                const next = updated[0]!;
+                sessionIDRef.current = next.id;
+                setCurrentSessionID(next.id);
+                setMessages([]);
+                sendRef.current('session.switch', { sessionId: next.id });
+              } else {
+                sessionIDRef.current = null;
+                setCurrentSessionID(null);
+                setMessages([]);
+              }
+            }
+          }
           break;
         }
 
@@ -186,13 +236,22 @@ export function useChat(): UseChatReturn {
     [send],
   );
 
+  const deleteSession = useCallback(
+    (id: string) => {
+      send('session.delete', { sessionId: id });
+    },
+    [send],
+  );
+
   return {
     messages,
     isStreaming,
     status,
     sendMessage,
+    sessions,
     currentSessionID,
     createSession,
     switchSession,
+    deleteSession,
   };
 }

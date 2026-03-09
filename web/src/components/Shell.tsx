@@ -2,6 +2,7 @@ import type { ConnectionState } from '../lib/types';
 import { useChat } from '../hooks/useChat';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
+import { SessionList } from './SessionList';
 
 function connectionDotClasses(status: ConnectionState): string {
   switch (status) {
@@ -29,7 +30,17 @@ function connectionLabel(status: ConnectionState): string {
 }
 
 export function Shell() {
-  const { messages, isStreaming, status, sendMessage } = useChat();
+  const {
+    messages,
+    isStreaming,
+    status,
+    sendMessage,
+    sessions,
+    currentSessionID,
+    createSession,
+    switchSession,
+    deleteSession,
+  } = useChat();
 
   const isDisabled = isStreaming || status !== 'connected';
 
@@ -51,8 +62,19 @@ export function Shell() {
           />
         </div>
       </header>
-      <MessageList messages={messages} isStreaming={isStreaming} />
-      <ChatInput onSend={sendMessage} disabled={isDisabled} />
+      <div className="flex flex-1 min-h-0">
+        <SessionList
+          sessions={sessions}
+          activeSessionID={currentSessionID}
+          onCreate={createSession}
+          onSwitch={switchSession}
+          onDelete={deleteSession}
+        />
+        <div className="flex-1 flex flex-col min-w-0">
+          <MessageList messages={messages} isStreaming={isStreaming} />
+          <ChatInput onSend={sendMessage} disabled={isDisabled} />
+        </div>
+      </div>
     </div>
   );
 }
