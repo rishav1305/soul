@@ -1,0 +1,274 @@
+module: ui-chat
+purpose: "Chat interface — message list, input, streaming display"
+language: typescript
+package: web/src/components
+
+invariants:
+  - "Messages rendered in chronological order — oldest at top"
+  - "Auto-scroll to bottom on new message unless user has scrolled up"
+  - "Streaming tokens appended to current assistant message — no flicker"
+  - "Cmd+Enter (Mac) or Ctrl+Enter (other) sends message"
+  - "Empty message cannot be sent — send button disabled"
+  - "User messages right-aligned, assistant messages left-aligned"
+  - "Tool call blocks rendered inline with collapsible detail"
+  - "All interactive elements have data-testid attributes"
+  - "Input disabled during streaming — re-enabled on chat.done"
+  - "Message content sanitized — no raw HTML injection"
+  - "Markdown in assistant messages rendered as formatted text"
+  - "Code blocks in messages have syntax highlighting and copy button"
+
+types:
+  ChatView:
+    description: "Container for the chat interface — message list + input"
+    props:
+      sessionID: "string — current session ID"
+    testids:
+      chat-view: "Root container"
+    renders:
+      - "MessageList with session messages"
+      - "StreamingIndicator when assistant is responding"
+      - "ChatInput at bottom"
+
+  MessageList:
+    description: "Scrollable list of chat messages"
+    props:
+      messages: "Message[] — messages to render"
+      isStreaming: "boolean — whether a response is in progress"
+    testids:
+      message-list: "Scrollable container"
+    behavior:
+      - "Auto-scrolls to bottom on new messages"
+      - "Pauses auto-scroll when user scrolls up (> 100px from bottom)"
+      - "Resumes auto-scroll when user scrolls back to bottom"
+      - "Shows 'scroll to bottom' button when paused"
+
+  MessageBubble:
+    description: "Individual message display — adapts to role"
+    props:
+      message: "Message — message to render"
+      isStreaming: "boolean — true for currently streaming message"
+    variants:
+      user:
+        visual: "Right-aligned, zinc-700 background"
+        testid: "message-bubble-user"
+      assistant:
+        visual: "Left-aligned, zinc-800 background, markdown rendered"
+        testid: "message-bubble-assistant"
+      tool_use:
+        visual: "Left-aligned, embedded ToolCallBlock"
+        testid: "message-bubble-tool-use"
+      tool_result:
+        visual: "Left-aligned, collapsed result block"
+        testid: "message-bubble-tool-result"
+    testids:
+      message-bubble: "Message container (all variants)"
+      message-content: "Text content area"
+      message-timestamp: "Time display"
+      message-copy-btn: "Copy message button"
+
+  ChatInput:
+    description: "Message composition area"
+    props:
+      onSend: "(content: string) → void"
+      disabled: "boolean — disabled during streaming"
+    testids:
+      chat-input: "Input container"
+      chat-input-textarea: "Text input area"
+      chat-send-btn: "Send button"
+    behavior:
+      - "Textarea auto-resizes up to 200px height"
+      - "Cmd+Enter or Ctrl+Enter sends message"
+      - "Enter alone inserts newline"
+      - "Send button disabled when textarea empty or disabled prop true"
+      - "Textarea cleared after successful send"
+      - "Focus returns to textarea after send"
+
+  ToolCallBlock:
+    description: "Display for tool use/result in conversation"
+    props:
+      name: "string — tool name"
+      input: "object — tool input parameters"
+      result: "string | null — tool result (null if pending)"
+      isExpanded: "boolean — whether detail is shown"
+    testids:
+      tool-call-block: "Container element"
+      tool-call-name: "Tool name display"
+      tool-call-input: "Input parameters (collapsible)"
+      tool-call-result: "Result display (collapsible)"
+      tool-call-toggle: "Expand/collapse button"
+    behavior:
+      - "Initially collapsed — shows tool name and status"
+      - "Click expands to show input and result"
+      - "Pending tool calls show spinner"
+      - "Failed tool calls show red error state"
+
+  StreamingIndicator:
+    description: "Visual indicator that assistant is generating response"
+    props:
+      isStreaming: "boolean — whether streaming is active"
+    testids:
+      streaming-indicator: "Indicator container"
+    visual: "Three animated dots, fades in/out"
+
+  hooks:
+    useChat:
+      description: "Manages chat state for a session"
+      params:
+        sessionID: "string — session to manage"
+        ws: "WebSocket context — for sending/receiving"
+      returns:
+        messages: "Message[] — all messages for session"
+        isStreaming: "boolean — whether response is in progress"
+        sendMessage: "(content: string) → void — send user message"
+        currentStreamContent: "string — accumulated streaming text"
+      behavior:
+        - "Listens for chat.token events — appends to current stream"
+        - "Listens for chat.done events — finalizes assistant message"
+        - "Listens for chat.error events — shows error in message list"
+        - "Sends chat.send via WebSocket"
+        - "Manages optimistic user message insertion"
+
+pillars:
+  performant:
+    - "Token append causes single DOM update — no full list re-render"
+    - "Message list virtualized for sessions with > 100 messages"
+    - "Markdown rendering debounced during streaming — every 100ms"
+    - "Code syntax highlighting deferred until streaming complete"
+    - "No layout shift when streaming indicator appears/disappears"
+  robust:
+    - "Renders correctly with 0 messages (empty state)"
+    - "Renders correctly with 1000+ messages (virtualized)"
+    - "Handles messages with empty content"
+    - "Handles messages with very long content (> 10000 chars)"
+    - "Handles rapid token events (> 100/second)"
+    - "Tool call blocks handle missing input/result gracefully"
+    - "Markdown renderer handles malformed markdown without crashing"
+    - "Code blocks without language tag render as plain preformatted"
+  resilient:
+    - "Stream interruption shows partial message with error indicator"
+    - "Network error during send shows failed message with retry option"
+    - "Session switch clears chat and loads new messages"
+    - "Component unmount during streaming cleans up listeners"
+    - "Token events for wrong session ignored"
+  secure:
+    - "Message content HTML-escaped — no XSS via user or assistant messages"
+    - "Tool call inputs/results sanitized before display"
+    - "No raw innerHTML — all content rendered through React components"
+    - "Code blocks escaped — no script execution"
+    - "Copy button copies plain text only"
+  sovereign:
+    - "Markdown rendering with local library — no external service"
+    - "Syntax highlighting with local library"
+    - "No external image loading from message content"
+    - "All icons/assets bundled locally"
+
+failure_modes:
+  - condition: "chat.token received for unknown messageID"
+    expected: "Create new streaming message entry, append token"
+  - condition: "chat.error received during streaming"
+    expected: "Finalize partial message, show error block below"
+  - condition: "User sends message while disconnected"
+    expected: "Show message as 'pending', send when reconnected"
+  - condition: "Session has no messages"
+    expected: "Show empty state: 'Start a conversation' prompt"
+  - condition: "Streaming response exceeds 50000 characters"
+    expected: "Continue rendering, markdown rendering deferred, no freeze"
+  - condition: "Rapid session switches during streaming"
+    expected: "Previous stream cancelled, new session messages loaded cleanly"
+  - condition: "Tool call input is not valid JSON"
+    expected: "Display raw string instead of formatted JSON"
+  - condition: "Message content contains HTML/script tags"
+    expected: "Rendered as escaped text, not executed"
+
+tests:
+  unit:
+    - "ChatView renders message list and input"
+    - "ChatView passes sessionID to useChat"
+    - "MessageList renders messages in order"
+    - "MessageList auto-scrolls on new message"
+    - "MessageList pauses auto-scroll when user scrolls up"
+    - "MessageList shows scroll-to-bottom button when not at bottom"
+    - "MessageBubble renders user variant right-aligned"
+    - "MessageBubble renders assistant variant left-aligned"
+    - "MessageBubble renders tool_use variant with ToolCallBlock"
+    - "MessageBubble renders markdown in assistant messages"
+    - "MessageBubble renders code blocks with syntax highlighting"
+    - "MessageBubble shows copy button on hover"
+    - "ChatInput enables send button when text entered"
+    - "ChatInput disables send button when empty"
+    - "ChatInput disables send button when disabled prop true"
+    - "ChatInput sends on Cmd+Enter"
+    - "ChatInput inserts newline on plain Enter"
+    - "ChatInput clears after send"
+    - "ChatInput auto-resizes textarea"
+    - "ToolCallBlock renders collapsed by default"
+    - "ToolCallBlock expands on click"
+    - "ToolCallBlock shows spinner for pending result"
+    - "ToolCallBlock shows error state for failed tool"
+    - "StreamingIndicator shows animated dots when streaming"
+    - "StreamingIndicator hidden when not streaming"
+    - "useChat returns empty messages for new session"
+    - "useChat appends token to current stream on chat.token"
+    - "useChat finalizes message on chat.done"
+    - "useChat handles chat.error"
+  integration:
+    - "Full chat flow: type → send → stream tokens → done"
+    - "Tool call flow: send → tool_use → tool_result → final response"
+    - "Session switch loads different messages"
+    - "Reconnection resumes message display"
+    - "Rapid token events (100/s) render smoothly"
+  property:
+    - "For any valid Message[], MessageList renders without error"
+    - "useChat.messages always ordered by createdAt ascending"
+    - "ChatInput.onSend never called with empty string"
+    - "Streaming token accumulation produces same result as final message"
+    - "Message content HTML escaping is idempotent"
+  e2e:
+    - name: "chat-send-receive"
+      navigate:
+        - "Open app"
+        - "Type 'Hello, Claude' in chat input"
+        - "Press Cmd+Enter to send"
+        - "Wait for streaming to complete"
+      screenshot:
+        target: "[data-testid='chat-view']"
+        name: "chat-send-receive.png"
+      assert:
+        - "User message appears right-aligned"
+        - "Assistant response appears left-aligned"
+        - "Input cleared after send"
+        - "No error indicators"
+    - name: "chat-streaming"
+      navigate:
+        - "Open app"
+        - "Send a message"
+        - "Capture during streaming"
+      screenshot:
+        target: "[data-testid='streaming-indicator']"
+        name: "chat-streaming.png"
+      assert:
+        - "Streaming indicator visible during response"
+        - "Tokens appear incrementally"
+        - "Input disabled during streaming"
+    - name: "chat-empty-state"
+      navigate:
+        - "Open app"
+        - "Create new session"
+        - "Verify empty state"
+      screenshot:
+        target: "[data-testid='message-list']"
+        name: "chat-empty.png"
+      assert:
+        - "Empty state prompt visible"
+        - "No error messages"
+    - name: "chat-code-block"
+      navigate:
+        - "Open app"
+        - "Send 'Write a hello world in Python'"
+        - "Wait for response"
+      screenshot:
+        target: "[data-testid='message-list']"
+        name: "chat-code-block.png"
+      assert:
+        - "Code block rendered with syntax highlighting"
+        - "Copy button visible on code block"

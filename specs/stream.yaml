@@ -1,0 +1,202 @@
+module: stream
+purpose: "Claude API streaming client — build requests, parse SSE"
+language: go
+package: github.com/rishav1305/soul-v2/internal/stream
+
+invariants:
+  - "Only external HTTP call target is api.anthropic.com — no other hosts"
+  - "Bearer token obtained exclusively from auth.OAuthTokenSource — never hardcoded"
+  - "SSE parser handles partial chunks, split across TCP packets"
+  - "Every API request includes anthropic-version header"
+  - "Request cancellation propagated via context — no orphaned connections"
+  - "Response body always closed — no leaked connections"
+  - "Model name configurable but defaults to claude-sonnet-4-20250514"
+  - "MaxTokens always set — never unbounded"
+  - "System prompt always sent as top-level 'system' field, not in messages"
+  - "Tool definitions validated before sending — reject malformed schemas"
+
+types:
+  Client:
+    fields:
+      auth: "auth.OAuthTokenSource — token provider"
+      model: "string — Claude model identifier"
+      httpClient: "*http.Client — configured with timeouts"
+      baseURL: "string — API base URL (default: https://api.anthropic.com)"
+      apiVersion: "string — anthropic-version header value"
+    methods:
+      - "NewClient(auth OAuthTokenSource, opts ...Option) → *Client"
+      - "Stream(ctx context.Context, req *Request) → (<-chan SSEEvent, error)"
+      - "Send(ctx context.Context, req *Request) → (*Response, error) — non-streaming"
+
+  Request:
+    fields:
+      Model: "string — model identifier override (optional)"
+      MaxTokens: "int — maximum tokens in response"
+      System: "string — system prompt"
+      Messages: "[]Message — conversation messages"
+      Tools: "[]Tool — available tool definitions"
+      Stream: "bool — whether to use SSE streaming"
+    methods:
+      - "Validate() → error — check required fields, message alternation"
+
+  Message:
+    fields:
+      Role: "string — user or assistant"
+      Content: "[]ContentBlock — text, tool_use, or tool_result blocks"
+    methods:
+      - "TextContent() → string — extract concatenated text from content blocks"
+
+  ContentBlock:
+    fields:
+      Type: "string — text, tool_use, tool_result"
+      Text: "string — for type=text"
+      ID: "string — for type=tool_use"
+      Name: "string — for type=tool_use"
+      Input: "json.RawMessage — for type=tool_use"
+      ToolUseID: "string — for type=tool_result"
+      Content: "string — for type=tool_result"
+
+  Tool:
+    fields:
+      Name: "string — tool name"
+      Description: "string — what the tool does"
+      InputSchema: "json.RawMessage — JSON Schema for tool input"
+    methods:
+      - "Validate() → error — check name non-empty, schema is valid JSON"
+
+  SSEEvent:
+    fields:
+      Type: "string — message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, ping, error"
+      Index: "int — content block index"
+      Delta: "*ContentBlockDelta — incremental content"
+      Message: "*MessageResponse — for message_start"
+      ContentBlock: "*ContentBlock — for content_block_start"
+      Usage: "*Usage — token usage info"
+      Error: "*APIError — for error events"
+    methods:
+      - "IsTerminal() → bool — true for message_stop or error"
+      - "IsContent() → bool — true for content_block_delta"
+
+  ContentBlockDelta:
+    fields:
+      Type: "string — text_delta, input_json_delta"
+      Text: "string — for text_delta"
+      PartialJSON: "string — for input_json_delta"
+
+  Usage:
+    fields:
+      InputTokens: "int — tokens in request"
+      OutputTokens: "int — tokens in response"
+      CacheCreationInputTokens: "int — tokens cached on creation"
+      CacheReadInputTokens: "int — tokens read from cache"
+
+  APIError:
+    fields:
+      Type: "string — error type from API"
+      Message: "string — human-readable error"
+      StatusCode: "int — HTTP status code"
+
+  Response:
+    fields:
+      ID: "string — message ID"
+      Role: "string — always assistant"
+      Content: "[]ContentBlock — response content"
+      Model: "string — model used"
+      StopReason: "string — end_turn, max_tokens, tool_use"
+      Usage: "*Usage — token counts"
+
+pillars:
+  performant:
+    - "SSE events forwarded to channel within 1ms of receipt"
+    - "Zero buffering of complete response — stream directly"
+    - "HTTP/2 connection reuse via persistent client"
+    - "Request serialization < 1ms for typical conversation"
+  robust:
+    - "SSE parser handles: empty lines, comments, retry fields, split chunks"
+    - "Request validation catches: missing model, empty messages, invalid roles"
+    - "Content block types validated — unknown types forwarded as-is, never panic"
+    - "JSON parsing of tool inputs tolerant of whitespace variations"
+    - "Usage tracking never panics on missing fields — defaults to zero"
+  resilient:
+    - "Context cancellation closes HTTP connection within 100ms"
+    - "API 429 (rate limit) returns retryable error with Retry-After duration"
+    - "API 500/502/503 returns retryable error, caller decides retry policy"
+    - "Network timeout (30s default) returns clean timeout error"
+    - "Partial SSE stream (connection dropped mid-message) returns partial error with last event"
+  secure:
+    - "Bearer token set via Authorization header — never in URL or body"
+    - "Request/response bodies never logged at default level"
+    - "API key never included in error messages"
+    - "Only HTTPS connections to API (TLS 1.2+)"
+  sovereign:
+    - "Claude API abstracted behind interface — swappable to alternative LLMs"
+    - "No vendor SDK dependency — raw HTTP + SSE parsing"
+    - "Model selection not hardcoded — configurable at runtime"
+
+failure_modes:
+  - condition: "API returns 401 Unauthorized"
+    expected: "Return AuthError, caller triggers token refresh and retry"
+  - condition: "API returns 429 Too Many Requests"
+    expected: "Return RateLimitError with Retry-After duration from header"
+  - condition: "API returns 500 Internal Server Error"
+    expected: "Return ServerError, mark as retryable"
+  - condition: "Network timeout (no response in 30s)"
+    expected: "Context deadline exceeded error, HTTP connection closed"
+  - condition: "SSE stream ends without message_stop event"
+    expected: "Return IncompleteStreamError with all events received so far"
+  - condition: "Malformed SSE line (no colon separator)"
+    expected: "Skip line, log warning, continue processing stream"
+  - condition: "JSON parse error in SSE data field"
+    expected: "Return ParseError with raw data for debugging"
+  - condition: "Context cancelled by caller during streaming"
+    expected: "Channel closed, HTTP body closed, no goroutine leak"
+  - condition: "Request with empty messages array"
+    expected: "Validate rejects before HTTP call — return validation error"
+  - condition: "Tool input schema is invalid JSON"
+    expected: "Validate rejects tool definition — return schema validation error"
+
+tests:
+  unit:
+    - "NewClient sets default model and API version"
+    - "Request.Validate rejects empty messages"
+    - "Request.Validate rejects invalid message roles"
+    - "Request.Validate requires MaxTokens > 0"
+    - "Tool.Validate rejects empty name"
+    - "Tool.Validate rejects invalid JSON schema"
+    - "SSE parser handles single-line event"
+    - "SSE parser handles multi-line data field"
+    - "SSE parser handles split chunk across two reads"
+    - "SSE parser skips comment lines (starting with :)"
+    - "SSE parser handles empty lines between events"
+    - "SSEEvent.IsTerminal true for message_stop and error"
+    - "SSEEvent.IsContent true for content_block_delta"
+    - "ContentBlock text extraction concatenates multiple blocks"
+    - "APIError includes status code and message"
+    - "Usage defaults to zero for missing fields"
+  integration:
+    - "Full streaming conversation with mock Claude API server"
+    - "Tool use round-trip: request → tool_use event → tool_result → response"
+    - "Rate limit handling with Retry-After header"
+    - "Auth token refresh triggered by 401 response"
+    - "Context cancellation during active stream"
+    - "Large response (100+ SSE events) processed completely"
+  property:
+    - "For any valid Request, serialization produces valid JSON"
+    - "For any sequence of valid SSE bytes, parser produces valid events"
+    - "Stream always terminates: either message_stop, error, or context cancel"
+    - "Usage.InputTokens + Usage.OutputTokens >= 0 for any response"
+    - "SSE parser never panics on arbitrary byte input"
+  e2e:
+    - name: "streaming-chat"
+      navigate:
+        - "Open app"
+        - "Send message 'Hello'"
+        - "Observe streaming tokens appear"
+        - "Wait for response to complete"
+      screenshot:
+        target: "[data-testid='message-list']"
+        name: "streaming-chat.png"
+      assert:
+        - "Tokens appear incrementally (not all at once)"
+        - "Final message is complete"
+        - "No error indicators visible"

@@ -1,0 +1,361 @@
+module: metrics
+purpose: "Event logging, aggregation, and CLI reporting"
+language: go
+package: github.com/rishav1305/soul-v2/internal/metrics
+
+invariants:
+  - "All writes are goroutine-safe — protected by sync.Mutex"
+  - "Append-only storage — events never modified or deleted"
+  - "Storage file: ~/.soul-v2/metrics.jsonl (JSON Lines format)"
+  - "Daily log rotation: metrics.jsonl → metrics.YYYY-MM-DD.jsonl at midnight"
+  - "Weekly aggregation: daily files rolled into weekly summary"
+  - "Sampler emits system.sample every 30 seconds"
+  - "Every event has a timestamp (RFC3339Nano) and event type"
+  - "Event data is schemaless map — flexible for future event types"
+  - "File handle kept open for writes — not opened/closed per event"
+  - "Buffer flush on every write — no data loss on crash"
+  - "CLI commands read from file without locking — append-only is safe"
+
+types:
+  Event:
+    fields:
+      Timestamp: "time.Time — when event occurred (RFC3339Nano)"
+      EventType: "string — dot-namespaced event type"
+      Data: "map[string]interface{} — event-specific payload"
+    methods:
+      - "MarshalJSON() → ([]byte, error) — serialize to JSON line"
+      - "Validate() → error — check type non-empty, timestamp non-zero"
+
+  EventLogger:
+    fields:
+      file: "*os.File — open handle to metrics.jsonl"
+      mu: "sync.Mutex — guards file writes"
+      dataDir: "string — path to data directory"
+    methods:
+      - "NewEventLogger(dataDir string) → (*EventLogger, error)"
+      - "Log(eventType string, data map[string]interface{}) → error"
+      - "Close() → error — flush and close file handle"
+      - "Rotate() → error — rotate daily log file"
+
+  Sampler:
+    fields:
+      logger: "*EventLogger — where to write samples"
+      interval: "time.Duration — sampling interval (default 30s)"
+      stopCh: "chan struct{} — signal to stop sampling"
+      wg: "sync.WaitGroup — wait for goroutine exit"
+    methods:
+      - "NewSampler(logger *EventLogger, interval time.Duration) → *Sampler"
+      - "Start() — begin periodic sampling in background goroutine"
+      - "Stop() — signal stop and wait for goroutine to exit"
+      - "Sample() → Event — collect current system metrics"
+
+  Aggregator:
+    fields:
+      dataDir: "string — path to data directory"
+    methods:
+      - "NewAggregator(dataDir string) → *Aggregator"
+      - "ReadEvents(from, to time.Time) → ([]Event, error) — read events in time range"
+      - "CountByType(events []Event) → map[string]int — count events by type"
+      - "ErrorBreakdown(events []Event) → map[string]int — count by error taxonomy"
+      - "LatencyPercentiles(events []Event, eventType string) → Percentiles"
+      - "TokenUsage(events []Event) → TokenSummary — total input/output tokens"
+      - "CostEstimate(events []Event) → CostSummary — estimated API costs"
+      - "QualityScore(events []Event) → float64 — gate pass rate"
+
+  Percentiles:
+    fields:
+      P50: "time.Duration — median latency"
+      P90: "time.Duration — 90th percentile"
+      P99: "time.Duration — 99th percentile"
+      Max: "time.Duration — maximum observed"
+
+  TokenSummary:
+    fields:
+      InputTokens: "int — total input tokens"
+      OutputTokens: "int — total output tokens"
+      CacheHitTokens: "int — tokens served from cache"
+      TotalRequests: "int — number of API requests"
+
+  CostSummary:
+    fields:
+      InputCost: "float64 — estimated input token cost (USD)"
+      OutputCost: "float64 — estimated output token cost (USD)"
+      TotalCost: "float64 — total estimated cost (USD)"
+      RequestCount: "int — number of API requests"
+
+  event_types:
+    system:
+      - type: "system.start"
+        data: "version, port, host, pid"
+        description: "Server started"
+      - type: "system.stop"
+        data: "reason, uptime_seconds"
+        description: "Server stopped"
+      - type: "system.sample"
+        data: "goroutines, heap_mb, sys_mb, gc_pause_ns, open_files"
+        description: "Periodic system health sample"
+      - type: "system.db"
+        data: "operation, table, duration_ms, rows_affected"
+        description: "Database operation"
+
+    websocket:
+      - type: "ws.connect"
+        data: "client_id, origin"
+        description: "Client connected"
+      - type: "ws.disconnect"
+        data: "client_id, reason, duration_seconds"
+        description: "Client disconnected"
+      - type: "ws.stream.start"
+        data: "session_id, message_id"
+        description: "Streaming response started"
+      - type: "ws.stream.token"
+        data: "session_id, message_id, token_index"
+        description: "Individual token streamed"
+      - type: "ws.stream.end"
+        data: "session_id, message_id, total_tokens, duration_ms"
+        description: "Streaming response completed"
+
+    api:
+      - type: "api.request"
+        data: "model, input_tokens, output_tokens, duration_ms, status_code"
+        description: "Claude API request completed"
+      - type: "api.error"
+        data: "model, error_type, status_code, retryable"
+        description: "Claude API request failed"
+
+    auth:
+      - type: "oauth.refresh"
+        data: "success, duration_ms, expires_in_seconds"
+        description: "OAuth token refresh attempted"
+      - type: "oauth.reload"
+        data: "source (disk or refresh), success"
+        description: "OAuth credentials reloaded"
+
+    pipeline:
+      - type: "step.start"
+        data: "step_id, step_type, description"
+        description: "Pipeline step started"
+      - type: "step.complete"
+        data: "step_id, step_type, duration_ms, success"
+        description: "Pipeline step completed"
+      - type: "step.blocked"
+        data: "step_id, step_type, reason, error_class"
+        description: "Pipeline step blocked (needs intervention)"
+
+    gate:
+      - type: "gate.run"
+        data: "gate_layer, step_id"
+        description: "Verification gate started"
+      - type: "gate.pass"
+        data: "gate_layer, step_id, duration_ms"
+        description: "Verification gate passed"
+      - type: "gate.fail"
+        data: "gate_layer, step_id, errors, duration_ms"
+        description: "Verification gate failed"
+      - type: "gate.retry"
+        data: "gate_layer, step_id, attempt, max_attempts"
+        description: "Verification gate retrying"
+
+    visual:
+      - type: "screenshot.taken"
+        data: "name, target, step_id, size_bytes"
+        description: "Screenshot captured"
+      - type: "screenshot.miss"
+        data: "name, target, step_id, error"
+        description: "Screenshot capture failed"
+
+    override:
+      - type: "override.error"
+        data: "step_id, error_class, original_error, override_reason"
+        description: "Error overridden by reviewer"
+      - type: "override.accept"
+        data: "step_id, gate_layer, override_reason"
+        description: "Gate failure accepted"
+      - type: "override.quality"
+        data: "step_id, quality_score, threshold, override_reason"
+        description: "Quality threshold overridden"
+
+    cost:
+      - type: "cost.step"
+        data: "step_id, input_tokens, output_tokens, model, estimated_cost_usd"
+        description: "Cost tracked per pipeline step"
+
+  error_taxonomy:
+    categories:
+      - name: "syntax"
+        description: "Code doesn't compile or parse"
+        examples: ["TypeScript compilation error", "Go vet failure", "JSON parse error"]
+      - name: "dependency"
+        description: "Missing or incompatible dependency"
+        examples: ["Import not found", "Version conflict", "Missing binary"]
+      - name: "logic"
+        description: "Code compiles but produces wrong result"
+        examples: ["Test assertion failure", "Wrong calculation", "Off-by-one"]
+      - name: "ui_ux"
+        description: "Visual or interaction defect"
+        examples: ["Layout broken", "Button unresponsive", "Wrong color"]
+      - name: "regression"
+        description: "Previously working feature broken"
+        examples: ["Test that used to pass now fails", "Feature removed"]
+      - name: "security"
+        description: "Security vulnerability introduced"
+        examples: ["SQL injection", "XSS", "Exposed secret"]
+      - name: "performance"
+        description: "Performance degradation"
+        examples: ["Latency increased", "Memory leak", "Bundle size growth"]
+      - name: "spec_drift"
+        description: "Implementation diverges from spec"
+        examples: ["Missing testid", "Wrong API shape", "Missing invariant"]
+      - name: "test_quality"
+        description: "Test itself is flawed"
+        examples: ["Flaky test", "Test doesn't assert what it claims", "Over-mocking"]
+      - name: "false_positive"
+        description: "Gate flags non-issue"
+        examples: ["Style-only diff", "Whitespace change", "Comment update"]
+
+  cli_commands:
+    - name: "status"
+      description: "Current system status — uptime, connections, last errors"
+      usage: "soul-v2 metrics status"
+      output: "Table with key metrics"
+    - name: "quality"
+      description: "Gate pass/fail rates, error breakdown by taxonomy"
+      usage: "soul-v2 metrics quality [--since DURATION]"
+      output: "Quality score, error breakdown table"
+    - name: "layers"
+      description: "Verification layer statistics"
+      usage: "soul-v2 metrics layers [--since DURATION]"
+      output: "Per-layer pass/fail/retry counts"
+    - name: "cost"
+      description: "Token usage and cost estimates"
+      usage: "soul-v2 metrics cost [--since DURATION]"
+      output: "Token counts, cost estimates by model"
+    - name: "latency"
+      description: "Latency percentiles for API and streaming"
+      usage: "soul-v2 metrics latency [--since DURATION]"
+      output: "P50, P90, P99, Max for each operation type"
+    - name: "tail"
+      description: "Live-tail events as they are logged"
+      usage: "soul-v2 metrics tail [--type PATTERN]"
+      output: "Streaming event lines filtered by type"
+    - name: "log"
+      description: "Query historical events"
+      usage: "soul-v2 metrics log [--type TYPE] [--since DURATION] [--limit N]"
+      output: "Matching events in chronological order"
+
+  storage:
+    path: "~/.soul-v2/metrics.jsonl"
+    format: "JSON Lines — one JSON object per line"
+    rotation: "Daily at midnight — metrics.jsonl → metrics.YYYY-MM-DD.jsonl"
+    aggregation: "Weekly — daily files summarized into metrics.YYYY-WNN.summary.json"
+    retention: "Raw: 30 days, Summaries: 1 year"
+
+pillars:
+  performant:
+    - "Log write completes in < 100us (mutex + append + flush)"
+    - "Sampler overhead < 1ms per sample (runtime.ReadMemStats)"
+    - "CLI commands read without locking — no impact on write path"
+    - "Aggregation runs as background task — never blocks serving"
+    - "File I/O buffered — single syscall per event"
+  robust:
+    - "Event validation rejects empty type or zero timestamp"
+    - "Malformed JSON in metrics file skipped during read — never crash"
+    - "Data field supports any JSON-serializable value"
+    - "CLI gracefully handles missing or empty metrics file"
+    - "Rotation handles race: events during rotation go to new file"
+    - "Aggregator handles partial daily files (crash mid-day)"
+  resilient:
+    - "Append-only — crash never corrupts existing data"
+    - "Flush after every write — max 1 event lost on crash"
+    - "File re-opened if handle becomes invalid"
+    - "Rotation failure falls back to continuing in current file"
+    - "Sampler recovers from ReadMemStats panic (should never happen, but guarded)"
+    - "Full disk — log warning, skip event, continue running"
+  secure:
+    - "Metrics file permissions 0600"
+    - "No sensitive data in events — no tokens, passwords, or PII"
+    - "Data directory permissions 0700"
+    - "CLI reads are read-only — never mutate metrics file"
+    - "Event data sanitized — large blobs truncated to 1KB"
+  sovereign:
+    - "All storage local — no metrics SaaS"
+    - "No external monitoring dependencies"
+    - "CLI built into binary — no separate install"
+    - "JSON Lines format — readable by any tool (jq, grep, etc.)"
+
+failure_modes:
+  - condition: "Metrics file does not exist"
+    expected: "Create new file with 0600 permissions on first Log call"
+  - condition: "Data directory does not exist"
+    expected: "Create directory with 0700 permissions"
+  - condition: "Disk full during Log"
+    expected: "Return error, log warning to stderr, continue running (events dropped)"
+  - condition: "File handle closed unexpectedly"
+    expected: "Reopen file on next Log call, log recovery event"
+  - condition: "Rotation at midnight during active writes"
+    expected: "Lock mutex, rename file, open new file, unlock — max 1ms pause"
+  - condition: "Metrics file contains corrupt JSON line"
+    expected: "Aggregator skips line, logs warning, continues reading"
+  - condition: "Sampler goroutine panics"
+    expected: "Recovery deferred, error logged, sampler stops (server continues)"
+  - condition: "Two processes write to same metrics file"
+    expected: "Not supported — single-writer enforced by file lock"
+  - condition: "Very large metrics file (> 1GB)"
+    expected: "CLI commands use streaming read — never load full file into memory"
+  - condition: "Clock skew (system time jumps)"
+    expected: "Events logged with actual timestamp — aggregator handles non-monotonic timestamps"
+
+tests:
+  unit:
+    - "Event.MarshalJSON produces valid JSON with timestamp and type"
+    - "Event.Validate rejects empty type"
+    - "Event.Validate rejects zero timestamp"
+    - "EventLogger.Log writes JSON line to file"
+    - "EventLogger.Log is goroutine-safe (concurrent writes)"
+    - "EventLogger.Close flushes and closes file"
+    - "EventLogger creates file if not exists"
+    - "EventLogger creates data directory if not exists"
+    - "Sampler.Sample collects goroutine count and memory stats"
+    - "Sampler.Start begins periodic sampling"
+    - "Sampler.Stop halts sampling and waits for goroutine exit"
+    - "Sampler respects configured interval"
+    - "Aggregator.CountByType groups events correctly"
+    - "Aggregator.ErrorBreakdown categorizes by taxonomy"
+    - "Aggregator.LatencyPercentiles computes P50/P90/P99 correctly"
+    - "Aggregator.TokenUsage sums input and output tokens"
+    - "Aggregator.CostEstimate computes per-model costs"
+    - "Aggregator.QualityScore computes gate pass rate"
+    - "Rotation renames file with date suffix"
+    - "Rotation creates new file after rename"
+  integration:
+    - "Full lifecycle: create logger → log events → close → read back"
+    - "Sampler runs for 5 intervals and produces 5 system.sample events"
+    - "Concurrent logging from 10 goroutines — no data corruption"
+    - "Daily rotation preserves all events across old and new file"
+    - "Aggregator reads across multiple daily files for time range"
+    - "CLI status command produces correct output"
+    - "CLI tail command streams new events"
+  property:
+    - "For any valid Event, MarshalJSON then UnmarshalJSON is identity"
+    - "Log then ReadEvents always includes the logged event"
+    - "CountByType values sum to total event count"
+    - "LatencyPercentiles: P50 <= P90 <= P99 <= Max"
+    - "QualityScore always in range [0.0, 1.0]"
+    - "Concurrent Log calls never produce interleaved JSON lines"
+  e2e:
+    - name: "metrics-collection"
+      navigate:
+        - "Start server"
+        - "Open app"
+        - "Send a chat message"
+        - "Wait for response"
+        - "Check metrics file"
+      screenshot:
+        target: "body"
+        name: "metrics-active.png"
+      assert:
+        - "system.start event present"
+        - "ws.connect event present"
+        - "ws.stream.start event present"
+        - "ws.stream.end event present"
+        - "api.request event present"

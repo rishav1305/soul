@@ -1,0 +1,204 @@
+module: ws
+purpose: "WebSocket hub — per-client connections, session-scoped routing"
+language: go
+package: github.com/rishav1305/soul-v2/internal/ws
+
+invariants:
+  - "Send channel bounded to 256 messages — drops oldest if full"
+  - "Origin validation on every WebSocket upgrade — reject non-allowed origins"
+  - "Maximum message size: 1MB inbound — reject larger with close frame"
+  - "Client disconnect cancels all associated agents within 1 second"
+  - "One client per WebSocket connection — no multiplexing"
+  - "All messages are JSON — binary frames rejected"
+  - "Hub runs in single goroutine — register/unregister serialized"
+  - "Ping/pong every 30s — client removed after 2 missed pongs"
+  - "Session-scoped routing: token events only sent to clients subscribed to that session"
+  - "All outbound messages include a 'type' field for client dispatch"
+
+types:
+  Hub:
+    fields:
+      clients: "map[*Client]bool — set of connected clients"
+      register: "chan *Client — client registration channel"
+      unregister: "chan *Client — client unregistration channel"
+      sessionStore: "*session.Store — for session operations"
+      streamClient: "*stream.Client — for Claude API calls"
+    methods:
+      - "NewHub(store *session.Store, streamClient *stream.Client) → *Hub"
+      - "Run() — start hub event loop (blocking)"
+      - "HandleUpgrade(w http.ResponseWriter, r *http.Request) — upgrade HTTP to WS"
+      - "ClientCount() → int — number of connected clients"
+
+  Client:
+    fields:
+      conn: "*websocket.Conn — underlying WebSocket connection"
+      hub: "*Hub — parent hub reference"
+      sessionID: "string — currently subscribed session"
+      send: "chan []byte — outbound message buffer (cap: 256)"
+      cancel: "context.CancelFunc — cancels active agent for this client"
+    methods:
+      - "ReadPump() — read messages from WS, dispatch to hub (blocking)"
+      - "WritePump() — write messages from send channel to WS (blocking)"
+      - "Subscribe(sessionID string) — switch session subscription"
+      - "Close() — clean up connection and cancel agents"
+
+  InboundMessage:
+    fields:
+      Type: "string — message type for dispatch"
+      SessionID: "string — target session (optional, depends on type)"
+      Content: "string — message content (for chat.send)"
+    types:
+      - type: "chat.send"
+        fields: "sessionID, content"
+        description: "User sends a chat message"
+      - type: "session.switch"
+        fields: "sessionID"
+        description: "User switches to a different session"
+      - type: "session.create"
+        fields: "none"
+        description: "User creates a new session"
+      - type: "session.delete"
+        fields: "sessionID"
+        description: "User deletes a session"
+
+  OutboundMessage:
+    fields:
+      Type: "string — message type for client dispatch"
+      SessionID: "string — which session this relates to"
+      Data: "interface{} — payload varies by type"
+    types:
+      - type: "chat.token"
+        fields: "sessionID, token, messageID"
+        description: "Single streaming token from Claude"
+      - type: "chat.done"
+        fields: "sessionID, messageID"
+        description: "Streaming response complete"
+      - type: "chat.error"
+        fields: "sessionID, error"
+        description: "Error during chat processing"
+      - type: "session.created"
+        fields: "session (full object)"
+        description: "New session created successfully"
+      - type: "session.deleted"
+        fields: "sessionID"
+        description: "Session deleted successfully"
+      - type: "session.list"
+        fields: "sessions (array)"
+        description: "Full session list (sent on connect and after changes)"
+      - type: "session.updated"
+        fields: "session (full object)"
+        description: "Session metadata changed"
+      - type: "connection.ready"
+        fields: "clientID"
+        description: "WebSocket connection established"
+
+pillars:
+  performant:
+    - "Token events forwarded to client within 1ms of receipt from stream"
+    - "Hub event loop processes register/unregister in < 100us"
+    - "WebSocket frame overhead < 50 bytes"
+    - "No JSON re-serialization for pass-through token events"
+    - "Send channel drain on disconnect — no blocking"
+  robust:
+    - "Malformed JSON inbound → error response, connection stays open"
+    - "Unknown message type → ignore with warning, never crash"
+    - "Send channel full → drop oldest message, log warning"
+    - "Hub survives any single client panic — other clients unaffected"
+    - "Concurrent session.switch during active stream → cancel stream, switch cleanly"
+    - "All message types validated against known enum"
+  resilient:
+    - "Client disconnect detected within 1 pong interval (30s)"
+    - "Agent cancellation on disconnect within 1 second"
+    - "Hub restart recovers all active clients (not possible — hub is singleton, but graceful shutdown closes all)"
+    - "Network partition → ping timeout → clean disconnect → client reconnects"
+    - "Server shutdown sends close frame to all clients before exit"
+  secure:
+    - "Origin validation: only configured origins accepted"
+    - "Message size limit: 1MB inbound — oversized rejected with 1009 close code"
+    - "No authentication tokens in WebSocket messages"
+    - "Rate limit: max 10 messages/second per client"
+    - "Session IDs validated before operations — no cross-session access"
+  sovereign:
+    - "Standard WebSocket protocol — no proprietary extensions"
+    - "No external WebSocket service — direct gorilla/websocket"
+    - "Protocol documented in spec — any client can implement"
+
+failure_modes:
+  - condition: "Client sends message larger than 1MB"
+    expected: "Connection closed with 1009 (message too big) close code"
+  - condition: "Client sends invalid JSON"
+    expected: "Error response sent, connection remains open"
+  - condition: "Client sends unknown message type"
+    expected: "Warning logged, no response sent, connection stays open"
+  - condition: "Send channel full (256 messages queued)"
+    expected: "Oldest message dropped, warning logged, new message queued"
+  - condition: "Client disconnects during active streaming"
+    expected: "Agent context cancelled within 1s, resources cleaned up"
+  - condition: "WebSocket upgrade from disallowed origin"
+    expected: "Upgrade rejected with 403, no WebSocket connection created"
+  - condition: "Two pong timeouts in a row"
+    expected: "Client marked as dead, connection closed, resources freed"
+  - condition: "chat.send with non-existent sessionID"
+    expected: "chat.error sent back with 'session not found' message"
+  - condition: "session.delete on session another client is using"
+    expected: "Delete succeeds, other client receives session.deleted event"
+  - condition: "Server shutdown while clients connected"
+    expected: "Close frame sent to all clients, wait up to 5s for clean disconnect"
+
+tests:
+  unit:
+    - "Hub registers new client correctly"
+    - "Hub unregisters client and cleans up"
+    - "Client.Subscribe updates sessionID"
+    - "Client.Subscribe cancels previous agent"
+    - "InboundMessage parsing for all message types"
+    - "OutboundMessage serialization for all message types"
+    - "Unknown inbound type does not crash"
+    - "Malformed JSON returns error message"
+    - "Send channel respects 256 capacity"
+    - "Origin validation accepts allowed origins"
+    - "Origin validation rejects disallowed origins"
+    - "Message size validation rejects > 1MB"
+  integration:
+    - "Full connect → send message → receive tokens → done cycle"
+    - "Session switch during active stream cancels stream"
+    - "Multiple clients on same session receive same tokens"
+    - "Client disconnect triggers agent cancellation"
+    - "Session create via WebSocket returns session object"
+    - "Session delete via WebSocket sends deleted event to all clients"
+    - "Ping/pong keepalive cycle"
+    - "Rate limiting rejects excess messages"
+    - "Concurrent connect/disconnect stress test (100 clients)"
+  property:
+    - "For any valid InboundMessage JSON, parsing succeeds"
+    - "For any OutboundMessage, serialization produces valid JSON with 'type' field"
+    - "Hub.ClientCount always equals len(Hub.clients)"
+    - "After unregister, client's send channel is closed"
+    - "No goroutine leak: goroutine count returns to baseline after client lifecycle"
+  e2e:
+    - name: "websocket-connection"
+      navigate:
+        - "Open app"
+        - "Verify connection status shows 'connected'"
+        - "Send a chat message"
+        - "Verify response streams in"
+      screenshot:
+        target: "[data-testid='connection-status']"
+        name: "ws-connected.png"
+      assert:
+        - "Connection indicator shows green/connected"
+        - "Messages flow bidirectionally"
+    - name: "websocket-reconnect"
+      navigate:
+        - "Open app"
+        - "Verify connected"
+        - "Simulate server restart"
+        - "Verify reconnection indicator"
+        - "Wait for reconnection"
+        - "Verify connected again"
+      screenshot:
+        target: "[data-testid='connection-status']"
+        name: "ws-reconnect.png"
+      assert:
+        - "Connection status transitions: connected → disconnected → connecting → connected"
+        - "No messages lost during reconnection"

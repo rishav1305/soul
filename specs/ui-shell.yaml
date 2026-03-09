@@ -1,0 +1,193 @@
+module: ui-shell
+purpose: "App shell — layout, connection status indicator, reauth button"
+language: typescript
+package: web/src/components
+
+invariants:
+  - "Shell renders full viewport — no scrollbar on body"
+  - "Connection status reflects actual WebSocket state — never stale"
+  - "Reauth button only visible when auth state is 'expired' or 'error'"
+  - "Dark theme (zinc palette) — no light mode toggle in v1"
+  - "All interactive elements have data-testid attributes"
+  - "Shell layout: sidebar (sessions) left, main content (chat) right"
+  - "Sidebar collapsible on mobile (< 768px)"
+  - "Connection status updates within 1 render cycle of WebSocket state change"
+  - "No external fonts or CDN resources — all assets local"
+  - "Shell mounts WebSocket connection on first render"
+
+types:
+  Shell:
+    description: "Root application component — layout container"
+    props: {}
+    testids:
+      shell: "Root container element"
+      connection-status: "Connection status indicator"
+      reauth-btn: "Re-authentication button (conditional)"
+      sidebar: "Session sidebar container"
+      main-content: "Main chat area container"
+      sidebar-toggle: "Mobile sidebar toggle button"
+    renders:
+      - "ConnectionStatus component in header"
+      - "SessionList component in sidebar"
+      - "ChatView component in main content area"
+      - "Reauth button in header when auth expired"
+
+  ConnectionStatus:
+    description: "Visual indicator of WebSocket connection state"
+    props:
+      status: "ConnectionState — current connection state"
+    states:
+      connected:
+        visual: "Green dot with 'Connected' text"
+        testid_value: "connected"
+      connecting:
+        visual: "Yellow pulsing dot with 'Connecting...' text"
+        testid_value: "connecting"
+      disconnected:
+        visual: "Red dot with 'Disconnected' text"
+        testid_value: "disconnected"
+      error:
+        visual: "Red dot with 'Connection Error' text"
+        testid_value: "error"
+    testids:
+      connection-status: "Status container with data-status attribute"
+      connection-dot: "Colored status dot"
+      connection-text: "Status text label"
+
+  hooks:
+    useWebSocket:
+      description: "Manages WebSocket lifecycle — connect, reconnect, message dispatch"
+      returns:
+        status: "ConnectionState — current connection state"
+        send: "(message: InboundMessage) → void — send message to server"
+        lastMessage: "OutboundMessage | null — last received message"
+      behavior:
+        - "Connects to ws://host:port/ws on mount"
+        - "Auto-reconnect with exponential backoff: 1s, 2s, 4s, 8s, max 30s"
+        - "Resets backoff on successful connection"
+        - "Parses all incoming messages as JSON OutboundMessage"
+        - "Closes connection on unmount"
+        - "Dispatches messages to registered handlers"
+
+    useAuth:
+      description: "Polls auth status and provides reauth trigger"
+      returns:
+        authState: "string — connected, expired, missing, error"
+        expiresAt: "Date | null — token expiry time"
+        reauth: "() → Promise<void> — trigger re-authentication"
+      behavior:
+        - "Fetches /api/auth/status on mount"
+        - "Polls every 60s while connected"
+        - "Calls POST /api/reauth on reauth()"
+
+pillars:
+  performant:
+    - "Shell renders in < 50ms on initial load"
+    - "Connection status updates cause zero unnecessary re-renders of child components"
+    - "Sidebar toggle animation < 200ms"
+    - "No layout shift on connection status change"
+  robust:
+    - "Shell renders correctly with zero sessions"
+    - "Shell renders correctly with WebSocket disconnected"
+    - "Shell renders correctly with auth expired"
+    - "Connection status handles all 4 states without error"
+    - "Reauth button handles click during pending request (disabled state)"
+    - "Mobile sidebar toggle works at all viewport widths < 768px"
+  resilient:
+    - "WebSocket auto-reconnect with exponential backoff"
+    - "Auth polling continues even after fetch failure"
+    - "Shell never shows blank screen — always renders layout"
+    - "Reauth failure shows error message, doesn't crash"
+    - "Network offline → shows disconnected, auto-reconnects when online"
+  secure:
+    - "No auth tokens exposed in DOM or console"
+    - "Reauth button uses POST request — not GET with token in URL"
+    - "CSP-compliant — no inline scripts"
+    - "No external resource loading"
+  sovereign:
+    - "All fonts from local assets"
+    - "No CDN dependencies"
+    - "No analytics or tracking scripts"
+    - "Zinc dark theme defined in local CSS — no external theme"
+
+failure_modes:
+  - condition: "WebSocket fails to connect on mount"
+    expected: "ConnectionStatus shows 'connecting', auto-reconnect begins"
+  - condition: "WebSocket disconnects after successful connection"
+    expected: "ConnectionStatus transitions to 'disconnected', reconnect backoff starts"
+  - condition: "Auth status fetch fails"
+    expected: "Auth state set to 'error', reauth button visible"
+  - condition: "Reauth POST fails"
+    expected: "Error message shown near reauth button, button re-enabled"
+  - condition: "Window resized during sidebar animation"
+    expected: "Animation completes cleanly, no layout break"
+  - condition: "Server sends malformed WebSocket message"
+    expected: "Message ignored, warning logged to console, connection stays open"
+
+tests:
+  unit:
+    - "Shell renders without crashing"
+    - "Shell includes sidebar, main content, and header"
+    - "ConnectionStatus renders correct visual for each of 4 states"
+    - "ConnectionStatus has correct data-status attribute for each state"
+    - "Reauth button visible when authState is 'expired'"
+    - "Reauth button visible when authState is 'error'"
+    - "Reauth button hidden when authState is 'connected'"
+    - "Reauth button hidden when authState is 'missing'"
+    - "Reauth button disabled during pending reauth"
+    - "useWebSocket returns 'connecting' initially"
+    - "useWebSocket transitions to 'connected' on open"
+    - "useWebSocket transitions to 'disconnected' on close"
+    - "useWebSocket send serializes message to JSON"
+    - "useAuth returns auth state from API"
+    - "useAuth polls at 60s interval"
+    - "Sidebar toggle button visible on mobile viewport"
+    - "Sidebar toggle button hidden on desktop viewport"
+  integration:
+    - "Shell with mock WebSocket — full connection lifecycle"
+    - "Shell with mock auth API — reauth flow"
+    - "Reconnect backoff timing verified"
+    - "Message dispatch from WebSocket to child components"
+  property:
+    - "For any ConnectionState value, ConnectionStatus renders without error"
+    - "useWebSocket never returns undefined status"
+    - "Backoff never exceeds 30 seconds"
+  e2e:
+    - name: "shell-layout"
+      navigate:
+        - "Open app at localhost:3002"
+        - "Wait for WebSocket connection"
+      screenshot:
+        target: "[data-testid='shell']"
+        name: "shell-layout.png"
+      assert:
+        - "Sidebar visible on left"
+        - "Chat area visible on right"
+        - "Connection status shows 'connected'"
+        - "Dark theme applied"
+    - name: "connection-states"
+      navigate:
+        - "Open app"
+        - "Verify 'connected' state"
+        - "Stop server"
+        - "Verify 'disconnected' state"
+        - "Start server"
+        - "Verify reconnection to 'connected'"
+      screenshot:
+        target: "[data-testid='connection-status']"
+        name: "connection-states.png"
+      assert:
+        - "All connection state transitions render correctly"
+        - "No blank screen during transitions"
+    - name: "mobile-layout"
+      navigate:
+        - "Open app at 375px viewport width"
+        - "Verify sidebar is collapsed"
+        - "Click sidebar toggle"
+        - "Verify sidebar is visible"
+      screenshot:
+        target: "[data-testid='shell']"
+        name: "shell-mobile.png"
+      assert:
+        - "Sidebar collapses at mobile width"
+        - "Toggle button opens/closes sidebar"

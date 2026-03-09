@@ -1,0 +1,110 @@
+module: auth
+purpose: "Claude OAuth token management — load, refresh, persist"
+language: go
+package: github.com/rishav1305/soul-v2/internal/auth
+
+invariants:
+  - "Tokens loaded exclusively from ~/.claude/.credentials.json — no other source"
+  - "Auto-refresh triggers 5 minutes before token expiry"
+  - "On refresh failure, disk fallback to last known good token"
+  - "Credential file permissions always 0600 — reject if world-readable"
+  - "Access tokens never appear in logs, error messages, or HTTP responses"
+  - "Refresh operations are serialized — no concurrent refreshes"
+  - "Token source implements a sync-safe interface for concurrent readers"
+  - "Empty or zero-length tokens are treated as missing — never sent to API"
+
+types:
+  OAuthCredentials:
+    fields:
+      AccessToken: "string — Bearer token for Claude API"
+      RefreshToken: "string — used to obtain new access token"
+      ExpiresAt: "time.Time — when the access token expires"
+      OrgID: "string — Claude organization identifier"
+    methods:
+      - "IsExpired() → bool — true if ExpiresAt is in the past"
+      - "ExpiresIn() → time.Duration — time until expiry"
+      - "NeedsRefresh() → bool — true if expires within 5 minutes"
+      - "Valid() → bool — true if AccessToken non-empty and not expired"
+
+  OAuthTokenSource:
+    fields:
+      credPath: "string — path to credentials.json"
+      creds: "*OAuthCredentials — current cached credentials"
+      mu: "sync.RWMutex — guards concurrent access to creds"
+      refreshMu: "sync.Mutex — serializes refresh operations"
+      httpClient: "*http.Client — for refresh requests"
+    methods:
+      - "Load() → (*OAuthCredentials, error) — read and parse credentials from disk"
+      - "Token() → (string, error) — return valid Bearer token, refreshing if needed"
+      - "Refresh() → error — exchange refresh token for new access token"
+      - "Persist() → error — write current creds to disk with 0600 permissions"
+      - "Status() → AuthStatus — connected, expired, missing, or error"
+
+  AuthStatus:
+    fields:
+      State: "string — one of: connected, expired, missing, error"
+      ExpiresAt: "time.Time — when current token expires (zero if missing)"
+      Error: "string — error detail if State is error"
+
+pillars:
+  performant:
+    - "Token() returns cached value in < 1ms when valid"
+    - "Refresh only called when NeedsRefresh() is true — no polling"
+  robust:
+    - "Handles missing file, corrupt JSON, empty fields, wrong permissions"
+    - "Never panics — all error paths return typed errors"
+    - "Validates all fields on load — rejects partial credentials"
+  resilient:
+    - "Refresh failure falls back to disk token if still valid"
+    - "Retry refresh with exponential backoff: 1s, 2s, 4s (max 3 attempts)"
+    - "Server continues with expired token status rather than crashing"
+  secure:
+    - "Tokens never logged at any level — redacted in all output"
+    - "File permissions enforced: 0600 on write, rejected if >0600 on read"
+    - "Tokens never included in error messages or HTTP responses"
+    - "Refresh token only sent over HTTPS to Claude OAuth endpoint"
+  sovereign:
+    - "Only external call is Claude OAuth refresh endpoint"
+    - "All token storage is local filesystem — no cloud vaults"
+
+failure_modes:
+  - condition: "~/.claude/.credentials.json does not exist"
+    expected: "Return AuthStatus{State: missing}, log warning, server starts in unauthenticated mode"
+  - condition: "credentials.json contains invalid JSON"
+    expected: "Return error with parse details, AuthStatus{State: error}, do not crash"
+  - condition: "credentials.json has wrong permissions (e.g., 0644)"
+    expected: "Return error, refuse to load, log security warning"
+  - condition: "Access token expired, refresh token valid"
+    expected: "Refresh transparently, persist new creds, return new token"
+  - condition: "Refresh returns HTTP 401 (invalid refresh token)"
+    expected: "Mark as expired, set AuthStatus{State: expired}, surface reauth prompt"
+  - condition: "Refresh network timeout"
+    expected: "Retry up to 3 times with backoff, then fall back to disk token if not expired"
+  - condition: "Disk write fails during Persist (full disk, permissions)"
+    expected: "Keep in-memory token, log error, return write error to caller"
+  - condition: "Concurrent Token() calls during refresh"
+    expected: "First call triggers refresh, others wait on RWMutex, all get new token"
+
+tests:
+  unit:
+    - "Load returns credentials from valid JSON file"
+    - "Load returns error for missing file"
+    - "Load returns error for corrupt JSON"
+    - "Load returns error for file with 0644 permissions"
+    - "Load validates all required fields present"
+    - "IsExpired returns true for past ExpiresAt"
+    - "NeedsRefresh returns true within 5-minute window"
+    - "Token returns cached value when valid"
+    - "Persist writes file with 0600 permissions"
+    - "Persist writes valid JSON that Load can parse"
+    - "Status returns correct state for each condition"
+  integration:
+    - "Full load-refresh-persist cycle with mock OAuth server"
+    - "Concurrent Token() calls return consistent results"
+    - "Refresh retry with simulated network failures"
+    - "File permission enforcement across load and persist"
+  property:
+    - "For any valid OAuthCredentials, Persist then Load is identity"
+    - "Token() never returns empty string without error"
+    - "NeedsRefresh implies ExpiresIn < 5 minutes"
+    - "IsExpired implies NeedsRefresh"

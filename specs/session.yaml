@@ -1,0 +1,159 @@
+module: session
+purpose: "SQLite session CRUD with message storage"
+language: go
+package: github.com/rishav1305/soul-v2/internal/session
+
+invariants:
+  - "Database always opened in WAL mode for concurrent read support"
+  - "All queries use parameterized placeholders (?) — never string concatenation"
+  - "Session deletion cascades to all associated messages via foreign key"
+  - "All write operations wrapped in explicit transactions"
+  - "Session IDs are UUIDs — never sequential integers"
+  - "Status transitions are validated: idle→running→completed|completed_unread, completed_unread→idle"
+  - "MessageCount on Session is always consistent with actual message count"
+  - "CreatedAt and UpdatedAt are server-set — never client-provided"
+  - "Empty title defaults to 'New Session' — never stored as empty string"
+  - "Database path default: ~/.soul-v2/sessions.db"
+
+types:
+  Session:
+    fields:
+      ID: "string (UUID) — unique session identifier"
+      Title: "string — display title, defaults to 'New Session'"
+      Status: "Status — current session state"
+      CreatedAt: "time.Time — when session was created"
+      UpdatedAt: "time.Time — last modification time"
+      MessageCount: "int — number of messages in session"
+    methods:
+      - "Validate() → error — check all fields non-zero, status valid"
+
+  Message:
+    fields:
+      ID: "string (UUID) — unique message identifier"
+      SessionID: "string (UUID) — parent session reference"
+      Role: "string — one of: user, assistant, tool_use, tool_result"
+      Content: "string — message body (may contain JSON for tool messages)"
+      CreatedAt: "time.Time — when message was stored"
+    methods:
+      - "Validate() → error — check required fields, role is valid enum"
+
+  Status:
+    fields:
+      value: "string — one of: idle, running, completed, completed_unread"
+    methods:
+      - "String() → string"
+      - "Valid() → bool"
+      - "CanTransitionTo(next Status) → bool"
+
+  Store:
+    fields:
+      db: "*sql.DB — SQLite connection"
+      dbPath: "string — path to database file"
+    methods:
+      - "Open(path string) → (*Store, error) — open or create DB, run migrations"
+      - "Close() → error — close DB connection"
+      - "CreateSession(title string) → (*Session, error)"
+      - "GetSession(id string) → (*Session, error)"
+      - "ListSessions() → ([]*Session, error) — ordered by UpdatedAt desc"
+      - "UpdateSessionTitle(id, title string) → error"
+      - "UpdateSessionStatus(id string, status Status) → error"
+      - "DeleteSession(id string) → error — cascades messages"
+      - "AddMessage(sessionID string, role string, content string) → (*Message, error)"
+      - "GetMessages(sessionID string) → ([]*Message, error) — ordered by CreatedAt asc"
+      - "GetMessageCount(sessionID string) → (int, error)"
+      - "Migrate() → error — run schema migrations"
+
+pillars:
+  performant:
+    - "WAL mode enables concurrent reads during writes"
+    - "Session list query returns in < 5ms for 1000 sessions"
+    - "Message retrieval indexed on (session_id, created_at)"
+    - "Connection pool: 1 writer, up to 4 readers"
+  robust:
+    - "All inputs validated before DB operations"
+    - "Foreign key constraints enforced (PRAGMA foreign_keys = ON)"
+    - "UUID validation on all ID parameters"
+    - "Status transitions validated — invalid transitions return error"
+    - "Empty or whitespace-only titles rejected"
+    - "Message role validated against enum"
+  resilient:
+    - "WAL mode survives unclean shutdown without corruption"
+    - "Automatic schema migration on Open — no manual steps"
+    - "Database locked errors retried with backoff (up to 3 attempts)"
+    - "Corrupted database detected via integrity check on Open"
+    - "Full disk returns clean error — never partial writes"
+  secure:
+    - "Parameterized queries only — SQL injection impossible"
+    - "Database file permissions 0600"
+    - "No sensitive data in session titles (enforced by convention, audited)"
+    - "Session IDs are UUIDs — not enumerable"
+  sovereign:
+    - "SQLite local — no cloud database"
+    - "No external ORM — standard library database/sql only"
+    - "Data portable — single file, standard schema"
+
+failure_modes:
+  - condition: "Database file does not exist"
+    expected: "Create new database, run migrations, return empty store"
+  - condition: "Database file is corrupted"
+    expected: "Integrity check fails on Open, return error with corruption details"
+  - condition: "Disk full during write"
+    expected: "Transaction rolls back, return disk full error, existing data intact"
+  - condition: "Concurrent write from two goroutines"
+    expected: "WAL mode allows, but writer serialized — second waits, then succeeds"
+  - condition: "Delete session with active streaming"
+    expected: "Delete succeeds, streaming goroutine detects missing session on next message write"
+  - condition: "Invalid UUID passed as session ID"
+    expected: "Validation rejects before DB query, return validation error"
+  - condition: "Session with 10000+ messages"
+    expected: "GetMessages paginates or streams — never loads all into memory at once"
+  - condition: "Database locked (SQLITE_BUSY)"
+    expected: "Retry with 100ms, 200ms, 400ms backoff, then return timeout error"
+
+tests:
+  unit:
+    - "CreateSession returns session with valid UUID, default title, idle status"
+    - "CreateSession with custom title stores title correctly"
+    - "GetSession returns error for non-existent ID"
+    - "GetSession returns error for invalid UUID format"
+    - "ListSessions returns empty list for fresh database"
+    - "ListSessions orders by UpdatedAt descending"
+    - "UpdateSessionStatus validates transitions"
+    - "UpdateSessionStatus rejects invalid transitions (e.g., completed→running)"
+    - "DeleteSession removes session and all messages"
+    - "DeleteSession returns error for non-existent ID"
+    - "AddMessage increments MessageCount on parent session"
+    - "AddMessage validates role against enum"
+    - "GetMessages returns empty list for session with no messages"
+    - "GetMessages orders by CreatedAt ascending"
+    - "Status.CanTransitionTo returns correct results for all pairs"
+    - "Migrate is idempotent — running twice is safe"
+  integration:
+    - "Full CRUD lifecycle: create → add messages → list → update → delete"
+    - "Concurrent reads during active write"
+    - "Database survives process kill and reopens cleanly"
+    - "Schema migration from empty database"
+    - "Foreign key cascade verified: delete session removes messages"
+    - "1000 sessions with 100 messages each — list under 50ms"
+  property:
+    - "For any valid session, Create then Get returns identical data"
+    - "For any valid message, Add then GetMessages contains message"
+    - "ListSessions always returns results ordered by UpdatedAt desc"
+    - "DeleteSession is idempotent — second call returns not-found error"
+    - "Session.MessageCount always equals len(GetMessages(session.ID))"
+  e2e:
+    - name: "session-lifecycle"
+      navigate:
+        - "Open app"
+        - "Click new session button"
+        - "Verify session appears in list"
+        - "Send a message"
+        - "Verify message appears"
+        - "Delete session"
+        - "Verify session removed from list"
+      screenshot:
+        target: "[data-testid='session-list']"
+        name: "session-lifecycle.png"
+      assert:
+        - "Session list updates in real-time"
+        - "Deleted session is no longer visible"

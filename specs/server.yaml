@@ -1,0 +1,210 @@
+module: server
+purpose: "HTTP server — SPA serving, API routes, middleware"
+language: go
+package: github.com/rishav1305/soul-v2/internal/server
+
+invariants:
+  - "Default port: 3002, configurable via SOUL_V2_PORT env var"
+  - "Default host: 127.0.0.1, configurable via SOUL_V2_HOST env var"
+  - "CSP headers set on every HTTP response — no exceptions"
+  - "Rate limiting on all API endpoints — 60 requests/minute per IP"
+  - "SPA fallback: non-API routes serve index.html for client-side routing"
+  - "Static files served from web/dist with cache headers (1 year for hashed assets)"
+  - "API routes prefixed with /api/ — no overlap with SPA routes"
+  - "WebSocket endpoint at /ws — upgraded by ws.Hub"
+  - "Graceful shutdown: wait up to 10s for active connections to drain"
+  - "Request body limit: 1MB for all API endpoints"
+  - "Health endpoint always returns 200, even before auth is ready"
+  - "All JSON responses include Content-Type: application/json header"
+
+types:
+  Server:
+    fields:
+      port: "int — listen port (default 3002)"
+      host: "string — bind address (default 127.0.0.1)"
+      handler: "http.Handler — root handler with middleware"
+      wsHub: "*ws.Hub — WebSocket hub"
+      sessionStore: "*session.Store — session database"
+      auth: "*auth.OAuthTokenSource — token management"
+      metrics: "*metrics.EventLogger — event logging"
+      httpServer: "*http.Server — underlying server"
+    methods:
+      - "New(opts ...Option) → (*Server, error) — create server with all dependencies"
+      - "Start() → error — bind and serve (blocking)"
+      - "Shutdown(ctx context.Context) → error — graceful shutdown"
+      - "Handler() → http.Handler — return configured handler (for testing)"
+
+  Option:
+    description: "Functional option for server configuration"
+    variants:
+      - "WithPort(port int) → Option"
+      - "WithHost(host string) → Option"
+      - "WithSessionStore(store *session.Store) → Option"
+      - "WithAuth(auth *auth.OAuthTokenSource) → Option"
+      - "WithMetrics(logger *metrics.EventLogger) → Option"
+      - "WithWSHub(hub *ws.Hub) → Option"
+      - "WithStaticDir(dir string) → Option"
+
+  Middleware:
+    description: "HTTP middleware chain"
+    functions:
+      - "CSPMiddleware(next http.Handler) → http.Handler — add Content-Security-Policy headers"
+      - "RateLimitMiddleware(rpm int) → func(http.Handler) http.Handler — per-IP rate limiting"
+      - "RequestIDMiddleware(next http.Handler) → http.Handler — add X-Request-ID header"
+      - "LoggingMiddleware(logger *metrics.EventLogger) → func(http.Handler) http.Handler — log requests"
+      - "RecoveryMiddleware(next http.Handler) → http.Handler — recover from panics, return 500"
+      - "CORSMiddleware(origins []string) → func(http.Handler) http.Handler — CORS headers"
+
+  endpoints:
+    - method: GET
+      path: "/api/health"
+      description: "Health check — always 200"
+      response: '{"status": "ok", "version": "string", "uptime": "duration"}'
+      auth_required: false
+
+    - method: GET
+      path: "/api/auth/status"
+      description: "Auth status — connected, expired, or missing"
+      response: '{"state": "string", "expires_at": "timestamp", "error": "string?"}'
+      auth_required: false
+
+    - method: POST
+      path: "/api/reauth"
+      description: "Trigger re-authentication flow"
+      response: '{"status": "string", "message": "string"}'
+      auth_required: false
+
+    - method: GET
+      path: "/api/sessions"
+      description: "List all sessions ordered by last update"
+      response: '{"sessions": [Session]}'
+      auth_required: false
+
+    - method: POST
+      path: "/api/sessions"
+      description: "Create new session"
+      request: '{"title": "string?"}'
+      response: '{"session": Session}'
+      auth_required: false
+
+    - method: DELETE
+      path: "/api/sessions/:id"
+      description: "Delete session and all messages"
+      response: '{"deleted": true}'
+      auth_required: false
+
+    - method: GET
+      path: "/ws"
+      description: "WebSocket upgrade endpoint"
+      auth_required: false
+      notes: "Upgraded to WebSocket, not a regular HTTP endpoint"
+
+pillars:
+  performant:
+    - "Static file serving with proper cache headers — hashed assets cached 1 year"
+    - "Gzip compression for responses > 1KB"
+    - "Health check returns in < 1ms"
+    - "No middleware allocation per request — handlers pre-composed"
+    - "Connection keep-alive enabled"
+  robust:
+    - "Recovery middleware catches panics — returns 500, never crashes server"
+    - "Request body size limited to 1MB — oversized returns 413"
+    - "All path parameters validated (UUID format for session IDs)"
+    - "Unknown API routes return 404 JSON error, not SPA"
+    - "Malformed JSON body returns 400 with parse error details"
+    - "Method not allowed returns 405 with Allow header"
+  resilient:
+    - "Graceful shutdown waits up to 10s for connections to drain"
+    - "Server starts even if auth is in error state — health endpoint works"
+    - "Rate limiter uses sliding window — no thundering herd on window reset"
+    - "Static files served even if session store is unavailable"
+    - "Port conflict detected immediately with clear error message"
+  secure:
+    - "CSP: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:*"
+    - "X-Content-Type-Options: nosniff on all responses"
+    - "X-Frame-Options: DENY on all responses"
+    - "Rate limiting: 60 req/min per IP on API routes"
+    - "No directory listing for static files"
+    - "Request ID for audit trail"
+    - "CORS restricted to configured origins"
+  sovereign:
+    - "Standard library net/http — no external framework"
+    - "SPA served from local disk — no CDN"
+    - "No external middleware dependencies"
+    - "Port and host configurable — not hardcoded"
+
+failure_modes:
+  - condition: "Port already in use"
+    expected: "Server.Start returns immediately with bind error"
+  - condition: "Static directory does not exist"
+    expected: "Server starts but returns 404 for all non-API routes"
+  - condition: "Request body exceeds 1MB"
+    expected: "Return 413 Payload Too Large with JSON error"
+  - condition: "Rate limit exceeded"
+    expected: "Return 429 Too Many Requests with Retry-After header"
+  - condition: "Panic in request handler"
+    expected: "Recovery middleware catches, returns 500 JSON error, server continues"
+  - condition: "Session store unavailable during API request"
+    expected: "Return 503 Service Unavailable with JSON error"
+  - condition: "Malformed JSON in POST body"
+    expected: "Return 400 Bad Request with parse error details"
+  - condition: "Invalid UUID in path parameter"
+    expected: "Return 400 Bad Request with validation error"
+  - condition: "SIGTERM received"
+    expected: "Stop accepting new connections, drain existing (up to 10s), then exit"
+  - condition: "WebSocket upgrade fails"
+    expected: "Return HTTP error (400/403), log reason, do not crash"
+
+tests:
+  unit:
+    - "CSPMiddleware adds all required headers"
+    - "RateLimitMiddleware rejects after threshold"
+    - "RateLimitMiddleware resets after window"
+    - "RecoveryMiddleware catches panic and returns 500"
+    - "RequestIDMiddleware adds unique X-Request-ID"
+    - "SPA fallback serves index.html for non-API paths"
+    - "SPA fallback does not serve index.html for /api/ paths"
+    - "Health endpoint returns 200 with status, version, uptime"
+    - "Auth status endpoint returns current auth state"
+    - "Sessions list endpoint returns JSON array"
+    - "Session create endpoint returns new session"
+    - "Session delete endpoint returns 404 for non-existent ID"
+    - "Unknown API route returns 404 JSON (not index.html)"
+    - "Static files served with correct Content-Type"
+    - "Hashed static files get long cache headers"
+  integration:
+    - "Full server lifecycle: start → handle requests → graceful shutdown"
+    - "WebSocket upgrade succeeds with valid origin"
+    - "WebSocket upgrade rejected with invalid origin"
+    - "Rate limiting across multiple requests from same IP"
+    - "Static file serving with gzip compression"
+    - "All CRUD operations via HTTP API"
+    - "Concurrent requests handled correctly"
+    - "Server starts with auth in error state"
+  property:
+    - "For any valid session title, POST /api/sessions returns 201"
+    - "For any non-existent UUID, DELETE /api/sessions/:id returns 404"
+    - "Health endpoint always returns 200 regardless of server state"
+    - "Rate limiter never allows more than configured RPM from same IP"
+    - "CSP header present on every response"
+  e2e:
+    - name: "server-health"
+      navigate:
+        - "GET /api/health"
+      screenshot:
+        target: "body"
+        name: "health-endpoint.png"
+      assert:
+        - "Response status is 200"
+        - "Response includes version and uptime"
+        - "CSP headers present"
+    - name: "spa-routing"
+      navigate:
+        - "Navigate to /nonexistent/path"
+        - "Verify app loads (SPA fallback)"
+      screenshot:
+        target: "[data-testid='shell']"
+        name: "spa-fallback.png"
+      assert:
+        - "App renders correctly on unknown routes"
+        - "No 404 page shown"

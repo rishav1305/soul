@@ -1,0 +1,219 @@
+module: ui-sessions
+purpose: "Session list — create, switch, delete, history"
+language: typescript
+package: web/src/components
+
+invariants:
+  - "Session list always sorted by updatedAt descending — most recent first"
+  - "Active session visually highlighted — distinct from other sessions"
+  - "New session button always visible — never hidden or disabled"
+  - "Delete requires confirmation — never single-click delete"
+  - "Session list updates in real-time via WebSocket events"
+  - "All interactive elements have data-testid attributes"
+  - "Session title truncated with ellipsis at 30 characters"
+  - "Session count displayed in sidebar header"
+  - "Empty state shows prompt to create first session"
+  - "Session status indicator (idle/running/completed) visible on each item"
+
+types:
+  SessionList:
+    description: "Sidebar component listing all sessions"
+    props:
+      sessions: "Session[] — all sessions"
+      activeSessionID: "string | null — currently selected session"
+      onSwitch: "(sessionID: string) → void — switch to session"
+      onCreate: "() → void — create new session"
+      onDelete: "(sessionID: string) → void — delete session"
+    testids:
+      session-list: "Container element"
+      new-session-btn: "Create new session button"
+      session-count: "Session count display"
+      session-empty-state: "Empty state prompt"
+    behavior:
+      - "Renders SessionItem for each session"
+      - "Active session has distinct highlight style"
+      - "New session button at top of list"
+      - "Empty state when sessions array is empty"
+
+  SessionItem:
+    description: "Individual session entry in the list"
+    props:
+      session: "Session — session data"
+      isActive: "boolean — whether this is the selected session"
+      onSwitch: "() → void — switch to this session"
+      onDelete: "() → void — delete this session"
+    testids:
+      session-item: "Item container (with data-session-id attribute)"
+      session-title: "Title text display"
+      session-status: "Status indicator dot"
+      session-timestamp: "Last updated time"
+      session-message-count: "Message count badge"
+      delete-session-btn: "Delete button (visible on hover)"
+      delete-confirm-btn: "Confirm delete button (in confirmation state)"
+      delete-cancel-btn: "Cancel delete button (in confirmation state)"
+    states:
+      default:
+        visual: "Session title, status dot, timestamp, message count"
+      active:
+        visual: "Same as default but with zinc-700 background highlight"
+      hover:
+        visual: "Delete button appears, subtle background change"
+      confirm_delete:
+        visual: "Title replaced with 'Delete?' prompt, confirm/cancel buttons"
+    behavior:
+      - "Click on item triggers onSwitch"
+      - "Hover reveals delete button"
+      - "Delete button click enters confirmation state"
+      - "Confirm triggers onDelete"
+      - "Cancel returns to default state"
+      - "Confirmation state auto-cancels after 3 seconds"
+      - "Status dot color: idle=gray, running=blue pulse, completed=green, completed_unread=green with badge"
+
+  hooks:
+    useSessions:
+      description: "Manages session state from WebSocket events"
+      params:
+        ws: "WebSocket context — for sending/receiving"
+      returns:
+        sessions: "Session[] — all sessions sorted by updatedAt"
+        activeSessionID: "string | null — currently selected session"
+        switchSession: "(sessionID: string) → void — switch session"
+        createSession: "() → void — create new session"
+        deleteSession: "(sessionID: string) → void — delete session"
+      behavior:
+        - "Initializes from session.list event on WebSocket connect"
+        - "Updates on session.created — adds to list, auto-selects"
+        - "Updates on session.deleted — removes from list, selects next"
+        - "Updates on session.updated — replaces session in list"
+        - "Sends session.switch via WebSocket on switchSession"
+        - "Sends session.create via WebSocket on createSession"
+        - "Sends session.delete via WebSocket on deleteSession"
+        - "Auto-selects first session on initial load if none active"
+        - "On active session deleted, selects most recent remaining"
+
+pillars:
+  performant:
+    - "Session list renders in < 10ms for 100 sessions"
+    - "Session switch triggers no full list re-render — only active state changes"
+    - "Real-time updates cause minimal DOM updates"
+    - "Delete confirmation animation < 150ms"
+    - "No unnecessary re-renders when receiving unrelated WebSocket events"
+  robust:
+    - "Renders empty state with 0 sessions"
+    - "Renders correctly with 500+ sessions"
+    - "Handles session with empty title"
+    - "Handles session with very long title (truncated)"
+    - "Handles duplicate session IDs gracefully (dedup)"
+    - "Handles rapid create/delete events"
+    - "Active session ID that doesn't exist in list — no crash, select first"
+  resilient:
+    - "Session list survives WebSocket reconnection — re-fetches on reconnect"
+    - "Optimistic UI for create — shows immediately, reconciles on server response"
+    - "Optimistic UI for delete — removes immediately, restores on error"
+    - "Network error during create shows error toast, no phantom session"
+    - "Network error during delete shows error toast, session restored"
+    - "Server restart triggers fresh session.list — state reconciled"
+  secure:
+    - "Session titles HTML-escaped in display"
+    - "Session IDs validated before sending to server"
+    - "No session data in URL (SPA routing is client-side)"
+    - "Delete confirmation prevents accidental data loss"
+  sovereign:
+    - "No external state management library — React state + context"
+    - "No external UI component library for session list"
+    - "All icons bundled locally"
+
+failure_modes:
+  - condition: "WebSocket disconnected while viewing sessions"
+    expected: "Session list frozen (last known state), reconnect restores"
+  - condition: "Create session fails (server error)"
+    expected: "Optimistic entry removed, error toast shown"
+  - condition: "Delete session fails (server error)"
+    expected: "Session restored in list, error toast shown"
+  - condition: "Session list event arrives with unknown session status"
+    expected: "Status rendered as gray dot (unknown), no crash"
+  - condition: "Active session deleted by another client"
+    expected: "session.deleted event received, auto-select next session"
+  - condition: "Rapid session switches (clicking fast)"
+    expected: "Only last switch takes effect, no race conditions"
+  - condition: "Session list arrives empty after having sessions"
+    expected: "Show empty state, clear active session"
+
+tests:
+  unit:
+    - "SessionList renders empty state when no sessions"
+    - "SessionList renders all sessions in order"
+    - "SessionList renders new session button"
+    - "SessionList highlights active session"
+    - "SessionList shows session count"
+    - "SessionItem renders title, status, timestamp, message count"
+    - "SessionItem truncates long titles at 30 chars"
+    - "SessionItem shows delete button on hover"
+    - "SessionItem enters confirmation state on delete click"
+    - "SessionItem auto-cancels confirmation after 3 seconds"
+    - "SessionItem confirm triggers onDelete"
+    - "SessionItem cancel returns to default state"
+    - "SessionItem status dot correct color for each status"
+    - "SessionItem click triggers onSwitch"
+    - "SessionItem active state has highlight background"
+    - "useSessions initializes from session.list event"
+    - "useSessions adds session on session.created"
+    - "useSessions removes session on session.deleted"
+    - "useSessions updates session on session.updated"
+    - "useSessions auto-selects first session on init"
+    - "useSessions selects next session when active deleted"
+    - "useSessions maintains sort order after updates"
+  integration:
+    - "Full session lifecycle via WebSocket: create → switch → delete"
+    - "Multiple sessions with switching between them"
+    - "Optimistic create with server confirmation"
+    - "Optimistic delete with server confirmation"
+    - "Optimistic delete with server error — session restored"
+    - "WebSocket reconnection re-fetches session list"
+    - "Real-time update from another client (session.updated event)"
+  property:
+    - "For any Session[], SessionList renders without error"
+    - "useSessions.sessions always sorted by updatedAt descending"
+    - "After createSession, sessions.length increases by 1 or error shown"
+    - "After deleteSession, sessions.length decreases by 1 or error shown"
+    - "activeSessionID is always null or a valid session ID in the list"
+  e2e:
+    - name: "session-create-switch"
+      navigate:
+        - "Open app"
+        - "Click new session button"
+        - "Verify new session appears and is selected"
+        - "Click on a different session"
+        - "Verify switch (active highlight changes)"
+      screenshot:
+        target: "[data-testid='session-list']"
+        name: "session-create-switch.png"
+      assert:
+        - "New session appears at top of list"
+        - "Active session has highlight"
+        - "Chat area updates on switch"
+    - name: "session-delete"
+      navigate:
+        - "Open app"
+        - "Create two sessions"
+        - "Hover over non-active session"
+        - "Click delete button"
+        - "Verify confirmation state"
+        - "Click confirm"
+        - "Verify session removed"
+      screenshot:
+        target: "[data-testid='session-list']"
+        name: "session-delete.png"
+      assert:
+        - "Confirmation prompt shown before delete"
+        - "Session removed from list after confirm"
+        - "Remaining session still visible"
+    - name: "session-empty-state"
+      navigate:
+        - "Open app with no sessions"
+      screenshot:
+        target: "[data-testid='session-list']"
+        name: "session-empty.png"
+      assert:
+        - "Empty state prompt visible"
+        - "New session button visible"
