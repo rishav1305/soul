@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -30,7 +31,7 @@ type Client struct {
 	id        string
 	conn      *websocket.Conn
 	hub       *Hub
-	sessionID string
+	sessionID atomic.Value // stores string — safe for concurrent read/write
 	send      chan []byte
 	cancel    context.CancelFunc
 	ctx       context.Context
@@ -44,12 +45,16 @@ func (c *Client) ID() string {
 
 // SessionID returns the currently subscribed session ID.
 func (c *Client) SessionID() string {
-	return c.sessionID
+	v := c.sessionID.Load()
+	if v == nil {
+		return ""
+	}
+	return v.(string)
 }
 
 // Subscribe switches the client's session subscription to the given session ID.
 func (c *Client) Subscribe(sessionID string) {
-	c.sessionID = sessionID
+	c.sessionID.Store(sessionID)
 }
 
 // Send queues a message for delivery to the client. If the send channel
@@ -77,9 +82,12 @@ func (c *Client) Send(msg []byte) {
 // ping/pong, enforces message size limits, and rejects binary frames.
 // ReadPump blocks until the connection is closed or an error occurs.
 func (c *Client) ReadPump() {
-	c.connTime = time.Now()
 	defer func() {
-		c.hub.unregister <- c
+		// Use select to avoid blocking on unregister if hub has stopped.
+		select {
+		case c.hub.unregister <- c:
+		case <-c.ctx.Done():
+		}
 		c.conn.Close(websocket.StatusNormalClosure, "")
 		c.cancel()
 

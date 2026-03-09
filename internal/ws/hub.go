@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"nhooyr.io/websocket"
 
@@ -92,6 +93,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			// Close all remaining clients on shutdown.
 			for client := range h.clients {
+				close(client.send)
 				client.Close()
 				delete(h.clients, client)
 			}
@@ -143,12 +145,13 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
-		id:     clientID,
-		conn:   conn,
-		hub:    h,
-		send:   make(chan []byte, sendChannelCap),
-		cancel: cancel,
-		ctx:    ctx,
+		id:       clientID,
+		conn:     conn,
+		hub:      h,
+		send:     make(chan []byte, sendChannelCap),
+		cancel:   cancel,
+		ctx:      ctx,
+		connTime: time.Now(),
 	}
 
 	h.register <- client
