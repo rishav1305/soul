@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { SessionListProps, Session } from '../lib/types';
 
 function formatTimestamp(iso: string): string {
@@ -27,12 +27,42 @@ function SessionItem({
   onSwitch: () => void;
   onDelete: () => void;
 }) {
-  const handleDelete = useCallback(
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-cancel confirmation after 3 seconds.
+  useEffect(() => {
+    if (confirming) {
+      timerRef.current = setTimeout(() => setConfirming(false), 3000);
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+      };
+    }
+  }, [confirming]);
+
+  const handleDeleteClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
+      setConfirming(true);
+    },
+    [],
+  );
+
+  const handleConfirm = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConfirming(false);
       onDelete();
     },
     [onDelete],
+  );
+
+  const handleCancel = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConfirming(false);
+    },
+    [],
   );
 
   const title = session.title || 'New Session';
@@ -56,27 +86,48 @@ function SessionItem({
           </div>
           <div className="text-xs text-zinc-500 mt-0.5">{timestamp}</div>
         </div>
-        <button
-          type="button"
-          onClick={handleDelete}
-          className="shrink-0 mt-0.5 p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-          aria-label={`Delete session ${title}`}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+        {confirming ? (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              data-testid="delete-confirm-btn"
+              type="button"
+              onClick={handleConfirm}
+              className="px-1.5 py-0.5 text-xs rounded bg-red-900/50 text-red-300 hover:bg-red-800/50 cursor-pointer"
+            >
+              Delete?
+            </button>
+            <button
+              data-testid="delete-cancel-btn"
+              type="button"
+              onClick={handleCancel}
+              className="px-1.5 py-0.5 text-xs rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleDeleteClick}
+            className="shrink-0 mt-0.5 p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            aria-label={`Delete session ${title}`}
           >
-            <path
-              d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
     </button>
   );
