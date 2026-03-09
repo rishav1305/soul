@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
 import type { ConnectionState } from '../lib/types';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useChat } from '../hooks/useChat';
+import { MessageList } from './MessageList';
+import { ChatInput } from './ChatInput';
 
 function connectionDotClasses(status: ConnectionState): string {
   switch (status) {
@@ -27,17 +28,15 @@ function connectionLabel(status: ConnectionState): string {
   }
 }
 
-interface ShellProps {
-  children?: ReactNode;
-}
+export function Shell() {
+  const { messages, isStreaming, status, sendMessage } = useChat();
 
-export function Shell({ children }: ShellProps) {
-  const { status } = useWebSocket();
+  const isDisabled = isStreaming || status !== 'connected';
 
   return (
     <div
       data-testid="shell"
-      className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col"
+      className="h-screen bg-zinc-950 text-zinc-100 flex flex-col"
     >
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <h1 className="text-lg font-semibold tracking-tight">Soul v2</h1>
@@ -52,9 +51,8 @@ export function Shell({ children }: ShellProps) {
           />
         </div>
       </header>
-      <main className="flex flex-1">
-        {children}
-      </main>
+      <MessageList messages={messages} isStreaming={isStreaming} />
+      <ChatInput onSend={sendMessage} disabled={isDisabled} />
     </div>
   );
 }

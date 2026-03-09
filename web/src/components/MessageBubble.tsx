@@ -1,0 +1,26 @@
+import type { MessageBubbleProps } from '../lib/types';
+
+export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+  const isUser = message.role === 'user';
+
+  return (
+    <div
+      data-testid="message-bubble"
+      className={`flex flex-col max-w-[80%] ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
+    >
+      <span className="text-xs text-zinc-500 mb-1 px-1">
+        {isUser ? 'You' : 'Assistant'}
+      </span>
+      <div
+        className={`rounded-lg px-4 py-3 ${isUser ? 'bg-zinc-800' : 'bg-zinc-900'}`}
+      >
+        <p className="whitespace-pre-wrap break-words text-zinc-100">
+          {message.content}
+          {isStreaming && !isUser && (
+            <span className="animate-pulse">&#9612;</span>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
