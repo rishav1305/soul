@@ -288,8 +288,8 @@ func (s *Store) UpdateSessionTitle(id, title string) (*Session, error) {
 	return s.GetSession(id)
 }
 
-// UpdateSessionStatus transitions a session to a new status. Returns an error
-// if the transition is not valid.
+// UpdateSessionStatus transitions a session to a new status atomically.
+// The read-check-update is wrapped in a transaction to prevent race conditions.
 func (s *Store) UpdateSessionStatus(id string, status Status) error {
 	if !uuidRe.MatchString(id) {
 		return fmt.Errorf("session: invalid UUID format: %q", id)
@@ -298,24 +298,36 @@ func (s *Store) UpdateSessionStatus(id string, status Status) error {
 		return fmt.Errorf("session: invalid status: %q", status)
 	}
 
-	sess, err := s.GetSession(id)
+	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return fmt.Errorf("session: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var currentStatus string
+	err = tx.QueryRow("SELECT status FROM sessions WHERE id = ?", id).Scan(&currentStatus)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("session: not found: %s", id)
+	}
+	if err != nil {
+		return fmt.Errorf("session: get status: %w", err)
 	}
 
-	if !sess.Status.CanTransitionTo(status) {
-		return fmt.Errorf("session: invalid transition from %q to %q", sess.Status, status)
+	current := Status(currentStatus)
+	if !current.CanTransitionTo(status) {
+		return fmt.Errorf("session: invalid transition from %q to %q", current, status)
 	}
 
 	now := time.Now().UTC()
-	_, err = s.db.Exec(
+	_, err = tx.Exec(
 		"UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?",
 		string(status), now.Format(time.RFC3339Nano), id,
 	)
 	if err != nil {
 		return fmt.Errorf("session: update status: %w", err)
 	}
-	return nil
+
+	return tx.Commit()
 }
 
 // DeleteSession removes a session and its messages (via CASCADE).
