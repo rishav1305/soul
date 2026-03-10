@@ -1,6 +1,8 @@
 package session
 
 import (
+	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -484,5 +486,50 @@ func TestNewUUID(t *testing.T) {
 			t.Fatalf("newUUID() produced duplicate: %s", id)
 		}
 		seen[id] = true
+	}
+}
+
+func TestRunInTransaction_CommitsOnSuccess(t *testing.T) {
+	s := openTestStore(t)
+	sess, err := s.CreateSession("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.RunInTransaction(func(tx *sql.Tx) error {
+		_, err := s.AddMessageTx(tx, sess.ID, "user", "hello")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, _ := s.GetMessages(sess.ID)
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message after commit, got %d", len(msgs))
+	}
+}
+
+func TestRunInTransaction_RollbackOnError(t *testing.T) {
+	s := openTestStore(t)
+	sess, err := s.CreateSession("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.RunInTransaction(func(tx *sql.Tx) error {
+		_, err := s.AddMessageTx(tx, sess.ID, "user", "hello")
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("simulated failure")
+	})
+	if err == nil {
+		t.Fatal("expected error from transaction")
+	}
+
+	msgs, _ := s.GetMessages(sess.ID)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages after rollback, got %d", len(msgs))
 	}
 }

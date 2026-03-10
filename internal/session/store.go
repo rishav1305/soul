@@ -415,6 +415,57 @@ func (s *Store) GetMessages(sessionID string) ([]*Message, error) {
 	return messages, nil
 }
 
+// RunInTransaction executes fn inside a SQL transaction. If fn returns an error,
+// the transaction is rolled back; otherwise it is committed.
+func (s *Store) RunInTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("session: begin transaction: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// AddMessageTx adds a message within an existing transaction.
+func (s *Store) AddMessageTx(tx *sql.Tx, sessionID, role, content string) (*Message, error) {
+	if !validRoles[role] {
+		return nil, fmt.Errorf("session: invalid role: %q", role)
+	}
+	if !uuidRe.MatchString(sessionID) {
+		return nil, fmt.Errorf("session: invalid UUID format: %q", sessionID)
+	}
+
+	now := time.Now().UTC()
+	msg := &Message{
+		ID:        newUUID(),
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		CreatedAt: now,
+	}
+
+	_, err := tx.Exec(
+		"INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+		msg.ID, msg.SessionID, msg.Role, msg.Content, msg.CreatedAt.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("session: add message: %w", err)
+	}
+
+	_, err = tx.Exec(
+		"UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?",
+		now.Format(time.RFC3339Nano), sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("session: update message count: %w", err)
+	}
+
+	return msg, nil
+}
+
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
