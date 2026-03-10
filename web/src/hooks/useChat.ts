@@ -456,12 +456,22 @@ export function useChat(): UseChatReturn {
   );
 
   const reauth = useCallback(async () => {
-    try {
-      await fetch('/api/reauth', { method: 'POST' });
-      setAuthError(false);
-    } catch {
-      // Silently ignore.
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const resp = await fetch('/api/reauth', { method: 'POST' });
+        if (resp.ok) {
+          setAuthError(false);
+          return;
+        }
+      } catch {
+        // Network error — retry after backoff.
+      }
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+      }
     }
+    // All retries failed — keep authError true so UI shows re-auth button.
   }, []);
 
   const editAndResend = useCallback((messageId: string, newContent: string) => {
