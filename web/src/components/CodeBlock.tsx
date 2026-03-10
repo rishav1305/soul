@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/prism-light';
 import oneDark from 'react-syntax-highlighter/dist/esm/styles/prism/one-dark';
 // Import only languages we actually use
@@ -90,6 +90,13 @@ interface CodeBlockProps {
 
 export default function CodeBlock({ language, code }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const handleCopy = useCallback(() => {
     const fallback = () => {
@@ -108,7 +115,8 @@ export default function CodeBlock({ language, code }: CodeBlockProps) {
       fallback();
     }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
   }, [code]);
 
   const lang = language.toLowerCase();

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { MessageBubbleProps } from '../lib/types';
 import { formatRelativeTime, formatTokens } from '../lib/utils';
 import { Markdown } from './Markdown';
@@ -49,6 +49,14 @@ function modelLabel(model: string): string {
 
 function CopyBtn({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
   const handleCopy = useCallback(() => {
     const fallback = () => {
       const ta = document.createElement('textarea');
@@ -66,7 +74,8 @@ function CopyBtn({ content }: { content: string }) {
       fallback();
     }
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 1500);
   }, [content]);
 
   return (
@@ -313,13 +322,17 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
 }
 
 function HighlightText({ text, query }: { text: string; query?: string }) {
-  if (!query) return <>{text}</>;
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  const parts = useMemo(() => {
+    if (!query) return null;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.split(new RegExp(`(${escaped})`, 'gi'));
+  }, [text, query]);
+
+  if (!parts) return <>{text}</>;
   return (
     <>
       {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase() ? (
+        part.toLowerCase() === query!.toLowerCase() ? (
           <mark key={i} className="bg-soul/30 text-inherit rounded px-0.5">{part}</mark>
         ) : (
           part
