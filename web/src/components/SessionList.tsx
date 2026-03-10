@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { SessionListProps, Session, SessionStatus } from '../lib/types';
 import { formatRelativeTime } from '../lib/utils';
 
@@ -13,7 +13,7 @@ function StatusDot({ status }: { status: SessionStatus }) {
   }
 }
 
-function SessionItem({
+const SessionItem = React.memo(function SessionItem({
   session,
   isActive,
   onSwitch,
@@ -21,8 +21,8 @@ function SessionItem({
 }: {
   session: Session;
   isActive: boolean;
-  onSwitch: () => void;
-  onDelete: () => void;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,9 +48,9 @@ function SessionItem({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       setConfirming(false);
-      onDelete();
+      onDelete(session.id);
     },
-    [onDelete],
+    [onDelete, session.id],
   );
 
   const handleCancel = useCallback(
@@ -68,7 +68,7 @@ function SessionItem({
     <button
       data-testid="session-item"
       type="button"
-      onClick={onSwitch}
+      onClick={() => onSwitch(session.id)}
       className={`w-full text-left px-3 py-3.5 md:py-2.5 group transition-colors cursor-pointer ${
         isActive
           ? 'bg-elevated border-l-2 border-soul'
@@ -130,7 +130,7 @@ function SessionItem({
       </div>
     </button>
   );
-}
+});
 
 export function SessionList({
   sessions,
@@ -141,9 +141,12 @@ export function SessionList({
 }: SessionListProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filtered = searchQuery
-    ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    : sessions;
+  const filtered = useMemo(
+    () => searchQuery
+      ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+      : sessions,
+    [sessions, searchQuery],
+  );
 
   return (
     <div
@@ -181,8 +184,8 @@ export function SessionList({
             key={session.id}
             session={session}
             isActive={session.id === activeSessionID}
-            onSwitch={() => onSwitch(session.id)}
-            onDelete={() => onDelete(session.id)}
+            onSwitch={onSwitch}
+            onDelete={onDelete}
           />
         ))}
         {filtered.length === 0 && (
