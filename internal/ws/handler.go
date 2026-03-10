@@ -197,8 +197,10 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request) {
 	startTime := time.Now()
 
-	// Use the client's context so the stream is cancelled on disconnect.
-	ctx := client.Context()
+	// Use the client's context with a 5-minute deadline.
+	// If the Claude API hangs, the stream times out instead of blocking forever.
+	ctx, cancel := context.WithTimeout(client.Context(), 5*time.Minute)
+	defer cancel()
 
 	ch, err := h.streamClient.Stream(ctx, req)
 	if err != nil {
