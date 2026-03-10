@@ -105,7 +105,8 @@ func (c *Client) checkRate() bool {
 }
 
 // Send queues a message for delivery to the client. If the send channel
-// is full, the oldest message is dropped and a warning is logged.
+// is full, the client is considered too slow — the connection is closed
+// so the client can reconnect and receive history.
 // Safe to call after the channel has been closed — returns false in that case.
 func (c *Client) Send(msg []byte) bool {
 	c.sendMu.Lock()
@@ -119,20 +120,11 @@ func (c *Client) Send(msg []byte) bool {
 	case c.send <- msg:
 		return true
 	default:
-		// Channel full — drop oldest message.
-		select {
-		case <-c.send:
-			log.Printf("ws: client %s send channel full, dropped oldest message", c.id)
-		default:
-		}
-		// Try to send again.
-		select {
-		case c.send <- msg:
-			return true
-		default:
-			log.Printf("ws: client %s send channel still full after drop, message lost", c.id)
-			return false
-		}
+		// Channel full — close slow client instead of silently dropping messages.
+		log.Printf("ws: client %s send channel full, closing slow client", c.id)
+		c.sendDone = true
+		close(c.send)
+		return false
 	}
 }
 

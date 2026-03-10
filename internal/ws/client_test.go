@@ -47,34 +47,27 @@ func TestClientSendChannelCapacity(t *testing.T) {
 	}
 }
 
-func TestClientSendDropsOldest(t *testing.T) {
+func TestClientSendClosesSlowClient(t *testing.T) {
 	c := &Client{
 		id:   "test-client",
 		send: make(chan []byte, sendChannelCap),
 	}
 
-	// Fill the channel with numbered messages.
+	// Fill the channel.
 	for i := 0; i < sendChannelCap; i++ {
 		c.send <- []byte{byte(i)}
 	}
 
-	// Send one more — should drop oldest (0) and add new.
-	c.Send([]byte{255})
-
-	// The first message should now be 1 (0 was dropped).
-	first := <-c.send
-	if first[0] != 1 {
-		t.Errorf("expected first message to be 1 (after dropping 0), got %d", first[0])
+	// Send one more — channel is full, so Send should close and return false.
+	ok := c.Send([]byte{255})
+	if ok {
+		t.Error("expected Send to return false when channel is full")
 	}
 
-	// Verify the last message is 255.
-	// Drain 254 messages (indices 2..255 + the new 255 at the end).
-	var last []byte
-	for i := 0; i < sendChannelCap-1; i++ {
-		last = <-c.send
-	}
-	if last[0] != 255 {
-		t.Errorf("expected last message to be 255, got %d", last[0])
+	// Subsequent sends should also return false (sendDone is set).
+	ok = c.Send([]byte{0})
+	if ok {
+		t.Error("expected Send to return false after slow-client close")
 	}
 }
 
