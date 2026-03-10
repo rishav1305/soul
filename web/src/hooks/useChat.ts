@@ -58,6 +58,19 @@ export function useChat(): UseChatReturn {
               sendRef.current('session.switch', { sessionId: savedId });
             });
           }
+          // Recover pending message from localStorage (browser refresh during deferred creation).
+          const pendingRaw = localStorage.getItem('soul-v2-pending');
+          if (pendingRaw && !pendingMessageRef.current) {
+            try {
+              const pending = JSON.parse(pendingRaw);
+              if (pending?.content) {
+                pendingMessageRef.current = pending;
+                if (!sessionIDRef.current) {
+                  sendRef.current('session.create', {});
+                }
+              }
+            } catch { /* corrupted data — ignore */ }
+          }
           break;
         }
 
@@ -233,6 +246,7 @@ export function useChat(): UseChatReturn {
           );
           setIsStreaming(false);
           setAuthError(false);
+          localStorage.removeItem('soul-v2-pending');
           break;
         }
 
@@ -366,9 +380,11 @@ export function useChat(): UseChatReturn {
 
       // Deferred session creation: if no session, create one first then send.
       if (!sessionIDRef.current) {
-        // Create session, then send message after session.created arrives.
         const pendingMessage = { content: trimmed, options };
         pendingMessageRef.current = pendingMessage;
+        try {
+          localStorage.setItem('soul-v2-pending', JSON.stringify(pendingMessage));
+        } catch { /* quota exceeded — proceed without persistence */ }
         send('session.create', {});
         return;
       }
@@ -402,6 +418,7 @@ export function useChat(): UseChatReturn {
     if (currentSessionID && pendingMessageRef.current) {
       const { content, options } = pendingMessageRef.current;
       pendingMessageRef.current = null;
+      localStorage.removeItem('soul-v2-pending');
       // Small delay to ensure session is fully registered.
       setTimeout(() => sendMessage(content, options), 50);
     }
