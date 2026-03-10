@@ -67,8 +67,11 @@ func TestCSPHeaders(t *testing.T) {
 	if !strings.Contains(csp, "script-src 'self'") {
 		t.Errorf("CSP missing script-src: %s", csp)
 	}
-	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+	if !strings.Contains(csp, "style-src 'self'") {
 		t.Errorf("CSP missing style-src: %s", csp)
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Errorf("CSP should not contain unsafe-inline: %s", csp)
 	}
 	if !strings.Contains(csp, "connect-src 'self' ws: wss:") {
 		t.Errorf("CSP missing connect-src: %s", csp)
