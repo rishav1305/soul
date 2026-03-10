@@ -5,26 +5,35 @@ import { getWebSocketURL } from '../lib/ws';
 interface UseWebSocketOptions {
   url?: string;
   onMessage?: (type: OutboundMessageType, data: unknown, sessionID: string) => void;
-  reconnectInterval?: number;
 }
 
 interface UseWebSocketReturn {
   status: ConnectionState;
   send: (type: string, payload: Record<string, unknown>) => void;
+  reconnectAttempt: number;
+}
+
+// Exponential backoff: 1s → 2s → 4s → 8s → 15s max, with ±30% jitter.
+const BASE_DELAY = 1000;
+const MAX_DELAY = 15000;
+const JITTER = 0.3;
+
+function backoffDelay(attempt: number): number {
+  const exponential = Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
+  const jitter = exponential * JITTER * (Math.random() * 2 - 1); // ±30%
+  return Math.max(500, exponential + jitter);
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const {
-    url = getWebSocketURL(),
-    onMessage,
-    reconnectInterval = 3000,
-  } = options;
+  const { url = getWebSocketURL(), onMessage } = options;
 
   const [status, setStatus] = useState<ConnectionState>('disconnected');
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
   const onMessageRef = useRef(onMessage);
+  const attemptRef = useRef(0);
 
   // Keep onMessage ref current to avoid stale closures.
   onMessageRef.current = onMessage;
@@ -62,6 +71,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Transition to 'connected' when we get connection.ready.
         if (parsed.type === 'connection.ready') {
           setStatus('connected');
+          // Reset backoff on successful connection.
+          attemptRef.current = 0;
+          setReconnectAttempt(0);
         }
 
         if (onMessageRef.current) {
@@ -80,7 +92,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       wsRef.current = null;
       if (!unmountedRef.current) {
         setStatus('disconnected');
-        reconnectTimerRef.current = setTimeout(connect, reconnectInterval);
+        const delay = backoffDelay(attemptRef.current);
+        attemptRef.current++;
+        setReconnectAttempt(attemptRef.current);
+        reconnectTimerRef.current = setTimeout(connect, delay);
       }
     };
 
@@ -91,7 +106,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         setStatus('error');
       }
     };
-  }, [url, reconnectInterval, clearReconnectTimer]);
+  }, [url, clearReconnectTimer]);
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -113,5 +128,5 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, []);
 
-  return { status, send };
+  return { status, send, reconnectAttempt };
 }

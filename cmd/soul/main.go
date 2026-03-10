@@ -86,7 +86,9 @@ func runServe() {
 		ws.WithMetricsLogger(logger),
 		ws.WithSessionStore(store),
 	)
-	streamClient := stream.NewClient(authSource)
+	streamClient := stream.NewClient(authSource,
+		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
+	)
 	handler := ws.NewMessageHandler(hub, store, logger, ws.WithStreamClient(streamClient))
 	hub.SetHandler(handler)
 
@@ -94,13 +96,32 @@ func runServe() {
 	go hub.Run(hubCtx)
 	defer hubCancel()
 
-	srv := server.New(
+	serverOpts := []server.Option{
 		server.WithMetrics(logger),
 		server.WithAuth(authSource),
 		server.WithSessionStore(store),
 		server.WithHub(hub),
 		server.WithStaticDir("web/dist"),
-	)
+	}
+
+	// Enable TLS if cert and key are configured.
+	tlsCert := os.Getenv("SOUL_V2_TLS_CERT")
+	tlsKey := os.Getenv("SOUL_V2_TLS_KEY")
+	if tlsCert == "" {
+		// Default: check data dir for tls/server.crt.
+		defaultCert := filepath.Join(dataDir, "tls", "server.crt")
+		defaultKey := filepath.Join(dataDir, "tls", "server.key")
+		if _, err := os.Stat(defaultCert); err == nil {
+			tlsCert = defaultCert
+			tlsKey = defaultKey
+		}
+	}
+	if tlsCert != "" && tlsKey != "" {
+		serverOpts = append(serverOpts, server.WithTLS(tlsCert, tlsKey))
+		log.Printf("TLS enabled: cert=%s", tlsCert)
+	}
+
+	srv := server.New(serverOpts...)
 
 	// Handle SIGINT/SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)

@@ -1,10 +1,85 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import type { KeyboardEvent, ChangeEvent } from 'react';
-import type { ChatInputProps } from '../lib/types';
+import { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import type { KeyboardEvent, ChangeEvent, ClipboardEvent, DragEvent } from 'react';
+import type { ChatInputProps, ChatAttachment } from '../lib/types';
+import { CommandPalette } from './CommandPalette';
+import type { SlashCommand } from './CommandPalette';
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+function fileToAttachment(file: File): Promise<ChatAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve({
+        name: file.name,
+        mediaType: file.type,
+        data: base64,
+        preview: file.type.startsWith('image/') ? result : undefined,
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const MAX_ATTACHMENTS = 5;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: 'think', description: 'Toggle extended thinking' },
+  { name: 'code', description: 'Code generation mode' },
+  { name: 'architect', description: 'Architecture discussion' },
+  { name: 'brainstorm', description: 'Brainstorm ideas' },
+  { name: 'review', description: 'Code review mode' },
+  { name: 'debug', description: 'Debug an issue' },
+];
+
+export interface ChatInputHandle {
+  focus: () => void;
+}
+
+const MODELS = [
+  { id: '', name: 'Default' },
+  { id: 'claude-sonnet-4-20250514', name: 'Sonnet' },
+  { id: 'claude-opus-4-20250514', name: 'Opus' },
+  { id: 'claude-haiku-3-5-20241022', name: 'Haiku' },
+];
+
+const SpeechRecognition = (typeof window !== 'undefined')
+  ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) as (new () => SpeechRecognitionInstance) | undefined
+  : undefined;
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+}
+
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, disabled, isStreaming }, ref) {
   const [value, setValue] = useState('');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-opus-4-20250514');
+  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
+    const stored = localStorage.getItem('soul-thinking');
+    return stored === null ? true : stored === 'true';
+  });
+  const [isListening, setIsListening] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const isOpus = selectedModel.includes('opus');
+  const hasSpeech = !!SpeechRecognition;
+
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus(),
+  }), []);
 
   // Focus textarea on mount.
   useEffect(() => {
@@ -19,6 +94,64 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, []);
 
+  const addFiles = useCallback(async (files: File[]) => {
+    const valid = files.filter(f => f.size <= MAX_FILE_SIZE && f.type.startsWith('image/'));
+    if (valid.length === 0) return;
+    const newAtts = await Promise.all(valid.slice(0, MAX_ATTACHMENTS - attachments.length).map(fileToAttachment));
+    setAttachments(prev => [...prev, ...newAtts].slice(0, MAX_ATTACHMENTS));
+  }, [attachments.length]);
+
+  const removeAttachment = useCallback((idx: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData.files);
+    if (files.length > 0) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  }, [addFiles]);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    addFiles(files);
+  }, [addFiles]);
+
+  const showPalette = value.startsWith('/') && !value.includes(' ') && value.length > 0;
+  const paletteFilter = value.slice(1);
+
+  const handleSlashSelect = useCallback((cmd: SlashCommand) => {
+    if (cmd.name === 'think') {
+      setThinkingEnabled(prev => {
+        const next = !prev;
+        localStorage.setItem('soul-thinking', String(next));
+        return next;
+      });
+      setValue('');
+    } else {
+      setValue(`/${cmd.name} `);
+    }
+    textareaRef.current?.focus();
+  }, []);
+
+  const handlePaletteClose = useCallback(() => {
+    setValue('');
+    textareaRef.current?.focus();
+  }, []);
+
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLTextAreaElement>) => {
       setValue(e.target.value);
@@ -27,11 +160,72 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     [resizeTextarea],
   );
 
+  const handleModelChange = useCallback((e: ChangeEvent<HTMLSelectElement>) => {
+    setSelectedModel(e.target.value);
+    localStorage.setItem('soul-model', e.target.value);
+  }, []);
+
+  const handleThinkingToggle = useCallback(() => {
+    setThinkingEnabled(prev => {
+      const next = !prev;
+      localStorage.setItem('soul-thinking', String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (!SpeechRecognition) return;
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setValue(prev => {
+        // Replace from where speech started, keep any text typed before
+        const prefix = prev.split('\u200B')[0] || '';
+        return prefix + transcript;
+      });
+      resizeTextarea();
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [isListening, resizeTextarea]);
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
+    if (!trimmed && attachments.length === 0) return;
+    if (disabled) return;
+    const opts: { model?: string; thinking?: boolean; attachments?: ChatAttachment[] } = {};
+    if (selectedModel) opts.model = selectedModel;
+    if (isOpus && thinkingEnabled) opts.thinking = true;
+    if (attachments.length > 0) opts.attachments = attachments;
+    onSend(trimmed || '(attached image)', Object.keys(opts).length > 0 ? opts : undefined);
     setValue('');
+    setAttachments([]);
     // Reset textarea height after clearing.
     requestAnimationFrame(() => {
       const ta = textareaRef.current;
@@ -39,40 +233,233 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         ta.style.height = 'auto';
       }
     });
-  }, [value, disabled, onSend]);
+  }, [value, disabled, onSend, selectedModel, isOpus, thinkingEnabled, attachments]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'Escape' && isStreaming) {
+        e.preventDefault();
+        onStop();
+        return;
+      }
+      // Let CommandPalette handle navigation keys when open
+      if (showPalette && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Tab' || e.key === 'Enter' || e.key === 'Escape')) {
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, isStreaming, onStop, showPalette],
   );
 
   return (
-    <div className="flex items-end gap-2 p-4 border-t border-zinc-800">
-      <textarea
-        ref={textareaRef}
-        data-testid="chat-input"
-        className="flex-1 resize-none rounded-lg bg-zinc-800 px-4 py-3 text-zinc-100 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        placeholder="Send a message..."
-        rows={1}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-      />
-      <button
-        data-testid="send-button"
-        className="rounded-lg bg-zinc-700 px-4 py-3 text-zinc-100 hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        onClick={handleSend}
-        disabled={disabled || !value.trim()}
-        type="button"
-      >
-        Send
-      </button>
+    <div
+      className={`relative px-3 md:px-5 py-3 md:py-4 ${isDragging ? 'ring-2 ring-soul/50 bg-soul/5 rounded-xl' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-deep/80 rounded-2xl pointer-events-none">
+          <span className="text-soul text-sm font-medium">Drop images here</span>
+        </div>
+      )}
+      <div className="relative">
+        {/* Slash command palette — above input */}
+        {showPalette && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 z-50">
+            <CommandPalette
+              commands={SLASH_COMMANDS}
+              filter={paletteFilter}
+              onSelect={handleSlashSelect}
+              onClose={handlePaletteClose}
+            />
+          </div>
+        )}
+        {/* Elevated input card */}
+        <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
+          {/* Attachment chips inside card */}
+          {attachments.length > 0 && (
+            <div data-testid="attachment-chips" className="flex gap-2 flex-wrap px-4 pt-3">
+              {attachments.map((att, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 bg-elevated rounded-lg px-2.5 py-1 text-xs text-fg-secondary border border-border-subtle">
+                  {att.preview ? (
+                    <img src={att.preview} alt={att.name} className="h-5 w-5 object-cover rounded" />
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2" /><circle cx="6" cy="6.5" r="1.5" /><path d="M2 11l3-3 2 2 3-3 4 4" /></svg>
+                  )}
+                  <span className="max-w-[120px] truncate">{att.name}</span>
+                  <button
+                    data-testid={`remove-attachment-${i}`}
+                    type="button"
+                    onClick={() => removeAttachment(i)}
+                    className="text-fg-muted hover:text-fg ml-0.5 cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            data-testid="chat-input"
+            className="w-full bg-transparent px-4 pt-3 pb-2 text-fg placeholder:text-fg-muted resize-none overflow-y-hidden focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Message Soul..."
+            rows={1}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+          />
+
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []);
+              if (files.length > 0) addFiles(files);
+              e.target.value = '';
+            }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []);
+              if (files.length > 0) addFiles(files);
+              e.target.value = '';
+            }}
+          />
+
+          {/* Toolbar */}
+          <div className="flex items-center gap-1.5 px-3 py-2 border-t border-border-subtle">
+            {/* Model selector */}
+            <select
+              data-testid="model-selector"
+              value={selectedModel}
+              onChange={handleModelChange}
+              className="soul-select"
+            >
+              {MODELS.map(m => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+
+            {/* Thinking toggle */}
+            {isOpus && (
+              <button
+                data-testid="thinking-toggle"
+                type="button"
+                onClick={handleThinkingToggle}
+                className={`h-7 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${
+                  thinkingEnabled ? 'bg-soul/20 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+                }`}
+                title={thinkingEnabled ? 'Extended thinking ON' : 'Extended thinking OFF'}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 2a5 5 0 0 1 3 9v1.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 5 12.5V11a5 5 0 0 1 3-9z" />
+                  <path d="M6 14.5h4" />
+                </svg>
+                <span className="text-[10px] font-mono">Think</span>
+              </button>
+            )}
+
+            {/* Attach button */}
+            <button
+              data-testid="attach-button"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="h-7 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
+              aria-label="Attach image"
+              title="Attach image"
+            >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                <path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+
+            {/* Camera button */}
+            <button
+              data-testid="camera-button"
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="h-7 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
+              aria-label="Take photo"
+              title="Take photo"
+            >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                <path d="M7 3l-1.5 2H3a1 1 0 00-1 1v9a1 1 0 001 1h14a1 1 0 001-1V6a1 1 0 00-1-1h-2.5L13 3H7z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="10" cy="10.5" r="3" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+            </button>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Stop / Send / Mic button */}
+            {isStreaming ? (
+              <button
+                data-testid="stop-button"
+                type="button"
+                onClick={onStop}
+                className="h-8 rounded-full flex items-center gap-1.5 px-3 bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0 cursor-pointer"
+                title="Stop generating (Esc)"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <rect x="3" y="3" width="10" height="10" rx="1.5" />
+                </svg>
+                <span className="text-[10px] font-mono">Stop</span>
+              </button>
+            ) : !value.trim() && attachments.length === 0 && !disabled && hasSpeech ? (
+              <button
+                data-testid="mic-button"
+                type="button"
+                onClick={toggleListening}
+                className={`h-8 rounded-full flex items-center gap-1.5 px-3 transition-colors shrink-0 cursor-pointer ${
+                  isListening
+                    ? 'bg-red-500 text-white animate-soul-pulse'
+                    : 'bg-soul/15 text-soul hover:bg-soul/25'
+                }`}
+                aria-label={isListening ? 'Stop recording' : 'Start recording'}
+                title={isListening ? 'Stop recording' : 'Voice input'}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="5" y="1" width="6" height="8" rx="3" />
+                  <path d="M3 7v1a5 5 0 0 0 10 0V7" />
+                  <path d="M8 13v2" />
+                </svg>
+                {isListening && <span className="text-[10px] font-mono">Stop</span>}
+              </button>
+            ) : (
+              <button
+                data-testid="send-button"
+                onClick={handleSend}
+                disabled={disabled || (!value.trim() && attachments.length === 0)}
+                className="w-8 h-8 bg-soul text-deep rounded-full flex items-center justify-center hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
+                title="Send"
+                type="button"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 3l-1 1 3.3 3.3H3v1.4h7.3L7 12l1 1 5-5-5-5z" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
+});

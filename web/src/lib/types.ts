@@ -33,10 +33,22 @@ export interface AuthStatus {
 }
 
 /** ui-chat */
+export interface ChatAttachment {
+  name: string;
+  mediaType: string;
+  data: string; // base64
+  preview?: string; // data URL for images
+}
+
+/** ui-chat */
 export interface ChatInputProps {
   /** disabled during streaming */
   disabled: boolean;
-  onSend: (content: string) => void;
+  /** whether a response is currently streaming */
+  isStreaming: boolean;
+  onSend: (content: string, options?: { model?: string; thinking?: boolean; attachments?: ChatAttachment[] }) => void;
+  /** stop the current generation */
+  onStop: () => void;
 }
 
 /** ui-chat */
@@ -119,10 +131,18 @@ export interface Message {
   createdAt: string;
   /** unique message identifier */
   id: string;
+  /** model used to generate this message */
+  model?: string;
   /** one of: user, assistant, tool_use, tool_result */
   role: 'user' | 'assistant' | 'tool_use' | 'tool_result';
   /** parent session reference */
   sessionID: string;
+  /** thinking content from extended thinking (optional) */
+  thinking?: string;
+  /** tool calls associated with this message */
+  toolCalls?: ToolCallData[];
+  /** token usage for this message */
+  usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number };
 }
 
 /** ui-chat */
@@ -131,6 +151,12 @@ export interface MessageBubbleProps {
   isStreaming: boolean;
   /** message to render */
   message: Message;
+  /** callback to edit and resend a message */
+  onEdit?: (messageId: string, newContent: string) => void;
+  /** callback to retry a message */
+  onRetry?: (messageId: string) => void;
+  /** search query for text highlighting */
+  searchQuery?: string;
 }
 
 /** ui-chat */
@@ -139,6 +165,14 @@ export interface MessageListProps {
   isStreaming: boolean;
   /** messages to render */
   messages: Message[];
+  /** callback to send a prompt suggestion */
+  onSend?: (content: string) => void;
+  /** callback to edit and resend a message */
+  onEdit?: (messageId: string, newContent: string) => void;
+  /** callback to retry a message */
+  onRetry?: (messageId: string) => void;
+  /** search query for text highlighting */
+  searchQuery?: string;
 }
 
 /** auth */
@@ -310,15 +344,25 @@ export interface Tool {
 }
 
 /** ui-chat */
-export interface ToolCallBlockProps {
-  /** tool input parameters */
-  input: Record<string, unknown>;
-  /** whether detail is shown */
-  isExpanded: boolean;
+export interface ToolCallData {
+  /** unique tool call identifier */
+  id: string;
   /** tool name */
   name: string;
-  /** tool result (null if pending) */
-  result: string | null;
+  /** tool input parameters */
+  input: Record<string, unknown>;
+  /** current status */
+  status: 'running' | 'complete' | 'error';
+  /** tool output (when complete or error) */
+  output?: string;
+  /** progress percentage (0-100) */
+  progress?: number;
+}
+
+/** ui-chat */
+export interface ToolCallBlockProps {
+  /** tool call data */
+  tool: ToolCallData;
 }
 
 /** stream */
@@ -337,14 +381,20 @@ export interface Usage {
 
 export type InboundMessageType =
   | 'chat.send'
+  | 'chat.stop'
   | 'session.switch'
   | 'session.create'
   | 'session.delete';
 
 export type OutboundMessageType =
+  | 'chat.thinking'
   | 'chat.token'
   | 'chat.done'
   | 'chat.error'
+  | 'tool.call'
+  | 'tool.progress'
+  | 'tool.complete'
+  | 'tool.error'
   | 'session.created'
   | 'session.deleted'
   | 'session.list'

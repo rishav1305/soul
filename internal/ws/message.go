@@ -40,11 +40,20 @@ const (
 	TypeConnectionReady = "connection.ready"
 )
 
+// Attachment represents a file attached to a chat message.
+type Attachment struct {
+	Name      string `json:"name"`
+	MediaType string `json:"mediaType"`
+	Data      string `json:"data"` // base64 encoded
+}
+
 // InboundMessage represents a message received from a WebSocket client.
 type InboundMessage struct {
-	Type      string `json:"type"`
-	SessionID string `json:"sessionId,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Type        string       `json:"type"`
+	SessionID   string       `json:"sessionId,omitempty"`
+	Content     string       `json:"content,omitempty"`
+	Model       string       `json:"model,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // OutboundMessage represents a message sent to a WebSocket client.

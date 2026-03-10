@@ -1,57 +1,34 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
+import CodeBlock from './CodeBlock';
 
 interface MarkdownProps {
   content: string;
 }
 
 const components: Components = {
-  code({ className, children, ...rest }) {
+  code({ className, children, node, ...props }) {
     const match = /language-(\w+)/.exec(className || '');
-    const isBlock = match || (typeof children === 'string' && children.includes('\n'));
-
-    if (isBlock) {
-      return (
-        <div className="relative my-2">
-          {match && (
-            <div className="absolute top-0 right-0 px-2 py-0.5 text-xs text-zinc-500 select-none">
-              {match[1]}
-            </div>
-          )}
-          <code
-            className={`block bg-zinc-900/50 rounded-lg p-4 text-sm font-mono text-zinc-200 overflow-x-auto ${className || ''}`}
-            {...rest}
-          >
-            {children}
-          </code>
-        </div>
-      );
+    const isInline = !match && !String(children).includes('\n');
+    if (isInline) {
+      return <code className="px-1.5 py-0.5 bg-elevated rounded text-sm font-mono" {...props}>{children}</code>;
     }
-
-    return (
-      <code
-        className="bg-zinc-800 px-1 py-0.5 rounded text-sm font-mono"
-        {...rest}
-      >
-        {children}
-      </code>
-    );
+    return <CodeBlock language={match?.[1] ?? ''} code={String(children).replace(/\n$/, '')} />;
   },
 
   pre({ children }) {
-    return (
-      <pre className="overflow-x-auto my-2">{children}</pre>
-    );
+    // CodeBlock handles its own wrapping; just pass children through
+    return <>{children}</>;
   },
 
-  a({ children, href, ...rest }) {
+  a({ children, href, node, ...rest }) {
     return (
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-400 underline hover:text-blue-300"
+        className="text-soul underline hover:text-soul/80"
         {...rest}
       >
         {children}
@@ -59,7 +36,7 @@ const components: Components = {
     );
   },
 
-  ul({ children, ...rest }) {
+  ul({ children, node, ...rest }) {
     return (
       <ul className="list-disc list-inside ml-2 my-1 space-y-0.5" {...rest}>
         {children}
@@ -67,7 +44,7 @@ const components: Components = {
     );
   },
 
-  ol({ children, ...rest }) {
+  ol({ children, node, ...rest }) {
     return (
       <ol className="list-decimal list-inside ml-2 my-1 space-y-0.5" {...rest}>
         {children}
@@ -75,10 +52,10 @@ const components: Components = {
     );
   },
 
-  blockquote({ children, ...rest }) {
+  blockquote({ children, node, ...rest }) {
     return (
       <blockquote
-        className="border-l-2 border-zinc-600 pl-3 my-2 text-zinc-400 italic"
+        className="border-l-2 border-border-default pl-3 my-2 text-fg-secondary italic"
         {...rest}
       >
         {children}
@@ -86,7 +63,7 @@ const components: Components = {
     );
   },
 
-  table({ children, ...rest }) {
+  table({ children, node, ...rest }) {
     return (
       <div className="overflow-x-auto my-2">
         <table className="min-w-full border-collapse text-sm" {...rest}>
@@ -96,31 +73,31 @@ const components: Components = {
     );
   },
 
-  thead({ children, ...rest }) {
+  thead({ children, node, ...rest }) {
     return (
-      <thead className="border-b border-zinc-700" {...rest}>
+      <thead className="border-b border-border-default" {...rest}>
         {children}
       </thead>
     );
   },
 
-  th({ children, ...rest }) {
+  th({ children, node, ...rest }) {
     return (
-      <th className="px-3 py-1.5 text-left text-zinc-300 font-medium" {...rest}>
+      <th className="px-3 py-1.5 text-left text-fg-secondary font-medium" {...rest}>
         {children}
       </th>
     );
   },
 
-  td({ children, ...rest }) {
+  td({ children, node, ...rest }) {
     return (
-      <td className="px-3 py-1.5 border-t border-zinc-800" {...rest}>
+      <td className="px-3 py-1.5 border-t border-border-subtle" {...rest}>
         {children}
       </td>
     );
   },
 
-  p({ children, ...rest }) {
+  p({ children, node, ...rest }) {
     return (
       <p className="my-1.5 leading-relaxed" {...rest}>
         {children}
@@ -128,20 +105,20 @@ const components: Components = {
     );
   },
 
-  h1({ children, ...rest }) {
+  h1({ children, node, ...rest }) {
     return <h1 className="text-xl font-bold mt-4 mb-2" {...rest}>{children}</h1>;
   },
 
-  h2({ children, ...rest }) {
+  h2({ children, node, ...rest }) {
     return <h2 className="text-lg font-bold mt-3 mb-1.5" {...rest}>{children}</h2>;
   },
 
-  h3({ children, ...rest }) {
+  h3({ children, node, ...rest }) {
     return <h3 className="text-base font-semibold mt-2 mb-1" {...rest}>{children}</h3>;
   },
 
   hr() {
-    return <hr className="border-zinc-700 my-3" />;
+    return <hr className="border-border-default my-3" />;
   },
 };
 
@@ -151,7 +128,7 @@ export function Markdown({ content }: MarkdownProps) {
   }
 
   return (
-    <div data-testid="markdown-content" className="text-zinc-100 break-words">
+    <div data-testid="markdown-content" className="text-fg break-words">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

@@ -200,13 +200,19 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 		client.Send(data)
 	}
 
-	// Send session.list if a session store is configured.
+	// Send session.list (excluding empty sessions) if a session store is configured.
 	if h.sessionStore != nil {
-		sessions, err := h.sessionStore.ListSessions()
+		allSessions, err := h.sessionStore.ListSessions()
 		if err != nil {
 			log.Printf("ws: failed to list sessions for new client %s: %v", clientID, err)
 		} else {
-			listMsg := NewSessionList(sessions)
+			nonEmpty := make([]*session.Session, 0, len(allSessions))
+			for _, s := range allSessions {
+				if s.MessageCount > 0 {
+					nonEmpty = append(nonEmpty, s)
+				}
+			}
+			listMsg := NewSessionList(nonEmpty)
 			if data, err := MarshalOutbound(listMsg); err == nil {
 				client.Send(data)
 			}

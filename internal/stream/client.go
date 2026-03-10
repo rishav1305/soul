@@ -39,6 +39,7 @@ type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	apiVersion string
+	betaHeader string
 }
 
 // Option configures a Client.
@@ -72,6 +73,14 @@ func WithAPIVersion(v string) Option {
 	}
 }
 
+// WithBetaHeader sets the anthropic-beta header value.
+// Multiple features can be comma-separated (e.g. "prompt-caching-2024-07-31,oauth-2025-04-20").
+func WithBetaHeader(h string) Option {
+	return func(c *Client) {
+		c.betaHeader = h
+	}
+}
+
 // NewClient creates a new Claude API client with the given token source and options.
 func NewClient(auth TokenSource, opts ...Option) *Client {
 	c := &Client{
@@ -79,6 +88,7 @@ func NewClient(auth TokenSource, opts ...Option) *Client {
 		model:      DefaultModel,
 		baseURL:    DefaultBaseURL,
 		apiVersion: DefaultAPIVersion,
+		betaHeader: "prompt-caching-2024-07-31",
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
@@ -123,7 +133,7 @@ func (c *Client) Stream(ctx context.Context, req *Request) (<-chan SSEEvent, err
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", c.apiVersion)
-	httpReq.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
+	httpReq.Header.Set("anthropic-beta", c.betaHeader)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -193,7 +203,7 @@ func (c *Client) Send(ctx context.Context, req *Request) (*Response, error) {
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", c.apiVersion)
-	httpReq.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
+	httpReq.Header.Set("anthropic-beta", c.betaHeader)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {

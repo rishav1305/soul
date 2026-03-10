@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
-import type { Message, Session, OutboundMessageType, ConnectionState } from '../lib/types';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 
 interface UseChatReturn {
@@ -7,7 +7,11 @@ interface UseChatReturn {
   isStreaming: boolean;
   status: ConnectionState;
   authError: boolean;
-  sendMessage: (content: string) => void;
+  reconnectAttempt: number;
+  sendMessage: (content: string, options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] }) => void;
+  stopGeneration: () => void;
+  editAndResend: (messageId: string, newContent: string) => void;
+  retryMessage: (messageId: string) => void;
   reauth: () => Promise<void>;
   sessions: Session[];
   currentSessionID: string | null;
@@ -17,6 +21,7 @@ interface UseChatReturn {
 }
 
 const STREAMING_MESSAGE_ID = '__streaming__';
+const STORAGE_KEY = 'soul-v2-session';
 
 function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -33,21 +38,24 @@ export function useChat(): UseChatReturn {
   // without needing to re-create (which would cause useWebSocket to reconnect).
   const sessionIDRef = useRef<string | null>(null);
   const sessionsRef = useRef<Session[]>([]);
-  const sessionCreationRequestedRef = useRef(false);
+  const isStreamingRef = useRef(false);
+
+  // Keep streaming ref in sync.
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
 
   const handleMessage = useCallback(
     (type: OutboundMessageType, data: unknown, sessionID: string) => {
       switch (type) {
         case 'connection.ready': {
-          // Clear auth error on reconnect.
           setAuthError(false);
-          // Auto-create a session on first connect if none exists.
-          if (!sessionIDRef.current && !sessionCreationRequestedRef.current) {
-            sessionCreationRequestedRef.current = true;
-            // sendRef will be set by the time messages arrive; we use a
-            // micro-task to ensure the send function is available.
+          // Restore last session from localStorage on reconnect.
+          const savedId = localStorage.getItem(STORAGE_KEY);
+          if (savedId && !sessionIDRef.current) {
+            sessionIDRef.current = savedId;
+            setCurrentSessionID(savedId);
+            // Request history for the restored session.
             queueMicrotask(() => {
-              sendRef.current('session.create', {});
+              sendRef.current('session.switch', { sessionId: savedId });
             });
           }
           break;
@@ -57,10 +65,6 @@ export function useChat(): UseChatReturn {
           const payload = data as { session: Session } | undefined;
           if (payload?.session?.id) {
             const newSession = payload.session;
-            sessionIDRef.current = newSession.id;
-            setCurrentSessionID(newSession.id);
-            setMessages([]);
-            sessionCreationRequestedRef.current = false;
 
             // Add to sessions list if not already present.
             const alreadyExists = sessionsRef.current.some(s => s.id === newSession.id);
@@ -68,6 +72,14 @@ export function useChat(): UseChatReturn {
               const updated = [newSession, ...sessionsRef.current];
               sessionsRef.current = updated;
               setSessions(updated);
+            }
+
+            // If we just requested a session creation, switch to it.
+            if (!sessionIDRef.current) {
+              sessionIDRef.current = newSession.id;
+              setCurrentSessionID(newSession.id);
+              localStorage.setItem(STORAGE_KEY, newSession.id);
+              setMessages([]);
             }
           }
           break;
@@ -80,6 +92,10 @@ export function useChat(): UseChatReturn {
             const updated = sessionsRef.current.map(s =>
               s.id === updatedSession.id ? updatedSession : s,
             );
+            // If session not in list and has messages, add it.
+            if (!sessionsRef.current.some(s => s.id === updatedSession.id) && updatedSession.messageCount > 0) {
+              updated.unshift(updatedSession);
+            }
             sessionsRef.current = updated;
             setSessions(updated);
           }
@@ -109,15 +125,66 @@ export function useChat(): UseChatReturn {
                 const next = updated[0]!;
                 sessionIDRef.current = next.id;
                 setCurrentSessionID(next.id);
+                localStorage.setItem(STORAGE_KEY, next.id);
                 setMessages([]);
                 sendRef.current('session.switch', { sessionId: next.id });
               } else {
                 sessionIDRef.current = null;
                 setCurrentSessionID(null);
+                localStorage.removeItem(STORAGE_KEY);
                 setMessages([]);
               }
             }
           }
+          break;
+        }
+
+        case 'session.history' as OutboundMessageType: {
+          // Server sends message history when switching sessions.
+          if (isStreamingRef.current) break; // Don't overwrite during streaming.
+          const payload = data as { messages: Message[] } | undefined;
+          if (payload?.messages && sessionID === sessionIDRef.current) {
+            const hydrated = payload.messages.map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              sessionID: m.sessionId || m.session_id || sessionID,
+              createdAt: m.createdAt || m.created_at,
+              model: m.model,
+              thinking: m.thinking,
+              toolCalls: m.toolCalls,
+              usage: m.usage,
+            }));
+            setMessages(hydrated);
+          }
+          break;
+        }
+
+        case 'chat.thinking': {
+          const payload = data as { text: string } | undefined;
+          if (!payload) break;
+
+          setMessages(prev => {
+            const streamIdx = prev.findIndex(m => m.id === STREAMING_MESSAGE_ID);
+            if (streamIdx === -1) {
+              const placeholder: Message = {
+                id: STREAMING_MESSAGE_ID,
+                role: 'assistant',
+                content: '',
+                sessionID: sessionID,
+                createdAt: new Date().toISOString(),
+                thinking: payload.text,
+              };
+              return [...prev, placeholder];
+            }
+            const updated = [...prev];
+            const existing = updated[streamIdx]!;
+            updated[streamIdx] = {
+              ...existing,
+              thinking: (existing.thinking ?? '') + payload.text,
+            };
+            return updated;
+          });
           break;
         }
 
@@ -128,7 +195,6 @@ export function useChat(): UseChatReturn {
           setMessages(prev => {
             const streamIdx = prev.findIndex(m => m.id === STREAMING_MESSAGE_ID);
             if (streamIdx === -1) {
-              // First token — create the streaming placeholder.
               const placeholder: Message = {
                 id: STREAMING_MESSAGE_ID,
                 role: 'assistant',
@@ -138,8 +204,6 @@ export function useChat(): UseChatReturn {
               };
               return [...prev, placeholder];
             }
-
-            // Append token to existing streaming message.
             const updated = [...prev];
             const existing = updated[streamIdx]!;
             updated[streamIdx] = { ...existing, content: existing.content + payload.token };
@@ -149,12 +213,21 @@ export function useChat(): UseChatReturn {
         }
 
         case 'chat.done': {
-          const payload = data as { messageId: string } | undefined;
+          const payload = data as {
+            messageId: string;
+            model?: string;
+            usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number };
+          } | undefined;
 
           setMessages(prev =>
             prev.map(m =>
               m.id === STREAMING_MESSAGE_ID
-                ? { ...m, id: payload?.messageId ?? generateTempId() }
+                ? {
+                    ...m,
+                    id: payload?.messageId ?? generateTempId(),
+                    ...(payload?.model ? { model: payload.model } : {}),
+                    ...(payload?.usage ? { usage: payload.usage } : {}),
+                  }
                 : m,
             ),
           );
@@ -172,7 +245,6 @@ export function useChat(): UseChatReturn {
           }
 
           setMessages(prev => {
-            // If there's a streaming message, replace it with the error.
             const hasStreaming = prev.some(m => m.id === STREAMING_MESSAGE_ID);
             if (hasStreaming) {
               return prev.map(m =>
@@ -181,7 +253,6 @@ export function useChat(): UseChatReturn {
                   : m,
               );
             }
-            // Otherwise append an error message.
             return [
               ...prev,
               {
@@ -197,6 +268,84 @@ export function useChat(): UseChatReturn {
           break;
         }
 
+        case 'tool.call': {
+          const payload = data as { id: string; name: string; input: Record<string, unknown> } | undefined;
+          if (!payload) break;
+
+          const newTool: ToolCallData = {
+            id: payload.id,
+            name: payload.name,
+            input: payload.input,
+            status: 'running',
+          };
+
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.id === STREAMING_MESSAGE_ID) {
+              const tools = [...(last.toolCalls ?? []), newTool];
+              return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
+            }
+            const placeholder: Message = {
+              id: STREAMING_MESSAGE_ID,
+              role: 'assistant',
+              content: '',
+              sessionID: sessionID,
+              createdAt: new Date().toISOString(),
+              toolCalls: [newTool],
+            };
+            return [...prev, placeholder];
+          });
+          break;
+        }
+
+        case 'tool.progress': {
+          const payload = data as { id: string; progress: number } | undefined;
+          if (!payload) break;
+
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.id !== STREAMING_MESSAGE_ID) return prev;
+            const tools = [...(last.toolCalls ?? [])];
+            const idx = tools.findIndex(t => t.id === payload.id);
+            if (idx === -1) return prev;
+            tools[idx] = { ...tools[idx], progress: payload.progress };
+            return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
+          });
+          break;
+        }
+
+        case 'tool.complete': {
+          const payload = data as { id: string; output: string } | undefined;
+          if (!payload) break;
+
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.id !== STREAMING_MESSAGE_ID) return prev;
+            const tools = [...(last.toolCalls ?? [])];
+            const idx = tools.findIndex(t => t.id === payload.id);
+            if (idx === -1) return prev;
+            tools[idx] = { ...tools[idx], status: 'complete', output: payload.output };
+            return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
+          });
+          break;
+        }
+
+        case 'tool.error': {
+          const payload = data as { id: string; output: string } | undefined;
+          if (!payload) break;
+
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.id !== STREAMING_MESSAGE_ID) return prev;
+            const tools = [...(last.toolCalls ?? [])];
+            const idx = tools.findIndex(t => t.id === payload.id);
+            if (idx === -1) return prev;
+            tools[idx] = { ...tools[idx], status: 'error', output: payload.output };
+            return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
+          });
+          break;
+        }
+
         default:
           break;
       }
@@ -204,16 +353,25 @@ export function useChat(): UseChatReturn {
     [],
   );
 
-  const { status, send } = useWebSocket({ onMessage: handleMessage });
+  const { status, send, reconnectAttempt } = useWebSocket({ onMessage: handleMessage });
 
   // Store send in a ref so the connection.ready handler can use it.
   const sendRef = useRef(send);
   sendRef.current = send;
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] }) => {
       const trimmed = content.trim();
-      if (!trimmed || !sessionIDRef.current) return;
+      if (!trimmed) return;
+
+      // Deferred session creation: if no session, create one first then send.
+      if (!sessionIDRef.current) {
+        // Create session, then send message after session.created arrives.
+        const pendingMessage = { content: trimmed, options };
+        pendingMessageRef.current = pendingMessage;
+        send('session.create', {});
+        return;
+      }
 
       // Optimistic user message.
       const userMessage: Message = {
@@ -227,20 +385,47 @@ export function useChat(): UseChatReturn {
       setMessages(prev => [...prev, userMessage]);
       setIsStreaming(true);
 
-      send('chat.send', { sessionId: sessionIDRef.current, content: trimmed });
+      const payload: Record<string, unknown> = { sessionId: sessionIDRef.current, content: trimmed };
+      if (options?.model) payload.model = options.model;
+      if (options?.thinking) payload.thinking = true;
+      if (options?.attachments?.length) payload.attachments = options.attachments;
+      send('chat.send', payload);
     },
     [send],
   );
 
+  // Pending message for deferred session creation.
+  const pendingMessageRef = useRef<{ content: string; options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] } } | null>(null);
+
+  // After session.created, send any pending message.
+  useEffect(() => {
+    if (currentSessionID && pendingMessageRef.current) {
+      const { content, options } = pendingMessageRef.current;
+      pendingMessageRef.current = null;
+      // Small delay to ensure session is fully registered.
+      setTimeout(() => sendMessage(content, options), 50);
+    }
+  }, [currentSessionID, sendMessage]);
+
+  const stopGeneration = useCallback(() => {
+    if (!sessionIDRef.current) return;
+    send('chat.stop', { sessionId: sessionIDRef.current });
+    setIsStreaming(false);
+  }, [send]);
+
   const createSession = useCallback(() => {
+    // Create a new session and switch to it.
     send('session.create', {});
   }, [send]);
 
   const switchSession = useCallback(
     (id: string) => {
+      if (id === sessionIDRef.current) return;
       sessionIDRef.current = id;
       setCurrentSessionID(id);
+      localStorage.setItem(STORAGE_KEY, id);
       setMessages([]);
+      setIsStreaming(false);
       send('session.switch', { sessionId: id });
     },
     [send],
@@ -258,16 +443,40 @@ export function useChat(): UseChatReturn {
       await fetch('/api/reauth', { method: 'POST' });
       setAuthError(false);
     } catch {
-      // Silently ignore — the next chat.error will re-set authError if still failing.
+      // Silently ignore.
     }
   }, []);
+
+  const editAndResend = useCallback((messageId: string, newContent: string) => {
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === messageId);
+      if (idx === -1) return prev;
+      return prev.slice(0, idx);
+    });
+    setTimeout(() => sendMessage(newContent), 50);
+  }, [sendMessage]);
+
+  const retryMessage = useCallback((messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg || msg.role !== 'user') return;
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === messageId);
+      if (idx === -1) return prev;
+      return prev.slice(0, idx);
+    });
+    setTimeout(() => sendMessage(msg.content), 50);
+  }, [messages, sendMessage]);
 
   return {
     messages,
     isStreaming,
     status,
     authError,
+    reconnectAttempt,
     sendMessage,
+    stopGeneration,
+    editAndResend,
+    retryMessage,
     reauth,
     sessions,
     currentSessionID,

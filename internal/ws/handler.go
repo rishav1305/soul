@@ -101,6 +101,27 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		return
 	}
 
+	// Auto-title from first user message (if session has no messages yet).
+	sess, _ := h.sessionStore.GetSession(msg.SessionID)
+	if sess != nil && sess.MessageCount == 0 {
+		title := msg.Content
+		if len(title) > 100 {
+			title = title[:100]
+		}
+		if updated, err := h.sessionStore.UpdateSessionTitle(msg.SessionID, title); err == nil {
+			h.broadcast(NewSessionUpdated(updated))
+		}
+	}
+
+	// Transition session to running.
+	if sess != nil && sess.Status == session.StatusIdle {
+		if err := h.sessionStore.UpdateSessionStatus(msg.SessionID, session.StatusRunning); err == nil {
+			if updated, err := h.sessionStore.GetSession(msg.SessionID); err == nil {
+				h.broadcast(NewSessionUpdated(updated))
+			}
+		}
+	}
+
 	// Store the user message.
 	stored, err := h.sessionStore.AddMessage(msg.SessionID, "user", msg.Content)
 	if err != nil {
@@ -111,6 +132,7 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 
 	// If no stream client is configured, fall back to immediate chat.done.
 	if h.streamClient == nil {
+		h.completeSession(client, msg.SessionID)
 		out := NewChatDone(msg.SessionID, stored.ID)
 		h.sendToClient(client, out)
 		return
@@ -137,9 +159,29 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		})
 	}
 
+	// Append image attachments to the last user message (current message).
+	if len(msg.Attachments) > 0 && len(apiMessages) > 0 {
+		last := &apiMessages[len(apiMessages)-1]
+		if last.Role == "user" {
+			for _, att := range msg.Attachments {
+				if strings.HasPrefix(att.MediaType, "image/") && len(att.Data) > 0 {
+					last.Content = append(last.Content, stream.ContentBlock{
+						Type: "image",
+						Source: &stream.ImageSource{
+							Type:      "base64",
+							MediaType: att.MediaType,
+							Data:      att.Data,
+						},
+					})
+				}
+			}
+		}
+	}
+
 	req := &stream.Request{
 		MaxTokens: 4096,
 		Messages:  apiMessages,
+		Model:     msg.Model,
 	}
 
 	// Generate a message ID for the assistant response ahead of time.
@@ -160,7 +202,12 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 
 	ch, err := h.streamClient.Stream(ctx, req)
 	if err != nil {
-		log.Printf("ws: stream error for session %s: %v", sessionID, err)
+		var authErr *stream.AuthError
+		if errors.As(err, &authErr) {
+			log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
+		} else {
+			log.Printf("ws: stream error for session %s: %v", sessionID, err)
+		}
 		h.logAPIError(sessionID, err)
 		h.sendClassifiedError(client, sessionID, err)
 		return
@@ -266,6 +313,9 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 		}
 	}
 
+	// Transition session to completed.
+	h.completeSession(client, sessionID)
+
 	// Send chat.done.
 	doneMsg := NewChatDone(sessionID, messageID)
 	h.sendToClient(client, doneMsg)
@@ -312,18 +362,35 @@ func (h *MessageHandler) handleSessionSwitch(client *Client, msg *InboundMessage
 	// Subscribe client to the session.
 	client.Subscribe(msg.SessionID)
 
+	// Mark session as read if it was completed_unread.
+	if sess.Status == session.StatusCompletedUnread {
+		if err := h.sessionStore.UpdateSessionStatus(msg.SessionID, session.StatusIdle); err == nil {
+			sess, _ = h.sessionStore.GetSession(msg.SessionID)
+		}
+	} else if sess.Status == session.StatusCompleted {
+		if err := h.sessionStore.UpdateSessionStatus(msg.SessionID, session.StatusIdle); err == nil {
+			sess, _ = h.sessionStore.GetSession(msg.SessionID)
+		}
+	}
+
 	// Send session.updated with the full session object.
 	updated := NewSessionUpdated(sess)
 	h.sendToClient(client, updated)
 
-	// Send full session list to the client.
-	sessions, err := h.sessionStore.ListSessions()
+	// Send full session list (excluding empty sessions) to the client.
+	allSessions, err := h.sessionStore.ListSessions()
 	if err != nil {
 		log.Printf("ws: failed to list sessions: %v", err)
 		h.sendError(client, msg.SessionID, "failed to list sessions")
 		return
 	}
-	listMsg := NewSessionList(sessions)
+	nonEmpty := make([]*session.Session, 0, len(allSessions))
+	for _, s := range allSessions {
+		if s.MessageCount > 0 {
+			nonEmpty = append(nonEmpty, s)
+		}
+	}
+	listMsg := NewSessionList(nonEmpty)
 	h.sendToClient(client, listMsg)
 
 	// Send message history for the switched-to session.
@@ -376,6 +443,30 @@ func (h *MessageHandler) handleSessionDelete(client *Client, msg *InboundMessage
 
 	out := NewSessionDeleted(msg.SessionID)
 	h.broadcast(out)
+}
+
+// completeSession transitions a session from running to completed/completed_unread
+// and broadcasts the update. If the client is currently viewing this session,
+// it transitions to completed; otherwise to completed_unread (unread badge).
+func (h *MessageHandler) completeSession(client *Client, sessionID string) {
+	sess, err := h.sessionStore.GetSession(sessionID)
+	if err != nil || sess.Status != session.StatusRunning {
+		return
+	}
+
+	// If client is subscribed to this session, mark completed; otherwise unread.
+	newStatus := session.StatusCompletedUnread
+	if client.SessionID() == sessionID {
+		newStatus = session.StatusCompleted
+	}
+
+	if err := h.sessionStore.UpdateSessionStatus(sessionID, newStatus); err != nil {
+		log.Printf("ws: failed to complete session %s: %v", sessionID, err)
+		return
+	}
+	if updated, err := h.sessionStore.GetSession(sessionID); err == nil {
+		h.broadcast(NewSessionUpdated(updated))
+	}
 }
 
 // sendError sends a chat.error message to a single client.

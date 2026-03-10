@@ -77,6 +77,14 @@ type ContentBlock struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
+	Source    *ImageSource    `json:"source,omitempty"`
+}
+
+// ImageSource represents a base64-encoded image for multimodal messages.
+type ImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 // Tool represents a tool definition.

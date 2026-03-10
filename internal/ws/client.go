@@ -25,6 +25,12 @@ const (
 
 	// maxMessageSize is the maximum inbound message size (1MB).
 	maxMessageSize = 1 << 20
+
+	// msgRateBurst is the max messages allowed in the rate window.
+	msgRateBurst = 10
+
+	// msgRateWindow is the sliding window for rate limiting.
+	msgRateWindow = 5 * time.Second
 )
 
 // Client represents a single WebSocket connection managed by the Hub.
@@ -39,6 +45,10 @@ type Client struct {
 	cancel    context.CancelFunc
 	ctx       context.Context
 	connTime  time.Time
+
+	// Rate limiting: sliding window of inbound message timestamps.
+	rateMu   sync.Mutex
+	msgTimes []time.Time
 }
 
 // ID returns the client's unique identifier.
@@ -65,6 +75,33 @@ func (c *Client) SessionID() string {
 // Subscribe switches the client's session subscription to the given session ID.
 func (c *Client) Subscribe(sessionID string) {
 	c.sessionID.Store(sessionID)
+}
+
+// checkRate returns true if the message should be allowed, false if rate limited.
+// Uses a sliding window of msgRateBurst messages over msgRateWindow.
+func (c *Client) checkRate() bool {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-msgRateWindow)
+
+	// Compact: remove timestamps outside the window.
+	valid := 0
+	for _, t := range c.msgTimes {
+		if t.After(cutoff) {
+			c.msgTimes[valid] = t
+			valid++
+		}
+	}
+	c.msgTimes = c.msgTimes[:valid]
+
+	if len(c.msgTimes) >= msgRateBurst {
+		return false
+	}
+
+	c.msgTimes = append(c.msgTimes, now)
+	return true
 }
 
 // Send queues a message for delivery to the client. If the send channel
@@ -157,6 +194,16 @@ func (c *Client) ReadPump() {
 			log.Printf("ws: client %s sent binary frame, rejecting", c.id)
 			c.conn.Close(websocket.StatusUnsupportedData, "binary frames not supported")
 			return
+		}
+
+		// Per-client rate limiting.
+		if !c.checkRate() {
+			log.Printf("ws: client %s rate limited", c.id)
+			errMsg := NewChatError("", "rate limited — slow down")
+			if errData, err := MarshalOutbound(errMsg); err == nil {
+				c.Send(errData)
+			}
+			continue
 		}
 
 		// Dispatch inbound message to the handler if one is configured.

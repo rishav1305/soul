@@ -1,1 +1,214 @@
 @import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════
+   SOUL DESIGN SYSTEM — "Obsidian Command"
+   ═══════════════════════════════════════════════════════ */
+
+@theme {
+  --color-deep: #08080d;
+  --color-surface: #111118;
+  --color-elevated: #1a1a24;
+  --color-overlay: #22223a;
+
+  --color-soul: #e8a849;
+  --color-soul-dim: #e8a84920;
+  --color-soul-glow: #e8a84933;
+
+  --color-fg: #ededf0;
+  --color-fg-secondary: #9494ac;
+  --color-fg-muted: #6a6a82;
+
+  --color-border-subtle: #ffffff1a;
+  --color-border-default: #ffffff28;
+  --color-border-active: #ffffff38;
+}
+
+/* ─── Base ─── */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-deep);
+  color: var(--color-fg);
+}
+
+/* ─── Scrollbar ─── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-fg-muted); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-fg-secondary); }
+
+/* ─── Noise texture overlay ─── */
+
+.noise::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+/* ─── Glass effect ─── */
+
+.glass {
+  background: rgba(17, 17, 24, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* ─── Animations ─── */
+
+@keyframes soul-pulse {
+  0%, 100% { opacity: 0.5; filter: blur(12px); }
+  50% { opacity: 0.8; filter: blur(16px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float-move {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes stream-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes diamond-breathe {
+  0%, 100% { box-shadow: 0 0 6px rgba(232, 168, 73, 0.2); }
+  50% { box-shadow: 0 0 16px rgba(232, 168, 73, 0.5), 0 0 30px rgba(232, 168, 73, 0.15); }
+}
+
+.animate-float-glow {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+  animation: float-move 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-float-glow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(232, 168, 73, 0.35) 0%, rgba(232, 168, 73, 0.1) 45%, transparent 70%);
+  border-radius: 50%;
+  animation: glow-pulse 5s ease-in-out infinite;
+  will-change: opacity;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.animate-soul-pulse { animation: soul-pulse 3s ease-in-out infinite; }
+.animate-fade-in { animation: fade-in 0.3s ease-out both; }
+
+/* ─── Diamond avatar pulse (streaming) ─── */
+
+@keyframes diamond-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.diamond-pulse {
+  position: relative;
+}
+.diamond-pulse::before,
+.diamond-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-soul);
+  animation: diamond-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+.diamond-pulse::after {
+  animation-delay: 0.8s;
+}
+
+.diamond-breathe {
+  animation: diamond-breathe 2s ease-in-out infinite;
+}
+
+/* ─── Stream bar ─── */
+
+.stream-bar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--color-soul-dim);
+}
+.stream-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, var(--color-soul) 40%, var(--color-soul) 60%, transparent);
+  animation: stream-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ─── Glow utilities ─── */
+
+.glow-soul {
+  box-shadow: 0 0 20px rgba(232, 168, 73, 0.15),
+              0 0 60px rgba(232, 168, 73, 0.05);
+}
+
+/* ─── Selection ─── */
+
+::selection {
+  background: rgba(232, 168, 73, 0.25);
+  color: var(--color-fg);
+}
+
+/* ─── Custom select ─── */
+
+select.soul-select {
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  padding: 5px 26px 5px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-fg-secondary);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%236a6a82' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+select.soul-select:hover {
+  border-color: var(--color-border-active);
+  background-color: var(--color-overlay);
+  color: var(--color-fg);
+}
+
+select.soul-select:focus {
+  outline: none;
+  border-color: var(--color-soul);
+  box-shadow: 0 0 0 1px var(--color-soul-dim);
+}

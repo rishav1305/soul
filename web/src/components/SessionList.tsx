@@ -1,19 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { SessionListProps, Session } from '../lib/types';
+import type { SessionListProps, Session, SessionStatus } from '../lib/types';
+import { formatRelativeTime } from '../lib/utils';
 
-function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
+function StatusDot({ status }: { status: SessionStatus }) {
+  switch (status) {
+    case 'running':
+      return <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />;
+    case 'completed_unread':
+      return <span className="w-2 h-2 rounded-full bg-soul ring-2 ring-soul/30 shrink-0" />;
+    default:
+      return <span className="w-2 h-2 rounded-full bg-fg-muted shrink-0" />;
+  }
 }
 
 function SessionItem({
@@ -30,7 +27,6 @@ function SessionItem({
   const [confirming, setConfirming] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-cancel confirmation after 3 seconds.
   useEffect(() => {
     if (confirming) {
       timerRef.current = setTimeout(() => setConfirming(false), 3000);
@@ -66,25 +62,28 @@ function SessionItem({
   );
 
   const title = session.title || 'New Session';
-  const timestamp = formatTimestamp(session.updatedAt || session.createdAt);
+  const timestamp = formatRelativeTime(session.updatedAt || session.createdAt);
 
   return (
     <button
       data-testid="session-item"
       type="button"
       onClick={onSwitch}
-      className={`w-full text-left px-3 py-2.5 group transition-colors cursor-pointer ${
+      className={`w-full text-left px-3 py-3.5 md:py-2.5 group transition-colors cursor-pointer ${
         isActive
-          ? 'bg-zinc-800 border-l-2 border-indigo-500'
-          : 'border-l-2 border-transparent hover:bg-zinc-800/50'
+          ? 'bg-elevated border-l-2 border-soul'
+          : 'border-l-2 border-transparent hover:bg-elevated/50'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-zinc-200 truncate">
-            {title}
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <StatusDot status={session.status} />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg truncate">
+              {title}
+            </div>
+            <div className="text-xs text-fg-muted mt-0.5">{timestamp}</div>
           </div>
-          <div className="text-xs text-zinc-500 mt-0.5">{timestamp}</div>
         </div>
         {confirming ? (
           <div className="flex items-center gap-1 shrink-0">
@@ -92,7 +91,7 @@ function SessionItem({
               data-testid="delete-confirm-btn"
               type="button"
               onClick={handleConfirm}
-              className="px-1.5 py-0.5 text-xs rounded bg-red-900/50 text-red-300 hover:bg-red-800/50 cursor-pointer"
+              className="px-2.5 py-1.5 md:px-1.5 md:py-0.5 text-xs rounded bg-red-900/50 text-red-300 hover:bg-red-800/50 cursor-pointer"
             >
               Delete?
             </button>
@@ -100,7 +99,7 @@ function SessionItem({
               data-testid="delete-cancel-btn"
               type="button"
               onClick={handleCancel}
-              className="px-1.5 py-0.5 text-xs rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+              className="px-2.5 py-1.5 md:px-1.5 md:py-0.5 text-xs rounded text-fg-muted hover:text-fg cursor-pointer"
             >
               Cancel
             </button>
@@ -109,7 +108,7 @@ function SessionItem({
           <button
             type="button"
             onClick={handleDeleteClick}
-            className="shrink-0 mt-0.5 p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            className="shrink-0 mt-0.5 p-1 rounded text-fg-muted hover:text-red-400 hover:bg-elevated opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
             aria-label={`Delete session ${title}`}
           >
             <svg
@@ -140,26 +139,44 @@ export function SessionList({
   onSwitch,
   onDelete,
 }: SessionListProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filtered = searchQuery
+    ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sessions;
+
   return (
     <div
       data-testid="session-list"
-      className="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col h-full shrink-0"
+      className="w-64 bg-surface border-r border-border-subtle flex flex-col h-full shrink-0"
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-        <h2 className="text-sm font-semibold text-zinc-300 tracking-tight">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+        <h2 className="text-sm font-semibold text-fg-secondary tracking-tight">
           Sessions
         </h2>
         <button
           data-testid="new-session-button"
           type="button"
           onClick={onCreate}
-          className="px-2 py-1 text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors cursor-pointer"
+          className="px-3 py-2 md:px-2 md:py-1 text-xs font-medium text-fg bg-elevated hover:bg-overlay rounded transition-colors cursor-pointer"
         >
           + New
         </button>
       </div>
+      {sessions.length > 5 && (
+        <div className="px-3 py-2 border-b border-border-subtle">
+          <input
+            data-testid="session-search"
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search sessions..."
+            className="w-full px-2 py-1.5 text-sm bg-elevated border border-border-default rounded text-fg placeholder:text-fg-muted outline-none focus:border-soul/40"
+          />
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
-        {sessions.map(session => (
+        {filtered.map(session => (
           <SessionItem
             key={session.id}
             session={session}
@@ -168,9 +185,9 @@ export function SessionList({
             onDelete={() => onDelete(session.id)}
           />
         ))}
-        {sessions.length === 0 && (
-          <div className="px-4 py-6 text-xs text-zinc-600 text-center">
-            No sessions yet
+        {filtered.length === 0 && (
+          <div className="px-4 py-6 text-xs text-fg-muted text-center">
+            {searchQuery ? 'No matching sessions' : 'No sessions yet'}
           </div>
         )}
       </div>

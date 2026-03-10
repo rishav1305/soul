@@ -3,9 +3,10 @@ import type { ConnectionState } from '../lib/types';
 
 interface ConnectionBannerProps {
   status: ConnectionState;
+  reconnectAttempt?: number;
 }
 
-export function ConnectionBanner({ status }: ConnectionBannerProps) {
+export function ConnectionBanner({ status, reconnectAttempt = 0 }: ConnectionBannerProps) {
   const [dismissed, setDismissed] = useState(false);
 
   // Reset dismissed state when status changes to a non-error state,
@@ -25,16 +26,18 @@ export function ConnectionBanner({ status }: ConnectionBannerProps) {
     ? 'bg-red-900/80 border-red-700'
     : 'bg-yellow-900/80 border-yellow-700';
   const textClass = isError ? 'text-red-200' : 'text-yellow-200';
-  const message = isError
-    ? 'Connection error. Retrying...'
-    : 'Connection lost. Reconnecting...';
+
+  const base = isError ? 'Connection error.' : 'Connection lost.';
+  const suffix = reconnectAttempt > 1
+    ? `Retry #${reconnectAttempt}...`
+    : 'Reconnecting...';
 
   return (
     <div
       data-testid="connection-banner"
       className={`flex items-center justify-between px-4 py-2 text-sm border-b ${bgClass} ${textClass} transition-opacity duration-300`}
     >
-      <span>{message}</span>
+      <span>{base} {suffix}</span>
       <button
         onClick={() => setDismissed(true)}
         className="ml-4 hover:opacity-70 transition-opacity"
