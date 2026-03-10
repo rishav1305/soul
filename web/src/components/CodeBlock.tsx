@@ -1,9 +1,6 @@
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback } from 'react';
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/prism-light';
 import oneDark from 'react-syntax-highlighter/dist/esm/styles/prism/one-dark';
-
-const MermaidBlock = lazy(() => import('./MermaidBlock').then(m => ({ default: m.MermaidBlock })));
-
 // Import only languages we actually use
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
 import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
@@ -92,14 +89,6 @@ interface CodeBlockProps {
 }
 
 export default function CodeBlock({ language, code }: CodeBlockProps) {
-  if (language.toLowerCase() === 'mermaid') {
-    return (
-      <Suspense fallback={<pre className="text-xs font-mono text-fg-muted p-3 bg-surface rounded-lg border border-border-subtle">Loading diagram...</pre>}>
-        <MermaidBlock content={code} />
-      </Suspense>
-    );
-  }
-
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
