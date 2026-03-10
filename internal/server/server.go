@@ -38,6 +38,8 @@ type Server struct {
 	staticDir    string
 	httpServer   *http.Server
 	startTime    time.Time
+	tlsCert      string // path to TLS certificate
+	tlsKey       string // path to TLS private key
 }
 
 // Option configures a Server.
@@ -78,6 +80,14 @@ func WithHub(hub *ws.Hub) Option {
 	return func(s *Server) { s.hub = hub }
 }
 
+// WithTLS enables HTTPS with the given certificate and key files.
+func WithTLS(certFile, keyFile string) Option {
+	return func(s *Server) {
+		s.tlsCert = certFile
+		s.tlsKey = keyFile
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -107,6 +117,7 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 	s.mux.HandleFunc("/api/reauth", s.handleReauth)
+	s.mux.HandleFunc("GET /api/ca.crt", s.handleCACert)
 
 	// Session routes.
 	s.mux.HandleFunc("GET /api/sessions", s.handleListSessions)
@@ -123,9 +134,10 @@ func New(opts ...Option) *Server {
 	s.mux.Handle("/", s.spaHandler())
 
 	// Build middleware chain: outermost runs first.
-	// Recovery → RequestID → CSP → RateLimit(API only) → mux
+	// Recovery → RequestID → CSP → BodyLimit → RateLimit(API only) → mux
 	handler := http.Handler(s.mux)
 	handler = rateLimitMiddleware(60)(handler)
+	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
 	handler = cspMiddleware(handler)
 	handler = requestIDMiddleware(handler)
 	handler = recoveryMiddleware(handler)
@@ -152,7 +164,21 @@ func (s *Server) Start() error {
 		})
 	}
 
-	log.Printf("soul-v2 server listening on %s", s.httpServer.Addr)
+	if s.tlsCert != "" && s.tlsKey != "" {
+		// Start a minimal HTTP server that serves the CA cert and redirects
+		// everything else to HTTPS. This lets devices download the CA cert
+		// before they trust it.
+		go s.startHTTPRedirect()
+
+		log.Printf("soul-v2 server listening on https://%s", s.httpServer.Addr)
+		err := s.httpServer.ListenAndServeTLS(s.tlsCert, s.tlsKey)
+		if err == http.ErrServerClosed {
+			return nil
+		}
+		return err
+	}
+
+	log.Printf("soul-v2 server listening on http://%s", s.httpServer.Addr)
 	err := s.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -224,6 +250,56 @@ func (s *Server) handleReauth(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"auth":   s.auth.Status(),
 	})
+}
+
+// startHTTPRedirect runs a plain HTTP server on port+1 that serves the CA cert
+// at /ca.crt and redirects everything else to HTTPS.
+func (s *Server) startHTTPRedirect() {
+	httpPort := s.port + 1
+	addr := net.JoinHostPort(s.host, strconv.Itoa(httpPort))
+
+	mux := http.NewServeMux()
+
+	// Serve CA cert over plain HTTP so devices can download it.
+	mux.HandleFunc("GET /ca.crt", s.handleCACert)
+
+	// Redirect everything else to HTTPS.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		target := fmt.Sprintf("https://%s:%d%s", r.Host, s.port, r.URL.RequestURI())
+		// Strip the HTTP redirect port from Host if present.
+		if host, _, err := net.SplitHostPort(r.Host); err == nil {
+			target = fmt.Sprintf("https://%s:%d%s", host, s.port, r.URL.RequestURI())
+		}
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	log.Printf("HTTP redirect server on http://%s (CA cert + redirect to HTTPS)", addr)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("HTTP redirect server error: %v", err)
+	}
+}
+
+// handleCACert serves the CA certificate for device trust installation.
+func (s *Server) handleCACert(w http.ResponseWriter, r *http.Request) {
+	if s.tlsCert == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "TLS not configured"})
+		return
+	}
+	caPath := filepath.Join(filepath.Dir(s.tlsCert), "ca.crt")
+	data, err := os.ReadFile(caPath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "CA certificate not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"soul-v2-ca.crt\"")
+	w.Write(data)
 }
 
 // --- Session handlers ---
@@ -429,8 +505,17 @@ func (s *Server) spaHandler() http.Handler {
 			cleanPath = "/index.html"
 		}
 
-		// Try to serve the requested file.
+		// Resolve to absolute path and verify it's within staticDir.
+		absDir, _ := filepath.Abs(s.staticDir)
 		filePath := filepath.Join(s.staticDir, cleanPath)
+		absPath, _ := filepath.Abs(filePath)
+		if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
+			// Path escapes static directory — serve SPA fallback.
+			s.serveIndexHTML(w, r)
+			return
+		}
+
+		// Try to serve the requested file.
 		info, err := os.Stat(filePath)
 		if err != nil || info.IsDir() {
 			// File not found — serve index.html (SPA fallback).
@@ -494,14 +579,30 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 }
 
 // cspMiddleware sets security headers on every response.
+// connect-src allows ws:/wss: broadly because the frontend derives the WS URL
+// from window.location.host (supports localhost, LAN IP, etc.). Origin validation
+// at WebSocket upgrade provides the actual access control.
 func cspMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'")
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// bodyLimitMiddleware limits request body size on POST/PUT/PATCH routes.
+// Returns 413 Payload Too Large if the body exceeds maxBytes.
+func bodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // rateLimitMiddleware implements a simple per-IP sliding window rate limiter.

@@ -70,7 +70,7 @@ func TestCSPHeaders(t *testing.T) {
 	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
 		t.Errorf("CSP missing style-src: %s", csp)
 	}
-	if !strings.Contains(csp, "connect-src 'self' ws://localhost:* ws://127.0.0.1:*") {
+	if !strings.Contains(csp, "connect-src 'self' ws: wss:") {
 		t.Errorf("CSP missing connect-src: %s", csp)
 	}
 	if !strings.Contains(csp, "frame-ancestors 'none'") {
@@ -977,6 +977,46 @@ func TestCreateSession_InvalidJSON(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&body)
 	if body["error"] != "invalid JSON body" {
 		t.Errorf("expected 'invalid JSON body', got %q", body["error"])
+	}
+}
+
+func TestSPAHandler_PathTraversal(t *testing.T) {
+	// Set up a temp directory with an index.html.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>ok</html>"), 0644)
+	os.MkdirAll(filepath.Join(dir, "assets"), 0755)
+	os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('ok')"), 0644)
+
+	srv := newTestServer(t, WithStaticDir(dir))
+
+	// Traversal attempts — all should serve index.html (SPA fallback), not leak files.
+	traversals := []string{
+		"/../../../etc/passwd",
+		"/..%2f..%2f..%2fetc/passwd",
+		"/%2e%2e/%2e%2e/etc/passwd",
+		"/assets/../../etc/passwd",
+	}
+
+	for _, path := range traversals {
+		req := httptest.NewRequest("GET", path, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		if strings.Contains(body, "root:") {
+			t.Errorf("path traversal succeeded for %s", path)
+		}
+	}
+
+	// Valid file should still work.
+	req := httptest.NewRequest("GET", "/assets/app.js", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid file returned %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "console.log") {
+		t.Error("valid file content not served")
 	}
 }
 
