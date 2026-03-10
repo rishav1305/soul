@@ -49,14 +49,40 @@ const SpeechRecognition = (typeof window !== 'undefined')
   ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) as (new () => SpeechRecognitionInstance) | undefined
   : undefined;
 
+interface SpeechRecognitionResultItem {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+interface SpeechRecognitionResult {
+  readonly length: number;
+  readonly isFinal: boolean;
+  [index: number]: SpeechRecognitionResultItem;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEvent {
+  readonly results: SpeechRecognitionResultList;
+  readonly resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent {
+  readonly error: string;
+  readonly message: string;
+}
+
 interface SpeechRecognitionInstance {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
   start(): void;
   stop(): void;
-  onresult: ((event: any) => void) | null;
-  onerror: ((event: any) => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
 }
 
@@ -187,7 +213,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let transcript = '';
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;

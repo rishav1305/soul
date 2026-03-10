@@ -23,6 +23,20 @@ interface UseChatReturn {
 const STREAMING_MESSAGE_ID = '__streaming__';
 const STORAGE_KEY = 'soul-v2-session';
 
+interface RawHistoryMessage {
+  id: string;
+  role: string;
+  content: string;
+  sessionId?: string;
+  session_id?: string;
+  createdAt?: string;
+  created_at?: string;
+  model?: string;
+  thinking?: string;
+  toolCalls?: ToolCallData[];
+  usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number };
+}
+
 function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -157,7 +171,7 @@ export function useChat(): UseChatReturn {
           if (isStreamingRef.current) break; // Don't overwrite during streaming.
           const payload = data as { messages: Message[] } | undefined;
           if (payload?.messages && sessionID === sessionIDRef.current) {
-            const hydrated = payload.messages.map((m: any) => ({
+            const hydrated = payload.messages.map((m: RawHistoryMessage) => ({
               id: m.id,
               role: m.role,
               content: m.content,
