@@ -299,7 +299,22 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 				"error_message": "stream ended without message_stop",
 			})
 		}
-		h.sendError(client, sessionID, "stream ended unexpectedly")
+
+		// Persist partial response so the user keeps what they received.
+		if fullText.Len() > 0 {
+			partial := fullText.String() + "\n\n[incomplete — stream ended unexpectedly]"
+			if stored, err := h.sessionStore.AddMessage(sessionID, "assistant", partial); err != nil {
+				log.Printf("ws: failed to store partial message for session %s: %v", sessionID, err)
+			} else if messageID == "" {
+				messageID = stored.ID
+			}
+		}
+
+		h.completeSession(client, sessionID)
+
+		// Send chat.done so the client finalizes the streaming message.
+		doneMsg := NewChatDone(sessionID, messageID)
+		h.sendToClient(client, doneMsg)
 		return
 	}
 
