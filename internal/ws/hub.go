@@ -86,8 +86,8 @@ func NewHub(opts ...HubOption) *Hub {
 		unregister:     make(chan *Client),
 		countReq:       make(chan chan int),
 		findReq:        make(chan chan []*Client),
-		broadcastCh:    make(chan []byte, 256),
-		sessionBcastCh: make(chan sessionBroadcast, 256),
+		broadcastCh:    make(chan []byte, 1024),
+		sessionBcastCh: make(chan sessionBroadcast, 1024),
 	}
 
 	for _, opt := range opts {
