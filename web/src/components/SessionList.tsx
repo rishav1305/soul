@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { SessionListProps, Session, SessionStatus } from '../lib/types';
 import { formatRelativeTime } from '../lib/utils';
+import { usePerformance } from '../hooks/usePerformance';
 
 function StatusDot({ status }: { status: SessionStatus }) {
   switch (status) {
@@ -24,6 +25,8 @@ const SessionItem = React.memo(function SessionItem({
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  usePerformance('SessionItem');
+
   const [confirming, setConfirming] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

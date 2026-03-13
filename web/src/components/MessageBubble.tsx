@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { MessageBubbleProps } from '../lib/types';
 import { formatRelativeTime, formatTokens } from '../lib/utils';
+import { usePerformance } from '../hooks/usePerformance';
 import { Markdown } from './Markdown';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallBlock } from './ToolCallBlock';
@@ -201,6 +202,8 @@ function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallData[] }) {
 }
 
 export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQuery }: MessageBubbleProps) {
+  usePerformance('MessageBubble');
+
   const isUser = message.role === 'user';
   const isToolUse = message.role === 'tool_use';
   const isToolResult = message.role === 'tool_result';
