@@ -241,6 +241,8 @@ export interface Session {
   title: string;
   /** last modification time */
   updatedAt: string;
+  lastMessage: string;
+  unreadCount: number;
 }
 
 /** ui-sessions */
@@ -384,7 +386,8 @@ export type InboundMessageType =
   | 'chat.stop'
   | 'session.switch'
   | 'session.create'
-  | 'session.delete';
+  | 'session.delete'
+  | 'session.rename';
 
 export type OutboundMessageType =
   | 'chat.thinking'
@@ -399,4 +402,5 @@ export type OutboundMessageType =
   | 'session.deleted'
   | 'session.list'
   | 'session.updated'
+  | 'session.history'
   | 'connection.ready';
