@@ -51,6 +51,21 @@ const (
 
 	// Cost events
 	EventCostStep = "cost.step"
+
+	// Database events
+	EventDBQuery = "db.query"
+	EventDBSlow  = "db.slow"
+
+	// HTTP request events (extended)
+	EventAPISlow = "api.slow"
+
+	// Alert events
+	EventAlertThreshold = "alert.threshold"
+
+	// Frontend events
+	EventFrontendError  = "frontend.error"
+	EventFrontendRender = "frontend.render"
+	EventFrontendWS     = "frontend.ws"
 )
 
 // Error taxonomy constants — categories for classifying errors.
