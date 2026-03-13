@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -62,6 +63,8 @@ type Session struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 	MessageCount int       `json:"messageCount"`
+	LastMessage  string    `json:"lastMessage"`
+	UnreadCount  int       `json:"unreadCount"`
 }
 
 // Message represents a single message within a session.
@@ -163,6 +166,52 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, 
 	if err != nil {
 		return fmt.Errorf("session: execute schema: %w", err)
 	}
+
+	for _, alt := range []string{
+		"ALTER TABLE sessions ADD COLUMN last_message TEXT DEFAULT ''",
+		"ALTER TABLE sessions ADD COLUMN unread_count INTEGER DEFAULT 0",
+	} {
+		if _, err := s.db.Exec(alt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("session: migrate column: %w", err)
+			}
+		}
+	}
+
+	// Backfill: set last_message from most recent message per session.
+	_, _ = s.db.Exec(`
+		UPDATE sessions SET last_message = (
+			SELECT CASE
+				WHEN length(m.content) > 100 THEN substr(m.content, 1, 100) || '...'
+				ELSE m.content
+			END
+			FROM messages m
+			WHERE m.session_id = sessions.id
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		)
+		WHERE last_message = '' AND EXISTS (
+			SELECT 1 FROM messages WHERE session_id = sessions.id
+		)
+	`)
+
+	// Backfill: set title from first user message for untitled sessions.
+	_, _ = s.db.Exec(`
+		UPDATE sessions SET title = (
+			SELECT CASE
+				WHEN length(m.content) > 50 THEN substr(m.content, 1, 50) || '...'
+				ELSE m.content
+			END
+			FROM messages m
+			WHERE m.session_id = sessions.id AND m.role = 'user'
+			ORDER BY m.created_at ASC
+			LIMIT 1
+		)
+		WHERE title = 'New Session' AND EXISTS (
+			SELECT 1 FROM messages WHERE session_id = sessions.id AND role = 'user'
+		)
+	`)
+
 	return nil
 }
 
@@ -184,11 +233,13 @@ func (s *Store) CreateSession(title string) (*Session, error) {
 	}
 
 	_, err := s.db.Exec(
-		"INSERT INTO sessions (id, title, status, created_at, updated_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO sessions (id, title, status, created_at, updated_at, message_count, last_message, unread_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		sess.ID, sess.Title, string(sess.Status),
 		sess.CreatedAt.Format(time.RFC3339Nano),
 		sess.UpdatedAt.Format(time.RFC3339Nano),
 		sess.MessageCount,
+		sess.LastMessage,
+		sess.UnreadCount,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: create: %w", err)
@@ -206,9 +257,9 @@ func (s *Store) GetSession(id string) (*Session, error) {
 	sess := &Session{}
 	var createdAt, updatedAt, status string
 	err := s.db.QueryRow(
-		"SELECT id, title, status, created_at, updated_at, message_count FROM sessions WHERE id = ?",
+		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count FROM sessions WHERE id = ?",
 		id,
-	).Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount)
+	).Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session: not found: %s", id)
 	}
@@ -232,7 +283,7 @@ func (s *Store) GetSession(id string) (*Session, error) {
 // ListSessions returns all sessions ordered by updated_at descending.
 func (s *Store) ListSessions() ([]*Session, error) {
 	rows, err := s.db.Query(
-		"SELECT id, title, status, created_at, updated_at, message_count FROM sessions ORDER BY updated_at DESC",
+		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count FROM sessions ORDER BY updated_at DESC",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: list: %w", err)
@@ -243,7 +294,7 @@ func (s *Store) ListSessions() ([]*Session, error) {
 	for rows.Next() {
 		sess := &Session{}
 		var createdAt, updatedAt, status string
-		if err := rows.Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount); err != nil {
+		if err := rows.Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount); err != nil {
 			return nil, fmt.Errorf("session: scan row: %w", err)
 		}
 		sess.Status = Status(status)
@@ -382,9 +433,18 @@ func (s *Store) AddMessage(sessionID, role, content string) (*Message, error) {
 		return nil, fmt.Errorf("session: add message: %w", err)
 	}
 
+	preview := content
+	if len(preview) > 100 {
+		preview = preview[:100]
+		if i := strings.LastIndex(preview, " "); i > 50 {
+			preview = preview[:i]
+		}
+		preview += "..."
+	}
+
 	_, err = s.db.Exec(
-		"UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?",
-		now.Format(time.RFC3339Nano), sessionID,
+		"UPDATE sessions SET message_count = message_count + 1, unread_count = unread_count + 1, last_message = ?, updated_at = ? WHERE id = ?",
+		preview, now.Format(time.RFC3339Nano), sessionID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: update message count: %w", err)
@@ -467,15 +527,56 @@ func (s *Store) AddMessageTx(tx *sql.Tx, sessionID, role, content string) (*Mess
 		return nil, fmt.Errorf("session: add message: %w", err)
 	}
 
+	preview := content
+	if len(preview) > 100 {
+		preview = preview[:100]
+		if i := strings.LastIndex(preview, " "); i > 50 {
+			preview = preview[:i]
+		}
+		preview += "..."
+	}
+
 	_, err = tx.Exec(
-		"UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?",
-		now.Format(time.RFC3339Nano), sessionID,
+		"UPDATE sessions SET message_count = message_count + 1, unread_count = unread_count + 1, last_message = ?, updated_at = ? WHERE id = ?",
+		preview, now.Format(time.RFC3339Nano), sessionID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: update message count: %w", err)
 	}
 
 	return msg, nil
+}
+
+// ResetUnreadCount resets the unread_count for a session to 0.
+func (s *Store) ResetUnreadCount(id string) error {
+	if !uuidRe.MatchString(id) {
+		return fmt.Errorf("session: invalid UUID format: %q", id)
+	}
+	_, err := s.db.Exec("UPDATE sessions SET unread_count = 0 WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("session: reset unread: %w", err)
+	}
+	return nil
+}
+
+// SetLastMessage updates the last_message preview for a session.
+func (s *Store) SetLastMessage(id, content string) error {
+	if !uuidRe.MatchString(id) {
+		return fmt.Errorf("session: invalid UUID format: %q", id)
+	}
+	preview := content
+	if len(preview) > 100 {
+		preview = preview[:100]
+		if i := strings.LastIndex(preview, " "); i > 50 {
+			preview = preview[:i]
+		}
+		preview += "..."
+	}
+	_, err := s.db.Exec("UPDATE sessions SET last_message = ? WHERE id = ?", preview, id)
+	if err != nil {
+		return fmt.Errorf("session: set last message: %w", err)
+	}
+	return nil
 }
 
 // Close closes the underlying database connection.
