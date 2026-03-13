@@ -19,6 +19,7 @@ interface UseChatReturn {
   createSession: () => void;
   switchSession: (id: string) => void;
   deleteSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
 }
 
 const STREAMING_MESSAGE_ID = '__streaming__';
@@ -169,7 +170,7 @@ export function useChat(): UseChatReturn {
           break;
         }
 
-        case 'session.history' as OutboundMessageType: {
+        case 'session.history': {
           // Server sends message history when switching sessions.
           if (isStreamingRef.current) break; // Don't overwrite during streaming.
           const payload = data as { messages: Message[] } | undefined;
@@ -487,6 +488,13 @@ export function useChat(): UseChatReturn {
     [send],
   );
 
+  const renameSession = useCallback(
+    (id: string, title: string) => {
+      send('session.rename', { sessionId: id, content: title });
+    },
+    [send],
+  );
+
   const reauth = useCallback(async () => {
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -542,5 +550,6 @@ export function useChat(): UseChatReturn {
     createSession,
     switchSession,
     deleteSession,
+    renameSession,
   };
 }

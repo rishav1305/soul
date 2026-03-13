@@ -51,6 +51,7 @@ export function Shell() {
     createSession,
     switchSession,
     deleteSession,
+    renameSession,
   } = useChat();
 
   const { isOpen, close, toggle, handlers } = useSwipeDrawer();
@@ -185,6 +186,7 @@ export function Shell() {
             onCreate={handleCreate}
             onSwitch={handleSwitch}
             onDelete={deleteSession}
+            onRename={renameSession}
           />
         </div>
 
