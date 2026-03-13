@@ -740,7 +740,9 @@ func (sr *statusRecorder) WriteHeader(code int) {
 func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/health" {
+			// Skip health checks (noise) and WebSocket upgrades
+			// (statusRecorder doesn't implement http.Hijacker).
+			if r.URL.Path == "/api/health" || r.URL.Path == "/ws" {
 				next.ServeHTTP(w, r)
 				return
 			}
