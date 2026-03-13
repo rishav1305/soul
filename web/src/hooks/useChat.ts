@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
+import { reportError } from '../lib/telemetry';
 
 interface UseChatReturn {
   messages: Message[];
@@ -83,7 +84,7 @@ export function useChat(): UseChatReturn {
                   sendRef.current('session.create', {});
                 }
               }
-            } catch { /* corrupted data — ignore */ }
+            } catch (err) { reportError('useChat.pendingRestore', err); }
           }
           break;
         }
@@ -398,7 +399,7 @@ export function useChat(): UseChatReturn {
         pendingMessageRef.current = pendingMessage;
         try {
           localStorage.setItem('soul-v2-pending', JSON.stringify(pendingMessage));
-        } catch { /* quota exceeded — proceed without persistence */ }
+        } catch (err) { reportError('useChat.pendingSave', err); }
         send('session.create', {});
         return;
       }
@@ -478,8 +479,8 @@ export function useChat(): UseChatReturn {
           setAuthError(false);
           return;
         }
-      } catch {
-        // Network error — retry after backoff.
+      } catch (err) {
+        reportError('useChat.reauth', err);
       }
       if (attempt < MAX_RETRIES - 1) {
         await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));

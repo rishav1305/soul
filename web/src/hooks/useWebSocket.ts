@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionState, OutboundMessageType } from '../lib/types';
 import { getWebSocketURL } from '../lib/ws';
+import { reportError } from '../lib/telemetry';
 
 interface UseWebSocketOptions {
   url?: string;
@@ -83,8 +84,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             parsed.sessionId ?? '',
           );
         }
-      } catch {
-        // Ignore malformed messages.
+      } catch (err) {
+        reportError('useWebSocket.parse', err);
       }
     };
 
