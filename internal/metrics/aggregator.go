@@ -70,6 +70,64 @@ type LatencyReport struct {
 	SampleCount   int
 }
 
+// AlertEntry represents a single threshold breach.
+type AlertEntry struct {
+	Timestamp time.Time
+	Metric    string
+	Field     string
+	Value     float64
+	Threshold float64
+	Severity  string
+}
+
+type AlertsReport struct {
+	Alerts []AlertEntry
+}
+
+type MethodStats struct {
+	Method string
+	Count  int
+	P50    time.Duration
+	P95    time.Duration
+	P99    time.Duration
+}
+
+type SlowQuery struct {
+	Timestamp  time.Time
+	Method     string
+	DurationMs float64
+	SessionID  string
+}
+
+type DBReport struct {
+	Methods     map[string]*MethodStats
+	SlowQueries []SlowQuery
+}
+
+type PathStats struct {
+	Path  string
+	Count int
+	P50   time.Duration
+	P95   time.Duration
+	P99   time.Duration
+}
+
+type RequestsReport struct {
+	Paths       map[string]*PathStats
+	StatusCodes map[int]int
+}
+
+type RenderEntry struct {
+	Component  string
+	DurationMs float64
+}
+
+type FrontendReport struct {
+	Errors      int
+	TopErrors   map[string]int
+	SlowRenders []RenderEntry
+}
+
 // Cost estimation rates (rough, Sonnet pricing).
 const (
 	inputCostPerMToken  = 3.0  // $3 per million input tokens
@@ -291,6 +349,132 @@ func (a *Aggregator) Latency() (*LatencyReport, error) {
 		report.StreamP99 = msToDuration(percentile(streamMs, 99))
 	}
 
+	return report, nil
+}
+
+// Alerts reads alert events and returns all threshold breach entries.
+func (a *Aggregator) Alerts() (*AlertsReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "alert")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	report := &AlertsReport{}
+	for _, ev := range events {
+		if ev.EventType != EventAlertThreshold {
+			continue
+		}
+		report.Alerts = append(report.Alerts, AlertEntry{
+			Timestamp: ev.Timestamp,
+			Metric:    getStringField(ev.Data, "metric"),
+			Field:     getStringField(ev.Data, "field"),
+			Value:     getFloatField(ev.Data, "value"),
+			Threshold: getFloatField(ev.Data, "threshold"),
+			Severity:  getStringField(ev.Data, "severity"),
+		})
+	}
+	return report, nil
+}
+
+// DB reads db events and computes per-method performance percentiles and slow queries.
+func (a *Aggregator) DB() (*DBReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "db")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	report := &DBReport{Methods: make(map[string]*MethodStats)}
+	methodDurations := make(map[string][]float64)
+
+	for _, ev := range events {
+		method := getStringField(ev.Data, "method")
+		dur := getFloatField(ev.Data, "duration_ms")
+		switch ev.EventType {
+		case EventDBQuery:
+			methodDurations[method] = append(methodDurations[method], dur)
+		case EventDBSlow:
+			report.SlowQueries = append(report.SlowQueries, SlowQuery{
+				Timestamp:  ev.Timestamp,
+				Method:     method,
+				DurationMs: dur,
+				SessionID:  getStringField(ev.Data, "session_id"),
+			})
+		}
+	}
+
+	for method, durations := range methodDurations {
+		sort.Float64s(durations)
+		report.Methods[method] = &MethodStats{
+			Method: method,
+			Count:  len(durations),
+			P50:    msToDuration(percentile(durations, 50)),
+			P95:    msToDuration(percentile(durations, 95)),
+			P99:    msToDuration(percentile(durations, 99)),
+		}
+	}
+	return report, nil
+}
+
+// Requests reads api events and computes per-path performance percentiles and status code counts.
+func (a *Aggregator) Requests() (*RequestsReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "api")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	report := &RequestsReport{
+		Paths:       make(map[string]*PathStats),
+		StatusCodes: make(map[int]int),
+	}
+	pathDurations := make(map[string][]float64)
+
+	for _, ev := range events {
+		if ev.EventType != EventAPIRequest {
+			continue
+		}
+		path := getStringField(ev.Data, "path")
+		dur := getFloatField(ev.Data, "duration_ms")
+		status := getIntField(ev.Data, "status")
+
+		pathDurations[path] = append(pathDurations[path], dur)
+		if status > 0 {
+			report.StatusCodes[status]++
+		}
+	}
+
+	for path, durations := range pathDurations {
+		sort.Float64s(durations)
+		report.Paths[path] = &PathStats{
+			Path:  path,
+			Count: len(durations),
+			P50:   msToDuration(percentile(durations, 50)),
+			P95:   msToDuration(percentile(durations, 95)),
+			P99:   msToDuration(percentile(durations, 99)),
+		}
+	}
+	return report, nil
+}
+
+// Frontend reads frontend events and computes error counts and slow render entries.
+func (a *Aggregator) Frontend() (*FrontendReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "frontend")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	report := &FrontendReport{TopErrors: make(map[string]int)}
+
+	for _, ev := range events {
+		switch ev.EventType {
+		case EventFrontendError:
+			report.Errors++
+			comp := getStringField(ev.Data, "component")
+			if comp != "" {
+				report.TopErrors[comp]++
+			}
+		case EventFrontendRender:
+			report.SlowRenders = append(report.SlowRenders, RenderEntry{
+				Component:  getStringField(ev.Data, "component"),
+				DurationMs: getFloatField(ev.Data, "duration_ms"),
+			})
+		}
+	}
 	return report, nil
 }
 

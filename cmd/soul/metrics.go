@@ -16,7 +16,7 @@ import (
 func runMetrics(args []string) {
 	if len(args) < 1 {
 		fmt.Println("usage: soul metrics <subcommand>")
-		fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, tail, log")
 		os.Exit(1)
 	}
 
@@ -31,13 +31,21 @@ func runMetrics(args []string) {
 		runMetricsCost()
 	case "latency":
 		runMetricsLatency()
+	case "alerts":
+		runMetricsAlerts()
+	case "db":
+		runMetricsDB()
+	case "requests":
+		runMetricsRequests()
+	case "frontend":
+		runMetricsFrontend()
 	case "tail":
 		runMetricsTail(args[1:])
 	case "log":
 		runMetricsLog(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown metrics subcommand: %s\n", args[0])
-		fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, tail, log")
 		os.Exit(1)
 	}
 }
@@ -189,6 +197,130 @@ func runMetricsLatency() {
 	fmt.Printf("    P50:  %s\n", report.StreamP50)
 	fmt.Printf("    P95:  %s\n", report.StreamP95)
 	fmt.Printf("    P99:  %s\n", report.StreamP99)
+}
+
+// runMetricsAlerts handles: soul metrics alerts
+func runMetricsAlerts() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+	report, err := agg.Alerts()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("=== Alert Thresholds ===")
+	if len(report.Alerts) == 0 {
+		fmt.Println("  No threshold breaches recorded.")
+		return
+	}
+	fmt.Printf("  %-20s %-16s %-12s %-10s %-10s %s\n", "TIMESTAMP", "METRIC", "FIELD", "VALUE", "THRESHOLD", "SEVERITY")
+	for _, a := range report.Alerts {
+		fmt.Printf("  %-20s %-16s %-12s %-10.0f %-10.0f %s\n",
+			a.Timestamp.Format("01-02 15:04:05"), a.Metric, a.Field, a.Value, a.Threshold, a.Severity)
+	}
+}
+
+// runMetricsDB handles: soul metrics db
+func runMetricsDB() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+	report, err := agg.DB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("=== Database Query Performance ===")
+	if len(report.Methods) == 0 {
+		fmt.Println("  No database events recorded.")
+		return
+	}
+	// Sort method names for deterministic output
+	methods := make([]string, 0, len(report.Methods))
+	for m := range report.Methods {
+		methods = append(methods, m)
+	}
+	sort.Strings(methods)
+
+	fmt.Printf("  %-24s %-8s %-12s %-12s %-12s\n", "METHOD", "COUNT", "P50", "P95", "P99")
+	for _, m := range methods {
+		s := report.Methods[m]
+		fmt.Printf("  %-24s %-8d %-12s %-12s %-12s\n", s.Method, s.Count, s.P50, s.P95, s.P99)
+	}
+	if len(report.SlowQueries) > 0 {
+		fmt.Printf("\n  Slow Queries (last %d):\n", len(report.SlowQueries))
+		for _, sq := range report.SlowQueries {
+			fmt.Printf("    %s %-20s %.0fms %s\n",
+				sq.Timestamp.Format("01-02 15:04:05"), sq.Method, sq.DurationMs, sq.SessionID)
+		}
+	}
+}
+
+// runMetricsRequests handles: soul metrics requests
+func runMetricsRequests() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+	report, err := agg.Requests()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("=== HTTP Request Performance ===")
+	if len(report.Paths) == 0 {
+		fmt.Println("  No request events recorded.")
+		return
+	}
+	paths := make([]string, 0, len(report.Paths))
+	for p := range report.Paths {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	fmt.Printf("  %-30s %-8s %-12s %-12s %-12s\n", "PATH", "COUNT", "P50", "P95", "P99")
+	for _, p := range paths {
+		s := report.Paths[p]
+		fmt.Printf("  %-30s %-8d %-12s %-12s %-12s\n", s.Path, s.Count, s.P50, s.P95, s.P99)
+	}
+	if len(report.StatusCodes) > 0 {
+		fmt.Println("\n  Status Code Distribution:")
+		codes := make([]int, 0, len(report.StatusCodes))
+		for c := range report.StatusCodes {
+			codes = append(codes, c)
+		}
+		sort.Ints(codes)
+		for _, c := range codes {
+			fmt.Printf("    %d: %d\n", c, report.StatusCodes[c])
+		}
+	}
+}
+
+// runMetricsFrontend handles: soul metrics frontend
+func runMetricsFrontend() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+	report, err := agg.Frontend()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("=== Frontend Report ===")
+	fmt.Printf("  Total Errors: %d\n", report.Errors)
+	if len(report.TopErrors) > 0 {
+		fmt.Println("\n  Errors by Component:")
+		comps := make([]string, 0, len(report.TopErrors))
+		for c := range report.TopErrors {
+			comps = append(comps, c)
+		}
+		sort.Strings(comps)
+		for _, c := range comps {
+			fmt.Printf("    %-24s %d\n", c, report.TopErrors[c])
+		}
+	}
+	if len(report.SlowRenders) > 0 {
+		fmt.Printf("\n  Slow Renders (%d):\n", len(report.SlowRenders))
+		for _, r := range report.SlowRenders {
+			fmt.Printf("    %-24s %.0fms\n", r.Component, r.DurationMs)
+		}
+	}
 }
 
 // runMetricsTail handles: soul metrics tail [--type PREFIX] [-n COUNT]
