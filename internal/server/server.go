@@ -134,8 +134,11 @@ func New(opts ...Option) *Server {
 	s.mux.Handle("/", s.spaHandler())
 
 	// Build middleware chain: outermost runs first.
-	// Recovery → RequestID → CSP → BodyLimit → RateLimit(API only) → mux
+	// Recovery → RequestID → CSP → BodyLimit → RateLimit(API only) → RequestLogger → mux
 	handler := http.Handler(s.mux)
+	if s.metrics != nil {
+		handler = requestLoggerMiddleware(s.metrics)(handler)
+	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
 	handler = cspMiddleware(handler)
@@ -687,6 +690,48 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the response status code.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+// requestLoggerMiddleware times every HTTP request and logs api.request events.
+// Requests exceeding 500ms also produce an api.slow event.
+// Health-check requests are passed through without logging.
+func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			sr := &statusRecorder{ResponseWriter: w, status: 200}
+			next.ServeHTTP(sr, r)
+			duration := time.Since(start).Milliseconds()
+
+			data := map[string]interface{}{
+				"method":      r.Method,
+				"path":        r.URL.Path,
+				"status":      sr.status,
+				"duration_ms": duration,
+			}
+			_ = logger.Log(metrics.EventAPIRequest, data)
+
+			if duration > 500 {
+				_ = logger.Log(metrics.EventAPISlow, data)
+			}
+		})
+	}
 }
 
 // --- Helpers ---
