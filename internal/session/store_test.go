@@ -475,6 +475,183 @@ func TestMigrate_Idempotent(t *testing.T) {
 	}
 }
 
+func TestAddMessage_SetsLastMessageAndUnreadCount(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	_, err = s.AddMessage(sess.ID, "user", "hello world")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.LastMessage != "hello world" {
+		t.Errorf("LastMessage = %q, want %q", got.LastMessage, "hello world")
+	}
+	if got.UnreadCount != 1 {
+		t.Errorf("UnreadCount = %d, want 1", got.UnreadCount)
+	}
+
+	_, err = s.AddMessage(sess.ID, "assistant", "hi back")
+	if err != nil {
+		t.Fatalf("AddMessage (second): %v", err)
+	}
+
+	got, err = s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession (second): %v", err)
+	}
+	if got.LastMessage != "hi back" {
+		t.Errorf("LastMessage = %q, want %q", got.LastMessage, "hi back")
+	}
+	if got.UnreadCount != 2 {
+		t.Errorf("UnreadCount = %d, want 2", got.UnreadCount)
+	}
+}
+
+func TestAddMessage_TruncatesLongLastMessage(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Build a message longer than 100 chars with a space past the 50-char mark.
+	longMsg := strings.Repeat("a", 60) + " " + strings.Repeat("b", 50)
+	_, err = s.AddMessage(sess.ID, "user", longMsg)
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if len(got.LastMessage) > len(longMsg) {
+		t.Errorf("LastMessage not truncated: len=%d", len(got.LastMessage))
+	}
+	if !strings.HasSuffix(got.LastMessage, "...") {
+		t.Errorf("LastMessage = %q, want suffix '...'", got.LastMessage)
+	}
+}
+
+func TestResetUnreadCount(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	_, err = s.AddMessage(sess.ID, "user", "msg1")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	_, err = s.AddMessage(sess.ID, "assistant", "msg2")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.UnreadCount != 2 {
+		t.Errorf("UnreadCount = %d, want 2 before reset", got.UnreadCount)
+	}
+
+	if err := s.ResetUnreadCount(sess.ID); err != nil {
+		t.Fatalf("ResetUnreadCount: %v", err)
+	}
+
+	got, err = s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession after reset: %v", err)
+	}
+	if got.UnreadCount != 0 {
+		t.Errorf("UnreadCount = %d, want 0 after reset", got.UnreadCount)
+	}
+}
+
+func TestSetLastMessage(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := s.SetLastMessage(sess.ID, "explicit preview"); err != nil {
+		t.Fatalf("SetLastMessage: %v", err)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.LastMessage != "explicit preview" {
+		t.Errorf("LastMessage = %q, want %q", got.LastMessage, "explicit preview")
+	}
+}
+
+func TestSetLastMessage_Truncates(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("Test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	longMsg := strings.Repeat("x", 200)
+	if err := s.SetLastMessage(sess.ID, longMsg); err != nil {
+		t.Fatalf("SetLastMessage: %v", err)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if !strings.HasSuffix(got.LastMessage, "...") {
+		t.Errorf("LastMessage = %q, expected truncation with '...'", got.LastMessage)
+	}
+}
+
+func TestMigrate_BackfillIdempotent(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("New Session")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	_, err = s.AddMessage(sess.ID, "user", "backfill test message")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	// Re-run Migrate — must not error.
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate (re-run): %v", err)
+	}
+
+	// DB should still be functional.
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession after re-migrate: %v", err)
+	}
+	if got.MessageCount != 1 {
+		t.Errorf("MessageCount = %d, want 1", got.MessageCount)
+	}
+}
+
 func TestNewUUID(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := 0; i < 100; i++ {
