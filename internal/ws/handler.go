@@ -69,6 +69,8 @@ func (h *MessageHandler) HandleMessage(client *Client, raw []byte) {
 		h.handleSessionCreate(client, msg)
 	case TypeSessionDelete:
 		h.handleSessionDelete(client, msg)
+	case TypeSessionRename:
+		h.handleSessionRename(client, msg)
 	default:
 		log.Printf("ws: unknown message type %q from client %s", msg.Type, client.ID())
 	}
@@ -105,8 +107,12 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 	sess, _ := h.sessionStore.GetSession(msg.SessionID)
 	if sess != nil && sess.MessageCount == 0 {
 		title := msg.Content
-		if len(title) > 100 {
-			title = title[:100]
+		if len(title) > 50 {
+			title = title[:50]
+			if i := strings.LastIndex(title, " "); i > 25 {
+				title = title[:i]
+			}
+			title += "..."
 		}
 		if updated, err := h.sessionStore.UpdateSessionTitle(msg.SessionID, title); err == nil {
 			h.broadcast(NewSessionUpdated(updated))
@@ -128,6 +134,11 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		log.Printf("ws: failed to store message: %v", err)
 		h.sendError(client, msg.SessionID, "failed to store message")
 		return
+	}
+
+	// User is active in this session — reset unread count.
+	if err := h.sessionStore.ResetUnreadCount(msg.SessionID); err != nil {
+		log.Printf("ws: failed to reset unread count for session %s: %v", msg.SessionID, err)
 	}
 
 	// If no stream client is configured, fall back to immediate chat.done.
@@ -379,6 +390,11 @@ func (h *MessageHandler) handleSessionSwitch(client *Client, msg *InboundMessage
 	// Subscribe client to the session.
 	client.Subscribe(msg.SessionID)
 
+	// Reset unread count for the session being switched to.
+	if err := h.sessionStore.ResetUnreadCount(msg.SessionID); err != nil {
+		log.Printf("ws: failed to reset unread count for session %s: %v", msg.SessionID, err)
+	}
+
 	// Mark session as read if it was completed_unread.
 	if sess.Status == session.StatusCompletedUnread {
 		if err := h.sessionStore.UpdateSessionStatus(msg.SessionID, session.StatusIdle); err == nil {
@@ -462,6 +478,34 @@ func (h *MessageHandler) handleSessionDelete(client *Client, msg *InboundMessage
 	h.broadcast(out)
 }
 
+// handleSessionRename processes a session.rename message. It validates the
+// session ID and title, updates the session title, and broadcasts the update.
+func (h *MessageHandler) handleSessionRename(client *Client, msg *InboundMessage) {
+	if msg.SessionID == "" {
+		h.sendError(client, "", "session ID required")
+		return
+	}
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
+		return
+	}
+
+	title := ValidateSessionTitle(msg.Content)
+	if title == "" {
+		h.sendError(client, msg.SessionID, "title cannot be empty")
+		return
+	}
+
+	updated, err := h.sessionStore.UpdateSessionTitle(msg.SessionID, title)
+	if err != nil {
+		log.Printf("ws: failed to rename session %s: %v", msg.SessionID, err)
+		h.sendError(client, msg.SessionID, "failed to rename session")
+		return
+	}
+
+	h.broadcast(NewSessionUpdated(updated))
+}
+
 // completeSession transitions a session from running to completed/completed_unread
 // and broadcasts the update. If the client is currently viewing this session,
 // it transitions to completed; otherwise to completed_unread (unread badge).
@@ -483,6 +527,78 @@ func (h *MessageHandler) completeSession(client *Client, sessionID string) {
 	}
 	if updated, err := h.sessionStore.GetSession(sessionID); err == nil {
 		h.broadcast(NewSessionUpdated(updated))
+
+		// Background smart title: after first assistant response (MessageCount == 2).
+		if updated.MessageCount == 2 && h.streamClient != nil {
+			go h.generateSmartTitle(sessionID)
+		}
+	}
+}
+
+// generateSmartTitle generates a smart title for a session using the Claude API.
+// It runs in a background goroutine after the first assistant response.
+func (h *MessageHandler) generateSmartTitle(sessionID string) {
+	messages, err := h.sessionStore.GetMessages(sessionID)
+	if err != nil || len(messages) < 2 {
+		return
+	}
+
+	var userMsg, assistantMsg string
+	for _, m := range messages {
+		if m.Role == "user" && userMsg == "" {
+			userMsg = m.Content
+			if len(userMsg) > 500 {
+				userMsg = userMsg[:500]
+			}
+		}
+		if m.Role == "assistant" && assistantMsg == "" {
+			assistantMsg = m.Content
+			if len(assistantMsg) > 500 {
+				assistantMsg = assistantMsg[:500]
+			}
+		}
+		if userMsg != "" && assistantMsg != "" {
+			break
+		}
+	}
+
+	if userMsg == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req := &stream.Request{
+		Model:     "claude-haiku-4-5-20251001",
+		MaxTokens: 30,
+		System:    "Generate a 3-5 word title for this conversation. Reply with ONLY the title, no quotes, no punctuation at the end.",
+		Messages: []stream.Message{
+			{Role: "user", Content: []stream.ContentBlock{{Type: "text", Text: fmt.Sprintf("User: %s\n\nAssistant: %s", userMsg, assistantMsg)}}},
+		},
+	}
+
+	ch, err := h.streamClient.Stream(ctx, req)
+	if err != nil {
+		log.Printf("ws: smart title stream error for session %s: %v", sessionID, err)
+		return
+	}
+
+	var title strings.Builder
+	for evt := range ch {
+		if evt.Type == "content_block_delta" && evt.Delta != nil && evt.Delta.Text != "" {
+			title.WriteString(evt.Delta.Text)
+		}
+	}
+
+	generated := strings.TrimSpace(title.String())
+	if generated == "" || len(generated) > 100 {
+		return
+	}
+
+	if updated, err := h.sessionStore.UpdateSessionTitle(sessionID, generated); err == nil {
+		h.broadcast(NewSessionUpdated(updated))
+		log.Printf("ws: smart title for session %s: %q", sessionID, generated)
 	}
 }
 
