@@ -13,6 +13,7 @@ const (
 	TypeSessionSwitch = "session.switch"
 	TypeSessionCreate = "session.create"
 	TypeSessionDelete = "session.delete"
+	TypeSessionRename = "session.rename"
 )
 
 // Input validation limits.
