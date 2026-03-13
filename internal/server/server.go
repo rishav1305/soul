@@ -125,6 +125,9 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
 	s.mux.HandleFunc("GET /api/sessions/{id}/messages", s.handleGetMessages)
 
+	// Telemetry route.
+	s.mux.HandleFunc("POST /api/telemetry", s.handleTelemetry)
+
 	// WebSocket route — must be registered before SPA fallback.
 	if s.hub != nil {
 		s.mux.HandleFunc("/ws", s.hub.HandleUpgrade)
@@ -450,6 +453,34 @@ func (s *Server) handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"messages": messages,
 	})
+}
+
+// handleTelemetry accepts frontend events and logs them to the metrics logger.
+func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	if s.metrics == nil {
+		http.Error(w, "metrics not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var payload struct {
+		Type string                 `json:"type"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	switch payload.Type {
+	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS:
+		// OK — known event types
+	default:
+		http.Error(w, "unknown event type", http.StatusBadRequest)
+		return
+	}
+
+	_ = s.metrics.Log(payload.Type, payload.Data)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // isValidUUID checks if a string is a valid UUID v4 format.
