@@ -26,6 +26,10 @@ type EventLogger struct {
 
 	// nowFunc is an injectable clock for testing rotation without real time changes.
 	nowFunc func() time.Time
+
+	// alertChecker is called after each event write (outside the mutex) to
+	// evaluate threshold rules. It is optional; nil means no alerting.
+	alertChecker *AlertChecker
 }
 
 // NewEventLogger creates a new EventLogger that writes to dataDir/metrics.jsonl.
@@ -49,10 +53,22 @@ func NewEventLogger(dataDir string) (*EventLogger, error) {
 	}, nil
 }
 
+// SetAlertChecker attaches an AlertChecker that will be invoked after each
+// event is written. The checker runs outside the EventLogger mutex to avoid
+// recursive deadlock when it logs its own alert.threshold events.
+func (l *EventLogger) SetAlertChecker(ac *AlertChecker) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.alertChecker = ac
+}
+
 // Log writes an event with the given type and data to the JSONL file.
 // It creates the event with the current time, validates it, marshals to JSON,
 // writes a single line, and flushes immediately.
 // Before writing, it checks if the UTC date has changed and rotates if needed.
+// After releasing the mutex it invokes the AlertChecker (if set) so that
+// alerts can themselves call Log() without deadlocking. alert.threshold events
+// are never re-checked to prevent infinite recursion.
 func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	now := l.nowFunc()
 	ev := Event{
@@ -72,7 +88,6 @@ func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	buf = append(buf, '\n')
 
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	// Check if the date has changed (rotation needed).
 	if err := l.checkRotate(now); err != nil {
@@ -82,10 +97,23 @@ func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	}
 
 	if _, err := l.file.Write(buf); err != nil {
+		l.mu.Unlock()
 		return fmt.Errorf("write event: %w", err)
 	}
 	if err := l.file.Sync(); err != nil {
+		l.mu.Unlock()
 		return fmt.Errorf("flush event: %w", err)
+	}
+
+	// Capture checker while still holding the lock, then release before calling
+	// it so that alert.threshold events written by the checker can acquire the
+	// lock without deadlocking.
+	checker := l.alertChecker
+	l.mu.Unlock()
+
+	// Skip alert.threshold events to prevent infinite recursion.
+	if checker != nil && eventType != EventAlertThreshold {
+		checker.Check(eventType, data)
 	}
 
 	return nil

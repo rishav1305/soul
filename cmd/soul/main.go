@@ -61,6 +61,9 @@ func runServe() {
 	}
 	defer logger.Close()
 
+	alertChecker := metrics.NewAlertCheckerWithDefaults(logger)
+	logger.SetAlertChecker(alertChecker)
+
 	// Load OAuth credentials (best effort — server works without auth).
 	credPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
 	authSource := auth.NewOAuthTokenSource(credPath, logger)
