@@ -30,7 +30,7 @@ type Hub struct {
 	broadcastCh    chan []byte
 	sessionBcastCh chan sessionBroadcast
 	metrics        *metrics.EventLogger
-	sessionStore   *session.Store
+	sessionStore   session.StoreInterface
 	handler        *MessageHandler
 	allowedOrigins []string
 	clientCounter  uint64
@@ -51,7 +51,7 @@ func WithMetricsLogger(l *metrics.EventLogger) HubOption {
 }
 
 // WithSessionStore sets the session store for session operations.
-func WithSessionStore(s *session.Store) HubOption {
+func WithSessionStore(s session.StoreInterface) HubOption {
 	return func(h *Hub) { h.sessionStore = s }
 }
 

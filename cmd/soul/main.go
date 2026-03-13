@@ -70,11 +70,14 @@ func runServe() {
 
 	// Open session store.
 	dbPath := filepath.Join(dataDir, "sessions.db")
-	store, err := session.Open(dbPath)
+	rawStore, err := session.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open session store: %v", err)
 	}
-	defer store.Close()
+	defer rawStore.Close()
+
+	// Wrap with timing instrumentation (100ms slow query threshold).
+	store := session.NewTimedStore(rawStore, logger, 100)
 
 	// Start system health sampler (30s interval).
 	sampler := metrics.NewSampler(logger, 30*time.Second)

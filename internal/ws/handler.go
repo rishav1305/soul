@@ -20,7 +20,7 @@ import (
 // to the hub event loop or the thread-safe session store.
 type MessageHandler struct {
 	hub          *Hub
-	sessionStore *session.Store
+	sessionStore session.StoreInterface
 	streamClient *stream.Client
 	metrics      *metrics.EventLogger
 }
@@ -28,7 +28,7 @@ type MessageHandler struct {
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
 // The streamClient parameter may be nil — if so, chat.send will store the user
 // message and immediately return chat.done without streaming (Phase 3 behavior).
-func NewMessageHandler(hub *Hub, store *session.Store, mel *metrics.EventLogger, opts ...MessageHandlerOption) *MessageHandler {
+func NewMessageHandler(hub *Hub, store session.StoreInterface, mel *metrics.EventLogger, opts ...MessageHandlerOption) *MessageHandler {
 	h := &MessageHandler{
 		hub:          hub,
 		sessionStore: store,

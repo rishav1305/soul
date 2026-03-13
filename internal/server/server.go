@@ -33,7 +33,7 @@ type Server struct {
 	mux          *http.ServeMux
 	auth         *auth.OAuthTokenSource
 	metrics      *metrics.EventLogger
-	sessionStore *session.Store
+	sessionStore session.StoreInterface
 	hub          *ws.Hub
 	staticDir    string
 	httpServer   *http.Server
@@ -66,7 +66,7 @@ func WithMetrics(l *metrics.EventLogger) Option {
 }
 
 // WithSessionStore sets the session store for session CRUD endpoints.
-func WithSessionStore(store *session.Store) Option {
+func WithSessionStore(store session.StoreInterface) Option {
 	return func(s *Server) { s.sessionStore = store }
 }
 
