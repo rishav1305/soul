@@ -132,6 +132,22 @@ func (ts *TimedStore) RunInTransaction(fn func(tx *sql.Tx) error) error {
 	return err
 }
 
+// ResetUnreadCount resets the unread_count for a session and logs timing.
+func (ts *TimedStore) ResetUnreadCount(id string) error {
+	start := time.Now()
+	err := ts.inner.ResetUnreadCount(id)
+	ts.logQuery("ResetUnreadCount", start, id)
+	return err
+}
+
+// SetLastMessage updates the last_message preview for a session and logs timing.
+func (ts *TimedStore) SetLastMessage(id, content string) error {
+	start := time.Now()
+	err := ts.inner.SetLastMessage(id, content)
+	ts.logQuery("SetLastMessage", start, id)
+	return err
+}
+
 // Close closes the underlying database connection without timing instrumentation.
 func (ts *TimedStore) Close() error {
 	return ts.inner.Close()

@@ -15,5 +15,7 @@ type StoreInterface interface {
 	AddMessageTx(tx *sql.Tx, sessionID, role, content string) (*Message, error)
 	GetMessages(sessionID string) ([]*Message, error)
 	RunInTransaction(fn func(tx *sql.Tx) error) error
+	ResetUnreadCount(id string) error
+	SetLastMessage(id, content string) error
 	Close() error
 }
