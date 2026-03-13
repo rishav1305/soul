@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
-import { reportError } from '../lib/telemetry';
+import { reportError, reportWSLatency } from '../lib/telemetry';
 
 interface UseChatReturn {
   messages: Message[];
@@ -54,6 +54,8 @@ export function useChat(): UseChatReturn {
   const sessionIDRef = useRef<string | null>(null);
   const sessionsRef = useRef<Session[]>([]);
   const isStreamingRef = useRef(false);
+  const sendTimeRef = useRef<number>(0);
+  const firstTokenTimeRef = useRef<number>(0);
 
   // Keep streaming ref in sync.
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -217,6 +219,9 @@ export function useChat(): UseChatReturn {
         }
 
         case 'chat.token': {
+          if (sendTimeRef.current > 0 && firstTokenTimeRef.current === 0) {
+            firstTokenTimeRef.current = performance.now();
+          }
           const payload = data as { token: string; messageId: string } | undefined;
           if (!payload) break;
 
@@ -260,6 +265,16 @@ export function useChat(): UseChatReturn {
             ),
           );
           setIsStreaming(false);
+          if (sendTimeRef.current > 0) {
+            const now = performance.now();
+            const firstTokenMs = firstTokenTimeRef.current > 0
+              ? firstTokenTimeRef.current - sendTimeRef.current
+              : 0;
+            const totalMs = now - sendTimeRef.current;
+            reportWSLatency(Math.round(firstTokenMs), Math.round(totalMs));
+            sendTimeRef.current = 0;
+            firstTokenTimeRef.current = 0;
+          }
           setAuthError(false);
           localStorage.removeItem('soul-v2-pending');
           break;
@@ -420,6 +435,8 @@ export function useChat(): UseChatReturn {
       if (options?.model) payload.model = options.model;
       if (options?.thinking) payload.thinking = true;
       if (options?.attachments?.length) payload.attachments = options.attachments;
+      sendTimeRef.current = performance.now();
+      firstTokenTimeRef.current = 0;
       send('chat.send', payload);
     },
     [send],
