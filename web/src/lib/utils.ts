@@ -16,3 +16,16 @@ export function formatTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
+
+export type TimeGroup = 'Today' | 'Yesterday' | 'Older';
+
+export function getTimeGroup(dateStr: string): TimeGroup {
+  const now = new Date();
+  const then = new Date(dateStr);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+
+  if (then >= today) return 'Today';
+  if (then >= yesterday) return 'Yesterday';
+  return 'Older';
+}
