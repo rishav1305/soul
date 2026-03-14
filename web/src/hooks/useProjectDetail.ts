@@ -28,7 +28,7 @@ export function useProjectDetail(projectId: number): UseProjectDetailReturn {
     try {
       const [detail, guideText] = await Promise.all([
         api.get<ProjectDetail>(`/api/projects/${projectId}`),
-        api.get<string>(`/api/projects/${projectId}/guide`).catch(() => ''),
+        fetch(`/api/projects/${projectId}/guide`).then(r => r.ok ? r.json().then(d => d.content || '') : '').catch(() => ''),
       ]);
       setProject(detail);
       setGuide(guideText || '');
