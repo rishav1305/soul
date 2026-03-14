@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 	"github.com/rishav1305/soul-v2/pkg/events"
 )
@@ -20,6 +21,7 @@ type Server struct {
 	mux         *http.ServeMux
 	httpServer  *http.Server
 	store       *store.Store
+	executor    *executor.Executor
 	broadcaster *Broadcaster
 	logger      events.Logger
 	host        string
@@ -30,10 +32,11 @@ type Server struct {
 // Option configures the Server.
 type Option func(*Server)
 
-func WithStore(s *store.Store) Option   { return func(srv *Server) { srv.store = s } }
-func WithLogger(l events.Logger) Option { return func(srv *Server) { srv.logger = l } }
-func WithHost(h string) Option          { return func(srv *Server) { srv.host = h } }
-func WithPort(p int) Option             { return func(srv *Server) { srv.port = p } }
+func WithStore(s *store.Store) Option      { return func(srv *Server) { srv.store = s } }
+func WithLogger(l events.Logger) Option   { return func(srv *Server) { srv.logger = l } }
+func WithHost(h string) Option            { return func(srv *Server) { srv.host = h } }
+func WithPort(p int) Option               { return func(srv *Server) { srv.port = p } }
+func WithExecutor(e *executor.Executor) Option { return func(srv *Server) { srv.executor = e } }
 
 // New creates a new tasks Server.
 func New(opts ...Option) *Server {
@@ -228,16 +231,58 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleStartTask(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error": "autonomous execution not yet implemented — see Plan 3",
-	})
+func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
+	if s.executor == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "executor not configured"})
+		return
+	}
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := s.executor.Start(r.Context(), id); err != nil {
+		status := http.StatusInternalServerError
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "already running") || strings.Contains(errMsg, "max parallel") {
+			status = http.StatusConflict
+		}
+		if strings.Contains(errMsg, "not found") {
+			status = http.StatusNotFound
+		}
+		if strings.Contains(errMsg, "must be backlog or blocked") {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, map[string]string{"error": errMsg})
+		return
+	}
+	task, _ := s.store.Get(id)
+	if task != nil {
+		data, _ := json.Marshal(task)
+		s.broadcaster.Broadcast(Event{Type: "task.started", Data: string(data)})
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
 }
 
-func (s *Server) handleStopTask(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error": "autonomous execution not yet implemented — see Plan 3",
-	})
+func (s *Server) handleStopTask(w http.ResponseWriter, r *http.Request) {
+	if s.executor == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "executor not configured"})
+		return
+	}
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := s.executor.Stop(id); err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "not running") {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
 func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {

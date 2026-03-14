@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 	"github.com/rishav1305/soul-v2/pkg/events"
 )
@@ -186,7 +187,20 @@ func TestTaskActivity(t *testing.T) {
 	}
 }
 
-func TestStartTask_NotImplemented(t *testing.T) {
+func newTestServerWithExecutor(t *testing.T) (*Server, *store.Store) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	exec := executor.New(executor.Config{Store: s, MaxParallel: 3})
+	srv := New(WithStore(s), WithLogger(events.NopLogger{}), WithExecutor(exec))
+	return srv, s
+}
+
+func TestStartTask_NoExecutor(t *testing.T) {
 	srv := newTestServer(t)
 
 	body := `{"title":"Start me"}`
@@ -200,7 +214,50 @@ func TestStartTask_NotImplemented(t *testing.T) {
 	req = httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/start", created.ID), nil)
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("status = %d, want 501", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
+func TestStartTask(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+
+	body := `{"title":"Start me"}`
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	var created store.Task
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/start", created.ID), nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp["status"] != "started" {
+		t.Errorf("status = %q, want started", resp["status"])
+	}
+}
+
+func TestStopTask_NotRunning(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+
+	body := `{"title":"Stop me"}`
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	var created store.Task
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/stop", created.ID), nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409", rec.Code)
 	}
 }

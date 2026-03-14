@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/server"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 	"github.com/rishav1305/soul-v2/pkg/events"
@@ -53,6 +54,12 @@ func runServe() {
 	// Recover interrupted tasks on startup.
 	recoverInterruptedTasks(taskStore)
 
+	// Create executor.
+	exec := executor.New(executor.Config{
+		Store:       taskStore,
+		MaxParallel: 3,
+	})
+
 	// Server options.
 	host := os.Getenv("SOUL_TASKS_HOST")
 	if host == "" {
@@ -70,6 +77,7 @@ func runServe() {
 		server.WithLogger(events.NopLogger{}),
 		server.WithHost(host),
 		server.WithPort(port),
+		server.WithExecutor(exec),
 	}
 
 	srv := server.New(opts...)
