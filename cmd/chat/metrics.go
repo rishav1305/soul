@@ -15,7 +15,7 @@ import (
 
 func runMetrics(args []string) {
 	if len(args) < 1 {
-		fmt.Println("usage: soul metrics <subcommand>")
+		fmt.Println("usage: soul-chat metrics <subcommand>")
 		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, tail, log")
 		os.Exit(1)
 	}
@@ -361,7 +361,7 @@ func runMetricsTail(args []string) {
 // runMetricsLog handles: soul metrics log <kind> [flags]
 func runMetricsLog(args []string) {
 	if len(args) < 1 {
-		fmt.Println("usage: soul metrics log <kind>")
+		fmt.Println("usage: soul-chat metrics log <kind>")
 		fmt.Println("kinds: error, false-positive, quality")
 		os.Exit(1)
 	}

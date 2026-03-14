@@ -21,7 +21,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: soul <command>")
+		fmt.Println("usage: soul-chat <command>")
 		fmt.Println("commands: serve, metrics")
 		os.Exit(1)
 	}
@@ -31,7 +31,7 @@ func main() {
 		runServe()
 	case "metrics":
 		if len(os.Args) < 3 {
-			fmt.Println("usage: soul metrics <subcommand>")
+			fmt.Println("usage: soul-chat metrics <subcommand>")
 			fmt.Println("subcommands: status, quality, layers, cost, latency, tail, log")
 			os.Exit(1)
 		}
