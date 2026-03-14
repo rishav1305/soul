@@ -6,7 +6,12 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/rishav1305/soul-v2/pkg/events"
 )
+
+// Compile-time check: EventLogger satisfies events.Logger.
+var _ events.Logger = (*EventLogger)(nil)
 
 const metricsFileName = "metrics.jsonl"
 
