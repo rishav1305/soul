@@ -30,6 +30,7 @@ export function AppLayout() {
             <NavLink to="/chat" className={navLinkClass}>Chat</NavLink>
             <NavLink to="/tasks" className={navLinkClass}>Tasks</NavLink>
             <NavLink to="/tutor" className={navLinkClass}>Tutor</NavLink>
+            <NavLink to="/projects" className={navLinkClass}>Projects</NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-2" data-testid="connection-status">
