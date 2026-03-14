@@ -404,3 +404,29 @@ export type OutboundMessageType =
   | 'session.updated'
   | 'session.history'
   | 'connection.ready';
+
+// --- Manual types (not auto-generated) ---
+
+/** tasks */
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  stage: TaskStage;
+  workflow: string;
+  product: string;
+  metadata: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TaskStage = 'backlog' | 'active' | 'validation' | 'done' | 'blocked';
+
+/** tasks */
+export interface TaskActivity {
+  id: number;
+  taskId: number;
+  eventType: string;
+  data: string;
+  createdAt: string;
+}
