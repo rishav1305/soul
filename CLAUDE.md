@@ -38,8 +38,17 @@ internal/tasks/
     worktree.go               Git worktree isolation per task
     verify.go                 L1 verification gate (go vet + tsc)
 web/src/
-  components/                 React components (Shell, Chat, Sessions)
-  hooks/                      Custom hooks (useWebSocket, useSessions)
+  main.tsx                    Entry — RouterProvider with lazy-loaded routes
+  router.tsx                  Route definitions (/, /chat, /tasks, /tasks/:id)
+  layouts/
+    AppLayout.tsx             Shared header + nav + Outlet
+  pages/
+    ChatPage.tsx              Chat interface (extracted from Shell)
+    DashboardPage.tsx         System overview — task counts, recent tasks
+    TasksPage.tsx             Kanban board — Backlog/Active/Validation/Done/Blocked
+    TaskDetailPage.tsx        Single task view with activity timeline
+  components/                 React components (Shell, Chat, Sessions, TaskCard)
+  hooks/                      Custom hooks (useChat, useTasks, useTaskEvents)
   lib/                        types.ts (generated), ws.ts, api.ts
 specs/                        YAML module specs (source of truth)
 tests/                        Integration, E2E, load, verification
