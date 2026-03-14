@@ -3,6 +3,8 @@ package executor
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
@@ -13,6 +15,7 @@ type Config struct {
 	Store       *store.Store
 	MaxParallel int
 	RepoDir     string
+	Client      Sender // Claude API client (nil = skip agent loop)
 }
 
 // Executor manages the lifecycle of running tasks.
@@ -20,6 +23,7 @@ type Executor struct {
 	store       *store.Store
 	maxParallel int
 	repoDir     string
+	client      Sender
 	mu          sync.Mutex
 	running     map[int64]context.CancelFunc
 }
@@ -33,6 +37,7 @@ func New(cfg Config) *Executor {
 		store:       cfg.Store,
 		maxParallel: cfg.MaxParallel,
 		repoDir:     cfg.RepoDir,
+		client:      cfg.Client,
 		running:     make(map[int64]context.CancelFunc),
 	}
 }
@@ -113,8 +118,8 @@ func (e *Executor) RunningCount() int {
 	return len(e.running)
 }
 
-// run is the goroutine that executes the task pipeline.
-// This is a placeholder that will be replaced in Task 8 with the full pipeline.
+// run is the goroutine that executes the full task pipeline:
+// classify → worktree → agent loop → verify → commit → validation.
 func (e *Executor) run(ctx context.Context, taskID int64) {
 	defer func() {
 		e.mu.Lock()
@@ -124,11 +129,14 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 
 	task, err := e.store.Get(taskID)
 	if err != nil {
+		log.Printf("[executor] task %d: get failed: %v", taskID, err)
+		e.markBlocked(taskID, fmt.Sprintf("failed to get task: %v", err))
 		return
 	}
 
 	workflow := ClassifyWorkflow(task.Title, task.Description)
 	iterLimit := IterationLimit(workflow)
+	log.Printf("[executor] task %d: workflow=%s limit=%d title=%q", taskID, workflow, iterLimit, task.Title)
 
 	_ = e.store.AddActivity(taskID, "executor.classify", map[string]interface{}{
 		"workflow":        workflow,
@@ -139,6 +147,138 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 		return
 	}
 
+	// Create worktree if repo is configured.
+	var workDir string
+	var wt *Worktree
+	if e.repoDir != "" {
+		wt, err = CreateWorktree(e.repoDir, taskID)
+		if err != nil {
+			log.Printf("[executor] task %d: worktree failed: %v", taskID, err)
+			e.markBlocked(taskID, fmt.Sprintf("worktree creation failed: %v", err))
+			return
+		}
+		defer wt.Cleanup()
+		workDir = wt.Dir
+		_ = e.store.AddActivity(taskID, "executor.worktree", map[string]interface{}{
+			"dir":    wt.Dir,
+			"branch": wt.Branch,
+		})
+	} else {
+		workDir = "."
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	// Run agent loop if a Claude client is configured.
+	if e.client != nil {
+		tools := NewToolSet(workDir, e.store)
+		agent := NewAgentLoop(e.client, tools, taskID, iterLimit, func(eventType string, data map[string]interface{}) {
+			_ = e.store.AddActivity(taskID, "agent."+eventType, data)
+		})
+
+		sysPrompt := buildSystemPrompt(task, workflow)
+		userPrompt := buildUserPrompt(task)
+
+		_ = e.store.AddActivity(taskID, "executor.agent_start", nil)
+		result, err := agent.Run(ctx, sysPrompt, userPrompt)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // Cancelled — Stop() handles the stage update.
+			}
+			log.Printf("[executor] task %d: agent error: %v", taskID, err)
+			e.markBlocked(taskID, fmt.Sprintf("agent error: %v", err))
+			return
+		}
+
+		_ = e.store.AddActivity(taskID, "executor.agent_done", map[string]interface{}{
+			"iterations":    result.Iterations,
+			"hit_limit":     result.HitLimit,
+			"input_tokens":  result.TotalInputTokens,
+			"output_tokens": result.TotalOutputTokens,
+			"tool_calls":    len(result.ToolCalls),
+		})
+
+		if result.HitLimit {
+			e.markBlocked(taskID, fmt.Sprintf("hit iteration limit (%d)", iterLimit))
+			return
+		}
+	}
+
+	// Run L1 verification if we have a real working directory.
+	if workDir != "." {
+		vr := VerifyL1(ctx, workDir)
+		_ = e.store.AddActivity(taskID, "executor.verify_l1", map[string]interface{}{
+			"passed": vr.Passed,
+			"errors": vr.Errors,
+		})
+		if !vr.Passed {
+			log.Printf("[executor] task %d: L1 failed: %s", taskID, strings.Join(vr.Errors, "; "))
+			e.markBlocked(taskID, fmt.Sprintf("L1 verification failed: %s", strings.Join(vr.Errors, "; ")))
+			return
+		}
+	}
+
+	// Commit changes in worktree.
+	if wt != nil && wt.HasChanges() {
+		hash, err := wt.Commit(fmt.Sprintf("feat(task-%d): %s", taskID, task.Title))
+		if err != nil {
+			e.markBlocked(taskID, fmt.Sprintf("commit failed: %v", err))
+			return
+		}
+		_ = e.store.AddActivity(taskID, "executor.commit", map[string]interface{}{
+			"hash": hash,
+		})
+		log.Printf("[executor] task %d: committed %s", taskID, hash)
+	}
+
+	// Move to validation.
 	_, _ = e.store.Update(taskID, map[string]interface{}{"stage": "validation"})
-	_ = e.store.AddActivity(taskID, "executor.complete", map[string]interface{}{"workflow": workflow})
+	_ = e.store.AddActivity(taskID, "executor.complete", map[string]interface{}{
+		"workflow":   workflow,
+	})
+	log.Printf("[executor] task %d: complete → validation", taskID)
+}
+
+// markBlocked transitions a task to blocked with a reason.
+func (e *Executor) markBlocked(taskID int64, reason string) {
+	_, _ = e.store.Update(taskID, map[string]interface{}{"stage": "blocked"})
+	_ = e.store.AddActivity(taskID, "task.blocked", map[string]interface{}{"reason": reason})
+}
+
+// buildSystemPrompt constructs the system prompt for the agent.
+func buildSystemPrompt(task *store.Task, workflow string) string {
+	var b strings.Builder
+	b.WriteString("You are an autonomous software engineering agent. Complete the task described below.\n\n")
+	b.WriteString("## Task\n")
+	fmt.Fprintf(&b, "Title: %s\n", task.Title)
+	if task.Description != "" {
+		fmt.Fprintf(&b, "Description: %s\n", task.Description)
+	}
+	fmt.Fprintf(&b, "\nWorkflow: %s\n", workflow)
+
+	switch workflow {
+	case "micro":
+		b.WriteString("\nThis is a trivial change. Make it directly and use task_update to move to validation.\n")
+		b.WriteString("Do NOT run builds or verification — the pipeline handles that.\n")
+	case "quick":
+		b.WriteString("\nThis is a straightforward change. Implement it, then use task_update to move to validation.\n")
+	default:
+		b.WriteString("\nThis is a complex task. Plan your approach, implement step by step, and verify.\n")
+	}
+
+	b.WriteString("\n## Available Tools\n")
+	b.WriteString("- file_read: Read files\n- file_write: Write/create files\n- bash: Run shell commands\n")
+	b.WriteString("- list_files: List directory contents\n- task_update: Update task stage/notes\n")
+
+	return b.String()
+}
+
+// buildUserPrompt constructs the initial user message for the agent.
+func buildUserPrompt(task *store.Task) string {
+	if task.Description != "" {
+		return fmt.Sprintf("Implement: %s\n\n%s", task.Title, task.Description)
+	}
+	return fmt.Sprintf("Implement: %s", task.Title)
 }

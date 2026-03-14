@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
 	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/server"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
+	"github.com/rishav1305/soul-v2/pkg/auth"
 	"github.com/rishav1305/soul-v2/pkg/events"
 )
 
@@ -54,10 +56,29 @@ func runServe() {
 	// Recover interrupted tasks on startup.
 	recoverInterruptedTasks(taskStore)
 
+	// Load OAuth credentials for Claude API access.
+	credPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
+	authSource := auth.NewOAuthTokenSource(credPath, events.NopLogger{})
+	if _, err := authSource.Load(); err != nil {
+		log.Printf("auth: %v (autonomous execution will be unavailable)", err)
+	}
+
+	claudeClient := stream.NewClient(authSource,
+		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
+	)
+
+	// Project root for worktree creation.
+	repoDir := os.Getenv("SOUL_V2_REPO_DIR")
+	if repoDir == "" {
+		repoDir, _ = os.Getwd()
+	}
+
 	// Create executor.
 	exec := executor.New(executor.Config{
 		Store:       taskStore,
 		MaxParallel: 3,
+		RepoDir:     repoDir,
+		Client:      claudeClient,
 	})
 
 	// Server options.
