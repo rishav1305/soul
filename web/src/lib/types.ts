@@ -526,3 +526,99 @@ export interface TutorStudyPlan {
   plan_json: string;
   active: boolean;
 }
+
+// ── Projects ──────────────────────────────────────────
+
+export interface Project {
+  id: number;
+  name: string;
+  description: string;
+  phase: number;
+  status: 'backlog' | 'active' | 'measuring' | 'documenting' | 'shipped';
+  week_planned: number;
+  hours_estimated: number;
+  hours_actual: number;
+  github_repo: string;
+  readme_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectSummary extends Project {
+  milestones_done: number;
+  milestones_total: number;
+  keyword_count: number;
+}
+
+export interface Milestone {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string;
+  acceptance_criteria: string;
+  status: 'pending' | 'in_progress' | 'done' | 'skipped';
+  completed_at?: string;
+  sort_order: number;
+}
+
+export interface ProjectMetric {
+  id: number;
+  project_id: number;
+  name: string;
+  value: string;
+  unit: string;
+  captured_at: string;
+}
+
+export interface ProjectKeyword {
+  id: number;
+  project_id?: number;
+  keyword: string;
+  status: 'claimed' | 'building' | 'shipped';
+  claimed_at: string;
+  shipped_at?: string;
+}
+
+export interface ProfileSync {
+  id: number;
+  project_id: number;
+  platform: string;
+  synced: boolean;
+  synced_at?: string;
+  notes: string;
+}
+
+export interface ProjectReadiness {
+  id: number;
+  project_id: number;
+  can_explain: boolean;
+  can_demo: boolean;
+  can_tradeoffs: boolean;
+  self_score: number;
+  assessed_at: string;
+}
+
+export interface ProjectDashboard {
+  total_projects: number;
+  shipped: number;
+  active: number;
+  backlog: number;
+  measuring: number;
+  documenting: number;
+  keywords_total: number;
+  keywords_claimed: number;
+  keywords_building: number;
+  keywords_shipped: number;
+  hours_estimated: number;
+  hours_actual: number;
+  avg_readiness: number;
+  projects: ProjectSummary[];
+}
+
+export interface ProjectDetail extends Project {
+  milestones: Milestone[];
+  metrics: ProjectMetric[];
+  keywords: ProjectKeyword[];
+  syncs: ProfileSync[];
+  readiness: ProjectReadiness | null;
+}
