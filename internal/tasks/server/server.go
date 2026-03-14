@@ -42,7 +42,7 @@ func New(opts ...Option) *Server {
 		broadcaster: NewBroadcaster(),
 		logger:      events.NopLogger{},
 		host:        "127.0.0.1",
-		port:        3003,
+		port:        3004,
 		startTime:   time.Now(),
 	}
 	for _, opt := range opts {

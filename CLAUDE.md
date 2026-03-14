@@ -5,8 +5,8 @@ Go + React/TypeScript monorepo. AI-agent-maintained, spec-driven chat interface 
 ## Quick Commands
 
 ```bash
-make build          # Build soul-chat binary + frontend
-make serve          # Build and run on :3002
+make build          # Build soul-chat + soul-tasks binaries + frontend
+make serve          # Build and run both servers (:3002 + :3004)
 make verify         # Run L1-L3 verification (static + unit + integration)
 make verify-static  # Go vet + tsc --noEmit + secret scan + dep audit
 make types          # Generate types.ts from specs
@@ -16,16 +16,20 @@ make clean          # Remove build artifacts
 ## Architecture
 
 ```
-cmd/chat/main.go              Chat server CLI entrypoint
+cmd/chat/main.go              Chat server CLI entrypoint (:3002)
+cmd/tasks/main.go             Tasks server CLI entrypoint (:3004)
 pkg/
   auth/                       Claude OAuth — shared by both servers
   events/                     Logger interface + Event type
 internal/chat/
-  server/                     HTTP server + SPA serving
+  server/                     HTTP server + SPA serving + tasks proxy
   session/                    SQLite session CRUD (chat.db)
   stream/                     Claude API streaming — SSE parse
   ws/                         WebSocket hub — session-scoped routing
   metrics/                    Event logging, aggregation, CLI reporting
+internal/tasks/
+  server/                     HTTP server, REST API, SSE broadcaster
+  store/                      SQLite task CRUD (tasks.db)
 web/src/
   components/                 React components (Shell, Chat, Sessions)
   hooks/                      Custom hooks (useWebSocket, useSessions)
@@ -42,6 +46,9 @@ tools/                        specgen, monitor
 | `SOUL_V2_PORT` | `3002` | Server port |
 | `SOUL_V2_HOST` | `127.0.0.1` | Bind address |
 | `SOUL_V2_DATA_DIR` | `~/.soul-v2` | Data directory |
+| `SOUL_TASKS_HOST` | `127.0.0.1` | Tasks server bind address |
+| `SOUL_TASKS_PORT` | `3004` | Tasks server port |
+| `SOUL_TASKS_URL` | `http://127.0.0.1:3004` | Tasks server URL (for chat proxy) |
 
 Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
 

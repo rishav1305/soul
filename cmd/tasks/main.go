@@ -58,7 +58,7 @@ func runServe() {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	port := 3003
+	port := 3004
 	if p := os.Getenv("SOUL_TASKS_PORT"); p != "" {
 		if parsed, err := strconv.Atoi(p); err == nil {
 			port = parsed

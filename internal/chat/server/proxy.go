@@ -32,7 +32,7 @@ type hubBroadcaster interface {
 func newTasksProxy(hub hubBroadcaster) *tasksProxy {
 	tasksURL := os.Getenv("SOUL_TASKS_URL")
 	if tasksURL == "" {
-		tasksURL = "http://127.0.0.1:3003"
+		tasksURL = "http://127.0.0.1:3004"
 	}
 
 	target, err := url.Parse(tasksURL)
