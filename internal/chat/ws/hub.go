@@ -5,6 +5,7 @@ package ws
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -245,6 +246,20 @@ func (h *Hub) Broadcast(msg []byte) {
 	default:
 		log.Printf("ws: broadcast channel full, message dropped")
 	}
+}
+
+// BroadcastJSON broadcasts a JSON message to all connected clients.
+// The message is wrapped in {"type": msgType, "data": data} format.
+func (h *Hub) BroadcastJSON(msgType string, data interface{}) {
+	msg := map[string]interface{}{
+		"type": msgType,
+		"data": data,
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	h.Broadcast(payload)
 }
 
 // BroadcastToSession sends a message only to clients subscribed to the given

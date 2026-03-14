@@ -40,6 +40,7 @@ type Server struct {
 	startTime    time.Time
 	tlsCert      string // path to TLS certificate
 	tlsKey       string // path to TLS private key
+	tasksProxy   *tasksProxy
 }
 
 // Option configures a Server.
@@ -88,6 +89,13 @@ func WithTLS(certFile, keyFile string) Option {
 	}
 }
 
+// WithTasksProxy enables the reverse proxy to the tasks server.
+func WithTasksProxy(hub hubBroadcaster) Option {
+	return func(s *Server) {
+		s.tasksProxy = newTasksProxy(hub)
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -127,6 +135,14 @@ func New(opts ...Option) *Server {
 
 	// Telemetry route.
 	s.mux.HandleFunc("POST /api/telemetry", s.handleTelemetry)
+
+	// Tasks server proxy — forward /api/tasks/* and /api/products/* to tasks server.
+	if s.tasksProxy != nil {
+		s.mux.Handle("/api/tasks/", s.tasksProxy)
+		s.mux.Handle("/api/tasks", s.tasksProxy)
+		s.mux.Handle("/api/products/", s.tasksProxy)
+		s.mux.Handle("/api/products", s.tasksProxy)
+	}
 
 	// WebSocket route — must be registered before SPA fallback.
 	if s.hub != nil {
@@ -204,6 +220,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return s.httpServer.Shutdown(shutdownCtx)
+}
+
+// StartSSERelay starts the SSE relay to the tasks server in the background.
+func (s *Server) StartSSERelay(ctx context.Context) {
+	if s.tasksProxy != nil {
+		s.tasksProxy.StartSSERelay(ctx)
+	}
 }
 
 // --- Route handlers ---

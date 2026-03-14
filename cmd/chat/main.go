@@ -134,7 +134,15 @@ func runServe() {
 		log.Printf("TLS enabled: cert=%s", tlsCert)
 	}
 
+	// Enable tasks server proxy.
+	serverOpts = append(serverOpts, server.WithTasksProxy(hub))
+
 	srv := server.New(serverOpts...)
+
+	// Start tasks server SSE relay.
+	relayCtx, relayCancel := context.WithCancel(context.Background())
+	defer relayCancel()
+	go srv.StartSSERelay(relayCtx)
 
 	// Handle SIGINT/SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
