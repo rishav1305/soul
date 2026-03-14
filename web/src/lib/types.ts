@@ -430,3 +430,99 @@ export interface TaskActivity {
   data: string;
   createdAt: string;
 }
+
+// --- Tutor Types ---
+
+export interface TutorTopic {
+  id: number;
+  module: string;
+  category: string;
+  name: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  content_path: string;
+  status: 'not_started' | 'learning' | 'drilling' | 'mastered';
+  created_at: string;
+}
+
+export interface TutorModuleStats {
+  module: string;
+  total: number;
+  not_started: number;
+  learning: number;
+  drilling: number;
+  mastered: number;
+  avg_score: number;
+  total_time: number;
+  completion: number;
+}
+
+export interface TutorDashboard {
+  readiness: number;
+  modules: TutorModuleStats[];
+  streak: number;
+  due_reviews: number;
+  today: {
+    time_spent_seconds: number;
+    sessions_count: number;
+    questions_answered: number;
+    score_avg: number;
+  };
+}
+
+export interface TutorDailyActivity {
+  date: string;
+  module: string;
+  time_spent_seconds: number;
+  sessions_count: number;
+  questions_answered: number;
+  score_avg: number;
+}
+
+export interface TutorConfidenceGap {
+  topic_id: number;
+  self_rated_score: number;
+  actual_score: number;
+  gap: number;
+}
+
+export interface TutorAnalytics {
+  activity: TutorDailyActivity[];
+  confidence_gaps: TutorConfidenceGap[];
+}
+
+export interface TutorQuizQuestion {
+  id: number;
+  topic_id: number;
+  difficulty: string;
+  question_text: string;
+  answer_text: string;
+  explanation: string;
+}
+
+export interface TutorDrillEvaluation {
+  correct: boolean;
+  score: number;
+  explanation: string;
+  expected_keywords: string[];
+  matched_keywords: string[];
+  next_review: string;
+}
+
+export interface TutorMockSession {
+  id: number;
+  type: 'technical' | 'behavioral' | 'full_loop';
+  job_description: string;
+  started_at: string;
+  completed_at: string | null;
+  overall_score: number | null;
+  feedback_json: string;
+  scores?: { dimension: string; score: number }[];
+}
+
+export interface TutorStudyPlan {
+  id: number;
+  target_role: string;
+  target_date: string;
+  plan_json: string;
+  active: boolean;
+}
