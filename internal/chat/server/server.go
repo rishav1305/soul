@@ -40,8 +40,9 @@ type Server struct {
 	startTime    time.Time
 	tlsCert      string // path to TLS certificate
 	tlsKey       string // path to TLS private key
-	tasksProxy   *tasksProxy
-	tutorProxy   *tutorProxy
+	tasksProxy    *tasksProxy
+	tutorProxy    *tutorProxy
+	projectsProxy *projectsProxy
 }
 
 // Option configures a Server.
@@ -104,6 +105,13 @@ func WithTutorProxy() Option {
 	}
 }
 
+// WithProjectsProxy enables the reverse proxy to the projects server.
+func WithProjectsProxy() Option {
+	return func(s *Server) {
+		s.projectsProxy = newProjectsProxy()
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -156,6 +164,12 @@ func New(opts ...Option) *Server {
 	if s.tutorProxy != nil {
 		s.mux.Handle("/api/tutor/", s.tutorProxy)
 		s.mux.Handle("/api/tutor", s.tutorProxy)
+	}
+
+	// Projects server proxy — forward /api/projects/* to projects server.
+	if s.projectsProxy != nil {
+		s.mux.Handle("/api/projects/", s.projectsProxy)
+		s.mux.Handle("/api/projects", s.projectsProxy)
 	}
 
 	// WebSocket route — must be registered before SPA fallback.

@@ -140,6 +140,9 @@ func runServe() {
 	// Enable tutor server proxy.
 	serverOpts = append(serverOpts, server.WithTutorProxy())
 
+	// Enable projects server proxy.
+	serverOpts = append(serverOpts, server.WithProjectsProxy())
+
 	srv := server.New(serverOpts...)
 
 	// Start tasks server SSE relay.

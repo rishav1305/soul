@@ -1,0 +1,24 @@
+[Unit]
+Description=Soul v2 — Projects Server
+After=network.target
+
+[Service]
+Type=simple
+User=rishav
+Group=rishav
+WorkingDirectory=/home/rishav/soul-v2
+ExecStart=/home/rishav/soul-v2/soul-projects serve
+Restart=on-failure
+RestartSec=5
+Environment=SOUL_PROJECTS_HOST=127.0.0.1
+Environment=SOUL_PROJECTS_PORT=3008
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rishav/.soul-v2
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

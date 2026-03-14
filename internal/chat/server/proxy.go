@@ -214,3 +214,43 @@ func newTutorProxy() *tutorProxy {
 func (tp *tutorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tp.reverseProxy.ServeHTTP(w, r)
 }
+
+// projectsProxy manages the reverse proxy to the projects server.
+type projectsProxy struct {
+	reverseProxy *httputil.ReverseProxy
+}
+
+func newProjectsProxy() *projectsProxy {
+	projectsURL := os.Getenv("SOUL_PROJECTS_URL")
+	if projectsURL == "" {
+		projectsURL = "http://127.0.0.1:3008"
+	}
+
+	target, err := url.Parse(projectsURL)
+	if err != nil {
+		log.Printf("warn: invalid SOUL_PROJECTS_URL %q: %v", projectsURL, err)
+		return nil
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(target)
+
+	rp.Transport = &http.Transport{
+		ResponseHeaderTimeout: 5 * time.Second,
+	}
+
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("projects proxy error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"projects server unavailable"}`)
+	}
+
+	return &projectsProxy{
+		reverseProxy: rp,
+	}
+}
+
+// ServeHTTP forwards requests to the projects server.
+func (pp *projectsProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	pp.reverseProxy.ServeHTTP(w, r)
+}
