@@ -3,17 +3,17 @@
 .PHONY: check-bundle check-secrets check-deps
 
 # Build
-build: web build-go
+build: web build-go build-tasks
 build-go:
 	go build -o soul-chat ./cmd/chat
 build-tasks:
-	@echo "Tasks server not yet implemented"
+	go build -o soul-tasks ./cmd/tasks
 web:
 	cd web && npx vite build
 serve: build
-	./soul-chat serve
+	./soul-chat serve & ./soul-tasks serve & wait
 clean:
-	rm -f soul-chat
+	rm -f soul-chat soul-tasks
 	rm -rf web/dist
 
 # Generate

@@ -1,5 +1,6 @@
 # Go
 /soul-chat
+/soul-tasks
 *.exe
 
 # Node
