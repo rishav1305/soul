@@ -175,6 +175,21 @@ body {
               0 0 60px rgba(232, 168, 73, 0.05);
 }
 
+/* ─── Safe area for mobile bottom nav ─── */
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Scrollable tab bar ─── */
+
+.tab-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tab-scroll::-webkit-scrollbar { display: none; }
+
 /* ─── Selection ─── */
 
 ::selection {

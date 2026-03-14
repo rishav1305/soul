@@ -7,7 +7,7 @@ import type { TutorDashboard, TutorTopic, TutorAnalytics, TutorMockSession } fro
 
 // Color helpers
 const statusColor: Record<string, string> = {
-  not_started: 'bg-zinc-600 text-zinc-300',
+  not_started: 'bg-overlay text-fg-secondary',
   learning: 'bg-blue-500/20 text-blue-400',
   drilling: 'bg-amber-500/20 text-amber-400',
   mastered: 'bg-emerald-500/20 text-emerald-400',
@@ -51,12 +51,12 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
   return (
     <div className="space-y-6" data-testid="dashboard-tab">
       {/* Readiness + badges */}
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+      <div className="bg-surface rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-400">Interview Readiness</span>
+          <span className="text-sm text-fg-muted">Interview Readiness</span>
           <span className={`text-lg font-bold ${scoreColor(readinessPercent)}`} data-testid="readiness-score">{readinessPercent}%</span>
         </div>
-        <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
           <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readinessPercent}%` }} data-testid="readiness-bar" />
         </div>
         <div className="flex gap-3">
@@ -73,20 +73,20 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
 
       {/* Module cards */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Modules</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-3">Modules</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="module-grid">
           {(dashboard.moduleStats ?? []).map(mod => {
             const completionPercent = Math.round(mod.completionPct);
             return (
-              <div key={mod.module} className="bg-zinc-800 rounded-lg p-4 space-y-2" data-testid={`module-card-${mod.module}`}>
+              <div key={mod.module} className="bg-surface rounded-lg p-4 space-y-2" data-testid={`module-card-${mod.module}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-zinc-100 capitalize">{mod.module}</span>
+                  <span className="text-sm font-medium text-fg capitalize">{mod.module}</span>
                   <span className={`text-xs font-medium ${scoreColor(completionPercent)}`}>{completionPercent}%</span>
                 </div>
-                <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
                   <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${completionPercent}%` }} />
                 </div>
-                <div className="flex items-center justify-between text-xs text-zinc-400">
+                <div className="flex items-center justify-between text-xs text-fg-muted">
                   <span>{mod.completed}/{mod.topicCount} completed</span>
                   <span>{mod.inProgress} in progress</span>
                 </div>
@@ -97,26 +97,26 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
       </div>
 
       {/* Today's activity */}
-      <div className="bg-zinc-800 rounded-lg p-4" data-testid="today-activity">
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Today</h3>
+      <div className="bg-surface rounded-lg p-4" data-testid="today-activity">
+        <h3 className="text-sm font-medium text-fg-muted mb-3">Today</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{formatTime(todaySummary.time)}</div>
-            <div className="text-xs text-zinc-400">Time</div>
+            <div className="text-lg font-bold text-fg">{formatTime(todaySummary.time)}</div>
+            <div className="text-xs text-fg-muted">Time</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{todaySummary.sessions}</div>
-            <div className="text-xs text-zinc-400">Sessions</div>
+            <div className="text-lg font-bold text-fg">{todaySummary.sessions}</div>
+            <div className="text-xs text-fg-muted">Sessions</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{todaySummary.questions}</div>
-            <div className="text-xs text-zinc-400">Questions</div>
+            <div className="text-lg font-bold text-fg">{todaySummary.questions}</div>
+            <div className="text-xs text-fg-muted">Questions</div>
           </div>
           <div className="text-center">
             <div className={`text-lg font-bold ${scoreColor(Math.round(todayAvgScore))}`}>
               {todayAvgScore > 0 ? `${Math.round(todayAvgScore)}%` : '--'}
             </div>
-            <div className="text-xs text-zinc-400">Avg Score</div>
+            <div className="text-xs text-fg-muted">Avg Score</div>
           </div>
         </div>
       </div>
@@ -136,14 +136,14 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
     <div className="space-y-6" data-testid="analytics-tab">
       {/* Activity table */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Daily Activity</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-3">Daily Activity</h3>
         {activityRows.length === 0 ? (
-          <div className="text-sm text-zinc-500">No activity recorded yet.</div>
+          <div className="text-sm text-fg-muted">No activity recorded yet.</div>
         ) : (
-          <div className="bg-zinc-800 rounded-lg overflow-hidden">
+          <div className="bg-surface rounded-lg overflow-hidden">
             <table className="w-full text-sm" data-testid="activity-table">
               <thead>
-                <tr className="text-xs text-zinc-400 border-b border-zinc-700">
+                <tr className="text-xs text-fg-muted border-b border-border-subtle">
                   <th className="text-left px-3 py-2 font-medium">Date</th>
                   <th className="text-left px-3 py-2 font-medium">Module</th>
                   <th className="text-right px-3 py-2 font-medium">Time</th>
@@ -154,7 +154,7 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
               </thead>
               <tbody>
                 {activityRows.map((row, i) => (
-                  <tr key={`${row.date}-${row.module}-${i}`} className="border-b border-zinc-700/50 text-zinc-300">
+                  <tr key={`${row.date}-${row.module}-${i}`} className="border-b border-border-subtle/50 text-fg-secondary">
                     <td className="px-3 py-2">{row.date}</td>
                     <td className="px-3 py-2">{row.module}</td>
                     <td className="px-3 py-2 text-right">{formatTime(row.timeSpentSeconds)}</td>
@@ -173,14 +173,14 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
 
       {/* Confidence gaps */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">Confidence Gaps</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-3">Confidence Gaps</h3>
         {gaps.length === 0 ? (
-          <div className="text-sm text-zinc-500">No confidence gaps detected.</div>
+          <div className="text-sm text-fg-muted">No confidence gaps detected.</div>
         ) : (
-          <div className="bg-zinc-800 rounded-lg overflow-hidden">
+          <div className="bg-surface rounded-lg overflow-hidden">
             <table className="w-full text-sm" data-testid="confidence-gaps-table">
               <thead>
-                <tr className="text-xs text-zinc-400 border-b border-zinc-700">
+                <tr className="text-xs text-fg-muted border-b border-border-subtle">
                   <th className="text-left px-3 py-2 font-medium">Topic</th>
                   <th className="text-right px-3 py-2 font-medium">Self-Rated</th>
                   <th className="text-right px-3 py-2 font-medium">Actual</th>
@@ -189,7 +189,7 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
               </thead>
               <tbody>
                 {gaps.map(gap => (
-                  <tr key={gap.topicId} className="border-b border-zinc-700/50 text-zinc-300">
+                  <tr key={gap.topicId} className="border-b border-border-subtle/50 text-fg-secondary">
                     <td className="px-3 py-2">{gap.topicName || gap.topicId}</td>
                     <td className="px-3 py-2 text-right">{Math.round(gap.avgSelfRated)}%</td>
                     <td className="px-3 py-2 text-right">{Math.round(gap.avgActual)}%</td>
@@ -224,7 +224,7 @@ function TopicsTab({ topics, moduleFilter, setModuleFilter, navigate }: {
           <button
             key={mod || 'all'}
             onClick={() => setModuleFilter(mod)}
-            className={`px-3 py-1 text-xs rounded-full transition-colors ${moduleFilter === mod ? 'bg-zinc-600 text-zinc-100' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-3 py-1 text-xs rounded-full transition-colors ${moduleFilter === mod ? 'bg-overlay text-fg' : 'bg-surface text-fg-muted hover:text-zinc-200'}`}
             data-testid={`filter-${mod || 'all'}`}
           >
             {mod || 'All'}
@@ -234,25 +234,25 @@ function TopicsTab({ topics, moduleFilter, setModuleFilter, navigate }: {
 
       {/* Topic rows */}
       {topics.length === 0 ? (
-        <div className="text-sm text-zinc-500 py-4">No topics found.</div>
+        <div className="text-sm text-fg-muted py-4">No topics found.</div>
       ) : (
         <div className="space-y-1" data-testid="topics-list">
           {topics.map(topic => (
             <button
               key={topic.id}
               onClick={() => navigate(`/tutor/drill/${topic.id}`)}
-              className="w-full flex items-center justify-between p-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors text-left"
+              className="w-full flex items-center justify-between p-3 rounded-lg bg-surface hover:bg-elevated transition-colors text-left"
               data-testid={`topic-${topic.id}`}
             >
               <div className="min-w-0">
-                <div className="text-sm text-zinc-100 truncate">{topic.name}</div>
-                <div className="text-xs text-zinc-500">{topic.category}</div>
+                <div className="text-sm text-fg truncate">{topic.name}</div>
+                <div className="text-xs text-fg-muted">{topic.category}</div>
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-3">
-                <span className={`text-xs font-medium ${difficultyColor[topic.difficulty] ?? 'text-zinc-400'}`}>
+                <span className={`text-xs font-medium ${difficultyColor[topic.difficulty] ?? 'text-fg-muted'}`}>
                   {topic.difficulty}
                 </span>
-                <span className={`px-2 py-0.5 text-xs rounded-full ${statusColor[topic.status] ?? 'bg-zinc-600 text-zinc-300'}`}>
+                <span className={`px-2 py-0.5 text-xs rounded-full ${statusColor[topic.status] ?? 'bg-overlay text-fg-secondary'}`}>
                   {topic.status.replace('_', ' ')}
                 </span>
               </div>
@@ -269,7 +269,7 @@ function MocksTab({ mocks, navigate }: { mocks: TutorMockSession[]; navigate: (p
   return (
     <div className="space-y-3" data-testid="mocks-tab">
       {mocks.length === 0 ? (
-        <div className="text-sm text-zinc-500 py-4">No mock sessions yet. Start one via chat.</div>
+        <div className="text-sm text-fg-muted py-4">No mock sessions yet. Start one via chat.</div>
       ) : (
         mocks.map(session => {
           const scorePercent = session.overall_score != null ? Math.round(session.overall_score) : null;
@@ -277,27 +277,27 @@ function MocksTab({ mocks, navigate }: { mocks: TutorMockSession[]; navigate: (p
             <button
               key={session.id}
               onClick={() => navigate(`/tutor/mock/${session.id}`)}
-              className="w-full bg-zinc-800 rounded-lg p-4 hover:bg-zinc-700 transition-colors text-left space-y-2"
+              className="w-full bg-surface rounded-lg p-4 hover:bg-elevated transition-colors text-left space-y-2"
               data-testid={`mock-${session.id}`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 text-xs rounded-full bg-zinc-600 text-zinc-300 capitalize">{session.type.replace('_', ' ')}</span>
-                  <span className="text-xs text-zinc-500">{new Date(session.started_at).toLocaleDateString()}</span>
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-overlay text-fg-secondary capitalize">{session.type.replace('_', ' ')}</span>
+                  <span className="text-xs text-fg-muted">{new Date(session.started_at).toLocaleDateString()}</span>
                 </div>
                 {scorePercent != null ? (
                   <span className={`text-sm font-bold ${scoreColor(scorePercent)}`} data-testid={`mock-score-${session.id}`}>{scorePercent}%</span>
                 ) : (
-                  <span className="text-xs text-zinc-500">In progress</span>
+                  <span className="text-xs text-fg-muted">In progress</span>
                 )}
               </div>
               {scorePercent != null && (
-                <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
                   <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${scorePercent}%` }} />
                 </div>
               )}
               {session.job_description && (
-                <div className="text-xs text-zinc-400 truncate">{session.job_description.slice(0, 120)}</div>
+                <div className="text-xs text-fg-muted truncate">{session.job_description.slice(0, 120)}</div>
               )}
             </button>
           );
@@ -311,20 +311,20 @@ function MocksTab({ mocks, navigate }: { mocks: TutorMockSession[]; navigate: (p
 function GuideTab() {
   return (
     <div className="space-y-6 max-w-2xl" data-testid="guide-tab">
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-100">Tabs Overview</h3>
-        <ul className="text-sm text-zinc-300 space-y-1.5 list-disc list-inside">
-          <li><strong className="text-zinc-100">Dashboard</strong> -- Readiness score, module progress, and today's activity.</li>
-          <li><strong className="text-zinc-100">Analytics</strong> -- Daily activity history and confidence gap analysis.</li>
-          <li><strong className="text-zinc-100">Topics</strong> -- Browse topics by module and start drill sessions.</li>
-          <li><strong className="text-zinc-100">Mocks</strong> -- View mock interview sessions and scores.</li>
-          <li><strong className="text-zinc-100">Guide</strong> -- This page. Learning flow and mastery criteria.</li>
+      <div className="bg-surface rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-fg">Tabs Overview</h3>
+        <ul className="text-sm text-fg-secondary space-y-1.5 list-disc list-inside">
+          <li><strong className="text-fg">Dashboard</strong> -- Readiness score, module progress, and today's activity.</li>
+          <li><strong className="text-fg">Analytics</strong> -- Daily activity history and confidence gap analysis.</li>
+          <li><strong className="text-fg">Topics</strong> -- Browse topics by module and start drill sessions.</li>
+          <li><strong className="text-fg">Mocks</strong> -- View mock interview sessions and scores.</li>
+          <li><strong className="text-fg">Guide</strong> -- This page. Learning flow and mastery criteria.</li>
         </ul>
       </div>
 
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-100">Chat Commands</h3>
-        <div className="text-sm text-zinc-300 space-y-1">
+      <div className="bg-surface rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-fg">Chat Commands</h3>
+        <div className="text-sm text-fg-secondary space-y-1">
           <div><code className="text-amber-400">tutor study &lt;module&gt;</code> -- Learn a topic with explanations.</div>
           <div><code className="text-amber-400">tutor drill &lt;module&gt;</code> -- Practice with quiz questions.</div>
           <div><code className="text-amber-400">tutor mock &lt;type&gt;</code> -- Start a mock interview session.</div>
@@ -333,9 +333,9 @@ function GuideTab() {
         </div>
       </div>
 
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-100">Recommended 8-Step Learning Flow</h3>
-        <ol className="text-sm text-zinc-300 space-y-1.5 list-decimal list-inside">
+      <div className="bg-surface rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-fg">Recommended 8-Step Learning Flow</h3>
+        <ol className="text-sm text-fg-secondary space-y-1.5 list-decimal list-inside">
           <li>Generate a study plan targeting your role and timeline.</li>
           <li>Study one topic at a time -- read the explanation carefully.</li>
           <li>Drill on the topic until you hit 3 correct answers in a row.</li>
@@ -347,10 +347,10 @@ function GuideTab() {
         </ol>
       </div>
 
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-100">Mastery Criteria</h3>
-        <ul className="text-sm text-zinc-300 space-y-1 list-disc list-inside">
-          <li><strong className="text-zinc-100">Not Started</strong> -- Topic has not been studied yet.</li>
+      <div className="bg-surface rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-fg">Mastery Criteria</h3>
+        <ul className="text-sm text-fg-secondary space-y-1 list-disc list-inside">
+          <li><strong className="text-fg">Not Started</strong> -- Topic has not been studied yet.</li>
           <li><strong className="text-blue-400">Learning</strong> -- Topic studied but not drilled.</li>
           <li><strong className="text-amber-400">Drilling</strong> -- Active practice, SM-2 review scheduled.</li>
           <li><strong className="text-emerald-400">Mastered</strong> -- Score &ge;80% with 3+ correct in a row, next review &gt;7 days out.</li>
@@ -374,15 +374,15 @@ export function TutorPage() {
     <div data-testid="tutor-page" className="h-full overflow-y-auto p-4 sm:p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-100">Tutor</h2>
-        <button onClick={refresh} className="px-3 py-1 text-xs rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors" data-testid="tutor-refresh">Refresh</button>
+        <h2 className="text-lg font-semibold text-fg">Tutor</h2>
+        <button onClick={refresh} className="px-3 py-1 text-xs rounded bg-elevated hover:bg-elevated text-fg-secondary transition-colors" data-testid="tutor-refresh">Refresh</button>
       </div>
 
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b border-zinc-700 pb-px" data-testid="tutor-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="tutor-tabs">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${activeTab === tab ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize whitespace-nowrap ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-fg-secondary'}`}
             data-testid={`tab-${tab}`}>
             {tab}
           </button>
@@ -398,7 +398,7 @@ export function TutorPage() {
       {activeTab === 'mocks' && <MocksTab mocks={mocks} navigate={(p: string) => navigate(p)} />}
       {activeTab === 'guide' && <GuideTab />}
       {loading && !dashboard && !analytics && topics.length === 0 && mocks.length === 0 && (
-        <div className="text-center py-8 text-zinc-400">Loading...</div>
+        <div className="text-center py-8 text-fg-muted">Loading...</div>
       )}
     </div>
   );

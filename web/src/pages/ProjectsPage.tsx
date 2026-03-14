@@ -8,7 +8,7 @@ import type { ProjectDashboard, ProjectKeyword, ProjectSummary } from '../lib/ty
 
 // Status colors matching ProjectCard
 const statusColor: Record<string, string> = {
-  backlog: 'bg-zinc-600 text-zinc-300',
+  backlog: 'bg-overlay text-fg-secondary',
   active: 'bg-blue-500/20 text-blue-400',
   measuring: 'bg-amber-500/20 text-amber-400',
   documenting: 'bg-purple-500/20 text-purple-400',
@@ -27,12 +27,12 @@ function DashboardTab({ dashboard }: { dashboard: ProjectDashboard }) {
   return (
     <div className="space-y-6" data-testid="projects-dashboard">
       {/* Overall progress */}
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+      <div className="bg-surface rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-400">Overall Progress</span>
+          <span className="text-sm text-fg-muted">Overall Progress</span>
           <span className="text-lg font-bold text-emerald-400">{dashboard.shipped}/{dashboard.total_projects} shipped</span>
         </div>
-        <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
           <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${shippedPercent}%` }} data-testid="shipped-progress-bar" />
         </div>
       </div>
@@ -42,8 +42,8 @@ function DashboardTab({ dashboard }: { dashboard: ProjectDashboard }) {
         {(['backlog', 'active', 'measuring', 'documenting', 'shipped'] as const).map(status => {
           const count = dashboard[status];
           return (
-            <div key={status} className="bg-zinc-800 rounded-lg p-3 text-center" data-testid={`status-card-${status}`}>
-              <div className="text-2xl font-bold text-zinc-100">{count}</div>
+            <div key={status} className="bg-surface rounded-lg p-3 text-center" data-testid={`status-card-${status}`}>
+              <div className="text-2xl font-bold text-fg">{count}</div>
               <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${statusColor[status]}`}>
                 {status}
               </span>
@@ -53,15 +53,15 @@ function DashboardTab({ dashboard }: { dashboard: ProjectDashboard }) {
       </div>
 
       {/* Keyword coverage */}
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+      <div className="bg-surface rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-400">Keyword Coverage</span>
-          <span className="text-sm font-medium text-zinc-100">{dashboard.keywords_shipped}/{dashboard.keywords_total} shipped</span>
+          <span className="text-sm text-fg-muted">Keyword Coverage</span>
+          <span className="text-sm font-medium text-fg">{dashboard.keywords_shipped}/{dashboard.keywords_total} shipped</span>
         </div>
-        <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
           <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${keywordsShippedPercent}%` }} />
         </div>
-        <div className="flex gap-3 text-xs text-zinc-400">
+        <div className="flex gap-3 text-xs text-fg-muted">
           <span>Claimed: {dashboard.keywords_claimed}</span>
           <span>Building: {dashboard.keywords_building}</span>
           <span>Shipped: {dashboard.keywords_shipped}</span>
@@ -70,15 +70,15 @@ function DashboardTab({ dashboard }: { dashboard: ProjectDashboard }) {
 
       {/* Hours + Readiness */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-zinc-800 rounded-lg p-4" data-testid="hours-card">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">Hours</h3>
+        <div className="bg-surface rounded-lg p-4" data-testid="hours-card">
+          <h3 className="text-sm font-medium text-fg-muted mb-2">Hours</h3>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-zinc-100">{dashboard.hours_actual}</span>
-            <span className="text-sm text-zinc-400">/ {dashboard.hours_estimated} estimated</span>
+            <span className="text-2xl font-bold text-fg">{dashboard.hours_actual}</span>
+            <span className="text-sm text-fg-muted">/ {dashboard.hours_estimated} estimated</span>
           </div>
         </div>
-        <div className="bg-zinc-800 rounded-lg p-4" data-testid="readiness-card">
-          <h3 className="text-sm font-medium text-zinc-400 mb-2">Avg Readiness</h3>
+        <div className="bg-surface rounded-lg p-4" data-testid="readiness-card">
+          <h3 className="text-sm font-medium text-fg-muted mb-2">Avg Readiness</h3>
           <span className={`text-2xl font-bold ${dashboard.avg_readiness >= 4 ? 'text-emerald-400' : dashboard.avg_readiness >= 2.5 ? 'text-amber-400' : 'text-red-400'}`}>
             {dashboard.avg_readiness.toFixed(1)}/5
           </span>
@@ -93,7 +93,7 @@ function ProjectsTab({ projects, navigate }: { projects: ProjectSummary[]; navig
   return (
     <div data-testid="projects-list">
       {projects.length === 0 ? (
-        <div className="text-sm text-zinc-500 py-4">No projects found.</div>
+        <div className="text-sm text-fg-muted py-4">No projects found.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {projects.map(project => (
@@ -121,9 +121,9 @@ function TimelineTab({ projects }: { projects: ProjectSummary[] }) {
         <div className="min-w-[600px]">
           {/* Week headers */}
           <div className="grid grid-cols-[80px_repeat(10,1fr)] gap-1 mb-2">
-            <div className="text-xs text-zinc-500 font-medium">Phase</div>
+            <div className="text-xs text-fg-muted font-medium">Phase</div>
             {weeks.map(w => (
-              <div key={w} className="text-xs text-zinc-500 text-center font-medium">W{w}</div>
+              <div key={w} className="text-xs text-fg-muted text-center font-medium">W{w}</div>
             ))}
           </div>
 
@@ -132,7 +132,7 @@ function TimelineTab({ projects }: { projects: ProjectSummary[] }) {
             const phaseProjects = projects.filter(p => p.phase === phase);
             return (
               <div key={phase} className="grid grid-cols-[80px_repeat(10,1fr)] gap-1 mb-1" data-testid={`timeline-phase-${phase}`}>
-                <div className="text-xs text-zinc-400 flex items-center">Phase {phase}</div>
+                <div className="text-xs text-fg-muted flex items-center">Phase {phase}</div>
                 {weeks.map(w => {
                   const weekProjects = phaseProjects.filter(p => p.week_planned === w);
                   return (
@@ -140,7 +140,7 @@ function TimelineTab({ projects }: { projects: ProjectSummary[] }) {
                       {weekProjects.map(p => (
                         <div
                           key={p.id}
-                          className={`px-1.5 py-0.5 text-[10px] rounded truncate ${statusColor[p.status] ?? 'bg-zinc-600 text-zinc-300'}`}
+                          className={`px-1.5 py-0.5 text-[10px] rounded truncate ${statusColor[p.status] ?? 'bg-overlay text-fg-secondary'}`}
                           title={p.name}
                           data-testid={`timeline-project-${p.id}`}
                         >
@@ -169,10 +169,10 @@ function KeywordsTab({ keywords }: { keywords: ProjectKeyword[] }) {
     <div className="space-y-6" data-testid="projects-keywords">
       {/* Shipped */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-2">Shipped ({shipped.length})</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-2">Shipped ({shipped.length})</h3>
         <div className="flex flex-wrap gap-1.5">
           {shipped.length === 0 ? (
-            <span className="text-xs text-zinc-500">None yet</span>
+            <span className="text-xs text-fg-muted">None yet</span>
           ) : (
             shipped.map(k => (
               <span key={k.id} className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-400" data-testid={`keyword-${k.id}`}>
@@ -185,10 +185,10 @@ function KeywordsTab({ keywords }: { keywords: ProjectKeyword[] }) {
 
       {/* Building */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-2">Building ({building.length})</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-2">Building ({building.length})</h3>
         <div className="flex flex-wrap gap-1.5">
           {building.length === 0 ? (
-            <span className="text-xs text-zinc-500">None</span>
+            <span className="text-xs text-fg-muted">None</span>
           ) : (
             building.map(k => (
               <span key={k.id} className="px-2 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400" data-testid={`keyword-${k.id}`}>
@@ -201,13 +201,13 @@ function KeywordsTab({ keywords }: { keywords: ProjectKeyword[] }) {
 
       {/* Claimed */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-2">Claimed ({claimed.length})</h3>
+        <h3 className="text-sm font-medium text-fg-muted mb-2">Claimed ({claimed.length})</h3>
         <div className="flex flex-wrap gap-1.5">
           {claimed.length === 0 ? (
-            <span className="text-xs text-zinc-500">None</span>
+            <span className="text-xs text-fg-muted">None</span>
           ) : (
             claimed.map(k => (
-              <span key={k.id} className="px-2 py-0.5 text-xs rounded-full bg-zinc-600 text-zinc-300" data-testid={`keyword-${k.id}`}>
+              <span key={k.id} className="px-2 py-0.5 text-xs rounded-full bg-overlay text-fg-secondary" data-testid={`keyword-${k.id}`}>
                 {k.keyword}
               </span>
             ))
@@ -232,15 +232,15 @@ export function ProjectsPage() {
     <div data-testid="projects-page" className="h-full overflow-y-auto p-4 sm:p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-100">Projects</h2>
-        <button onClick={refresh} className="px-3 py-1 text-xs rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors" data-testid="projects-refresh">Refresh</button>
+        <h2 className="text-lg font-semibold text-fg">Projects</h2>
+        <button onClick={refresh} className="px-3 py-1 text-xs rounded bg-elevated hover:bg-overlay text-fg-secondary transition-colors" data-testid="projects-refresh">Refresh</button>
       </div>
 
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b border-zinc-700 pb-px" data-testid="projects-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="projects-tabs">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${activeTab === tab ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'}`}
             data-testid={`tab-${tab}`}>
             {tab}
           </button>
@@ -255,7 +255,7 @@ export function ProjectsPage() {
       {activeTab === 'timeline' && dashboard && <TimelineTab projects={dashboard.projects} />}
       {activeTab === 'keywords' && <KeywordsTab keywords={keywords} />}
       {loading && !dashboard && keywords.length === 0 && (
-        <div className="text-center py-8 text-zinc-400">Loading...</div>
+        <div className="text-center py-8 text-fg-muted">Loading...</div>
       )}
     </div>
   );
