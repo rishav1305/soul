@@ -41,6 +41,7 @@ type Server struct {
 	tlsCert      string // path to TLS certificate
 	tlsKey       string // path to TLS private key
 	tasksProxy   *tasksProxy
+	tutorProxy   *tutorProxy
 }
 
 // Option configures a Server.
@@ -96,6 +97,13 @@ func WithTasksProxy(hub hubBroadcaster) Option {
 	}
 }
 
+// WithTutorProxy enables the reverse proxy to the tutor server.
+func WithTutorProxy() Option {
+	return func(s *Server) {
+		s.tutorProxy = newTutorProxy()
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -142,6 +150,12 @@ func New(opts ...Option) *Server {
 		s.mux.Handle("/api/tasks", s.tasksProxy)
 		s.mux.Handle("/api/products/", s.tasksProxy)
 		s.mux.Handle("/api/products", s.tasksProxy)
+	}
+
+	// Tutor server proxy — forward /api/tutor/* to tutor server.
+	if s.tutorProxy != nil {
+		s.mux.Handle("/api/tutor/", s.tutorProxy)
+		s.mux.Handle("/api/tutor", s.tutorProxy)
 	}
 
 	// WebSocket route — must be registered before SPA fallback.
@@ -495,7 +509,7 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch payload.Type {
-	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS:
+	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS, metrics.EventFrontendUsage:
 		// OK — known event types
 	default:
 		http.Error(w, "unknown event type", http.StatusBadRequest)

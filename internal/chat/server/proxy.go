@@ -171,3 +171,46 @@ func (tp *tasksProxy) IsConnected() bool {
 	defer tp.mu.Unlock()
 	return tp.connected
 }
+
+// tutorProxy manages the reverse proxy to the tutor server.
+// Unlike tasksProxy it does not relay SSE events.
+type tutorProxy struct {
+	reverseProxy *httputil.ReverseProxy
+}
+
+func newTutorProxy() *tutorProxy {
+	tutorURL := os.Getenv("SOUL_TUTOR_URL")
+	if tutorURL == "" {
+		tutorURL = "http://127.0.0.1:3006"
+	}
+
+	target, err := url.Parse(tutorURL)
+	if err != nil {
+		log.Printf("warn: invalid SOUL_TUTOR_URL %q: %v", tutorURL, err)
+		return nil
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(target)
+
+	// Custom transport with timeout.
+	rp.Transport = &http.Transport{
+		ResponseHeaderTimeout: 5 * time.Second,
+	}
+
+	// Custom error handler — return 503 if tutor server is down.
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("tutor proxy error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"tutor server unavailable"}`)
+	}
+
+	return &tutorProxy{
+		reverseProxy: rp,
+	}
+}
+
+// ServeHTTP forwards requests to the tutor server.
+func (tp *tutorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	tp.reverseProxy.ServeHTTP(w, r)
+}
