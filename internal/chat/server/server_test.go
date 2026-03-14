@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
-	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/chat/session"
 )
 
 // newTestServer creates a Server suitable for testing (no metrics, no auth).

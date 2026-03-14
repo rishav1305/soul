@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/metrics"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 )
 
 func runMetrics(args []string) {

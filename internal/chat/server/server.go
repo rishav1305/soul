@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
-	"github.com/rishav1305/soul-v2/internal/metrics"
-	"github.com/rishav1305/soul-v2/internal/session"
-	"github.com/rishav1305/soul-v2/internal/ws"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul-v2/internal/chat/session"
+	"github.com/rishav1305/soul-v2/internal/chat/ws"
 )
 
 const version = "0.1.0"

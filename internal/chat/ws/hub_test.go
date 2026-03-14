@@ -10,7 +10,7 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/metrics"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 )
 
 func TestNewHub_Defaults(t *testing.T) {

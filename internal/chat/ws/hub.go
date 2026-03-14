@@ -15,8 +15,8 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/metrics"
-	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul-v2/internal/chat/session"
 )
 
 // Hub manages the set of active WebSocket clients and serializes

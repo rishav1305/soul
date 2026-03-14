@@ -12,7 +12,7 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/session"
+	"github.com/rishav1305/soul-v2/internal/chat/session"
 )
 
 // setupTestEnv creates a Hub with a session store and MessageHandler,
