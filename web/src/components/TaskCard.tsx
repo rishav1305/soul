@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import type { Task } from '../lib/types';
 import { formatRelativeTime } from '../lib/utils';
+import { usePerformance } from '../hooks/usePerformance';
 
 const WORKFLOW_BADGE: Record<string, string> = {
   micro: 'bg-green-900/40 text-green-400',
@@ -15,6 +16,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, onStart, onStop }: TaskCardProps) {
+  usePerformance('TaskCard');
   const isActive = task.stage === 'active';
 
   return (

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
-import { reportError, reportWSLatency } from '../lib/telemetry';
+import { reportError, reportWSLatency, reportUsage } from '../lib/telemetry';
 
 interface UseChatReturn {
   messages: Message[];
@@ -439,6 +439,7 @@ export function useChat(): UseChatReturn {
       sendTimeRef.current = performance.now();
       firstTokenTimeRef.current = 0;
       send('chat.send', payload);
+      reportUsage('chat.send', { model: options?.model, thinking: options?.thinking, hasAttachments: !!options?.attachments?.length });
     },
     [send],
   );
@@ -464,8 +465,8 @@ export function useChat(): UseChatReturn {
   }, [send]);
 
   const createSession = useCallback(() => {
-    // Create a new session and switch to it.
     send('session.create', {});
+    reportUsage('session.create');
   }, [send]);
 
   const switchSession = useCallback(
@@ -477,6 +478,7 @@ export function useChat(): UseChatReturn {
       setMessages([]);
       setIsStreaming(false);
       send('session.switch', { sessionId: id });
+      reportUsage('session.switch');
     },
     [send],
   );
@@ -484,6 +486,7 @@ export function useChat(): UseChatReturn {
   const deleteSession = useCallback(
     (id: string) => {
       send('session.delete', { sessionId: id });
+      reportUsage('session.delete');
     },
     [send],
   );
@@ -491,6 +494,7 @@ export function useChat(): UseChatReturn {
   const renameSession = useCallback(
     (id: string, title: string) => {
       send('session.rename', { sessionId: id, content: title });
+      reportUsage('session.rename');
     },
     [send],
   );

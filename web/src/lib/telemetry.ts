@@ -1,4 +1,4 @@
-type TelemetryEvent = 'frontend.error' | 'frontend.render' | 'frontend.ws';
+type TelemetryEvent = 'frontend.error' | 'frontend.render' | 'frontend.ws' | 'frontend.usage';
 
 function sendTelemetry(type: TelemetryEvent, data: Record<string, unknown>): void {
   try {
@@ -26,4 +26,8 @@ export function reportRender(component: string, durationMs: number): void {
 
 export function reportWSLatency(firstTokenMs: number, totalMs: number): void {
   sendTelemetry('frontend.ws', { event: 'round_trip', first_token_ms: firstTokenMs, total_ms: totalMs });
+}
+
+export function reportUsage(action: string, data?: Record<string, unknown>): void {
+  sendTelemetry('frontend.usage', { action, ...data });
 }

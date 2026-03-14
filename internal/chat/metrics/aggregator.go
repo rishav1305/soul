@@ -128,6 +128,13 @@ type FrontendReport struct {
 	SlowRenders []RenderEntry
 }
 
+// UsageReport provides page view counts and feature action counts.
+type UsageReport struct {
+	PageViews   map[string]int
+	Actions     map[string]int
+	TotalEvents int
+}
+
 // Cost estimation rates (rough, Sonnet pricing).
 const (
 	inputCostPerMToken  = 3.0  // $3 per million input tokens
@@ -473,6 +480,35 @@ func (a *Aggregator) Frontend() (*FrontendReport, error) {
 				Component:  getStringField(ev.Data, "component"),
 				DurationMs: getFloatField(ev.Data, "duration_ms"),
 			})
+		}
+	}
+	return report, nil
+}
+
+// Usage reads frontend.usage events and computes page views and action counts.
+func (a *Aggregator) Usage() (*UsageReport, error) {
+	events, err := ReadEventsFiltered(a.dataDir, "frontend.usage")
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	report := &UsageReport{
+		PageViews: make(map[string]int),
+		Actions:   make(map[string]int),
+	}
+
+	for _, ev := range events {
+		report.TotalEvents++
+		action := getStringField(ev.Data, "action")
+		if action == "" {
+			continue
+		}
+		if action == "page.view" {
+			page := getStringField(ev.Data, "page")
+			if page != "" {
+				report.PageViews[page]++
+			}
+		} else {
+			report.Actions[action]++
 		}
 	}
 	return report, nil

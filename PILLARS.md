@@ -85,6 +85,34 @@ Every action is observable, every state change is traceable.
 | API cost and token usage tracked per request | Integration test |
 | DB query performance profiled per method | Integration test |
 | Daily log rotation with retention | Unit test |
+| Every feature has observability: render timing, error reporting, usage tracking | Opus review |
+| Page views and feature actions tracked as `frontend.usage` events | CLI `metrics usage` report |
+
+### Implementation Details
+
+**Frontend Telemetry Pipeline:**
+- `reportUsage(action, data)` → `POST /api/telemetry` → JSONL metrics file → CLI aggregation
+- `reportError(source, error)` → same pipeline with `frontend.error` event type
+- `usePerformance(component)` → reports render timing >50ms as `frontend.perf` events
+
+**Page View Tracking** (`frontend.usage` → `page.view`):
+- ChatPage, DashboardPage, TasksPage, TaskDetailPage — all report on mount
+
+**Feature Action Tracking** (`frontend.usage`):
+- Task operations: `task.create`, `task.update`, `task.delete`, `task.start`, `task.stop`
+- Session management: `session.create`, `session.switch`, `session.delete`, `session.rename`
+- Chat: `chat.send` (with model, thinking, hasAttachments metadata)
+
+**Render Performance Monitoring** (`frontend.perf`):
+- Components: ChatPage, DashboardPage, TasksPage, TaskDetailPage, TaskCard, ActivityTimeline
+
+**Error Reporting** (`frontend.error`):
+- API layer: all HTTP and network errors via `api.ts`
+- Task hooks: `useTasks.refresh`, task event parse errors
+- Task detail: load, start, stop failures
+
+**CLI Reporting:**
+- `soul-chat metrics usage` — page views by page, feature actions by type, total event count
 
 ## Pillar Verification Matrix
 

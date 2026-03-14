@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Task, TaskStage } from '../lib/types';
 import { api } from '../lib/api';
+import { reportError, reportUsage } from '../lib/telemetry';
 
 interface UseTasksReturn {
   tasks: Task[];
@@ -26,7 +27,10 @@ export function useTasks(): UseTasksReturn {
         setTasks(data);
         setError(null);
       })
-      .catch(err => setError(err.message))
+      .catch(err => {
+        reportError('useTasks.refresh', err);
+        setError(err.message);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,27 +39,32 @@ export function useTasks(): UseTasksReturn {
   const createTask = useCallback(async (title: string, description = '') => {
     const task = await api.post<Task>('/api/tasks', { title, description });
     setTasks(prev => [task, ...prev]);
+    reportUsage('task.create', { taskId: task.id });
     return task;
   }, []);
 
   const updateTask = useCallback(async (id: number, fields: Partial<Pick<Task, 'title' | 'description' | 'stage'>>) => {
     const task = await api.patch<Task>(`/api/tasks/${id}`, fields);
     setTasks(prev => prev.map(t => t.id === id ? task : t));
+    reportUsage('task.update', { taskId: id, fields: Object.keys(fields) });
     return task;
   }, []);
 
   const deleteTask = useCallback(async (id: number) => {
     await api.delete(`/api/tasks/${id}`);
     setTasks(prev => prev.filter(t => t.id !== id));
+    reportUsage('task.delete', { taskId: id });
   }, []);
 
   const startTask = useCallback(async (id: number) => {
     await api.post<{ status: string }>(`/api/tasks/${id}/start`);
+    reportUsage('task.start', { taskId: id });
     refresh();
   }, [refresh]);
 
   const stopTask = useCallback(async (id: number) => {
     await api.post<{ status: string }>(`/api/tasks/${id}/stop`);
+    reportUsage('task.stop', { taskId: id });
     refresh();
   }, [refresh]);
 

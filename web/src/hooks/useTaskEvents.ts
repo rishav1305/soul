@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Task } from '../lib/types';
+import { reportError } from '../lib/telemetry';
 
 type TaskEventHandler = (eventType: string, task: Task) => void;
 
@@ -15,8 +16,8 @@ export function useTaskEvents(onEvent: TaskEventHandler): void {
           const task = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
           handlerRef.current(msg.type, task);
         }
-      } catch {
-        // Not a task event or invalid JSON — ignore.
+      } catch (err) {
+        reportError('useTaskEvents.parse', err);
       }
     };
 

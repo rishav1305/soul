@@ -1,16 +1,27 @@
+import { reportError } from './telemetry';
+
 const BASE = '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `HTTP ${res.status}`);
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      const err = new Error(body.error || `HTTP ${res.status}`);
+      reportError(`api.${init?.method || 'GET'}`, err);
+      throw err;
+    }
+    if (res.status === 204) return undefined as T;
+    return res.json();
+  } catch (err) {
+    if (err instanceof TypeError) {
+      reportError('api.network', err);
+    }
+    throw err;
   }
-  if (res.status === 204) return undefined as T;
-  return res.json();
 }
 
 export const api = {

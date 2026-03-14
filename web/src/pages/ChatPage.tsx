@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useChat } from '../hooks/useChat';
+import { useChatContext } from '../contexts/ChatContext';
 import { useSwipeDrawer } from '../hooks/useSwipeDrawer';
+import { usePerformance } from '../hooks/usePerformance';
+import { reportUsage } from '../lib/telemetry';
 import { MessageList } from '../components/MessageList';
 import { ChatInput } from '../components/ChatInput';
 import type { ChatInputHandle } from '../components/ChatInput';
@@ -9,6 +11,8 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SearchBar } from '../components/SearchBar';
 
 export function ChatPage() {
+  usePerformance('ChatPage');
+  useEffect(() => { reportUsage('page.view', { page: 'chat' }); }, []);
   const {
     messages,
     isStreaming,
@@ -26,7 +30,7 @@ export function ChatPage() {
     switchSession,
     deleteSession,
     renameSession,
-  } = useChat();
+  } = useChatContext();
 
   const { isOpen, close, toggle, handlers } = useSwipeDrawer();
   const inputRef = useRef<ChatInputHandle>(null);

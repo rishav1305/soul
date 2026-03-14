@@ -16,7 +16,7 @@ import (
 func runMetrics(args []string) {
 	if len(args) < 1 {
 		fmt.Println("usage: soul-chat metrics <subcommand>")
-		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, usage, tail, log")
 		os.Exit(1)
 	}
 
@@ -39,13 +39,15 @@ func runMetrics(args []string) {
 		runMetricsRequests()
 	case "frontend":
 		runMetricsFrontend()
+	case "usage":
+		runMetricsUsage()
 	case "tail":
 		runMetricsTail(args[1:])
 	case "log":
 		runMetricsLog(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown metrics subcommand: %s\n", args[0])
-		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, tail, log")
+		fmt.Println("subcommands: status, quality, layers, cost, latency, alerts, db, requests, frontend, usage, tail, log")
 		os.Exit(1)
 	}
 }
@@ -320,6 +322,47 @@ func runMetricsFrontend() {
 		for _, r := range report.SlowRenders {
 			fmt.Printf("    %-24s %.0fms\n", r.Component, r.DurationMs)
 		}
+	}
+}
+
+// runMetricsUsage handles: soul metrics usage
+func runMetricsUsage() {
+	dataDir := getDataDir()
+	agg := metrics.NewAggregator(dataDir)
+	report, err := agg.Usage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("=== Usage Report ===")
+	fmt.Printf("  Total Events: %d\n", report.TotalEvents)
+
+	if len(report.PageViews) > 0 {
+		fmt.Println("\n  Page Views:")
+		pages := make([]string, 0, len(report.PageViews))
+		for p := range report.PageViews {
+			pages = append(pages, p)
+		}
+		sort.Strings(pages)
+		for _, p := range pages {
+			fmt.Printf("    %-24s %d\n", p, report.PageViews[p])
+		}
+	}
+
+	if len(report.Actions) > 0 {
+		fmt.Println("\n  Feature Actions:")
+		actions := make([]string, 0, len(report.Actions))
+		for a := range report.Actions {
+			actions = append(actions, a)
+		}
+		sort.Strings(actions)
+		for _, a := range actions {
+			fmt.Printf("    %-24s %d\n", a, report.Actions[a])
+		}
+	}
+
+	if report.TotalEvents == 0 {
+		fmt.Println("  No usage events recorded.")
 	}
 }
 

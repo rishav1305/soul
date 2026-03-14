@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTasks } from '../hooks/useTasks';
+import { usePerformance } from '../hooks/usePerformance';
+import { reportUsage } from '../lib/telemetry';
 import { TaskCard } from '../components/TaskCard';
 import type { TaskStage } from '../lib/types';
 
@@ -12,6 +14,8 @@ const COLUMNS: { stage: TaskStage; label: string; color: string }[] = [
 ];
 
 export function TasksPage() {
+  usePerformance('TasksPage');
+  useEffect(() => { reportUsage('page.view', { page: 'tasks' }); }, []);
   const { tasks, loading, error, createTask, startTask, stopTask } = useTasks();
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -27,7 +31,7 @@ export function TasksPage() {
       setNewDesc('');
       setShowCreate(false);
     } catch {
-      // Error handled by useTasks
+      // Error surfaced via useTasks.error state
     } finally {
       setCreating(false);
     }

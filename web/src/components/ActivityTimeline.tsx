@@ -1,4 +1,5 @@
 import { formatRelativeTime } from '../lib/utils';
+import { usePerformance } from '../hooks/usePerformance';
 import type { TaskActivity } from '../lib/types';
 
 interface ActivityTimelineProps {
@@ -21,6 +22,7 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 export function ActivityTimeline({ activities }: ActivityTimelineProps) {
+  usePerformance('ActivityTimeline');
   if (activities.length === 0) {
     return <p className="text-sm text-fg-muted">No activity yet.</p>;
   }

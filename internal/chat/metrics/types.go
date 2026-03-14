@@ -66,6 +66,7 @@ const (
 	EventFrontendError  = "frontend.error"
 	EventFrontendRender = "frontend.render"
 	EventFrontendWS     = "frontend.ws"
+	EventFrontendUsage  = "frontend.usage"
 )
 
 // Error taxonomy constants — categories for classifying errors.

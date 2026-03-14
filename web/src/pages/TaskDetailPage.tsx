@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { api } from '../lib/api';
+import { reportError, reportUsage } from '../lib/telemetry';
+import { usePerformance } from '../hooks/usePerformance';
 import type { Task, TaskActivity, TaskStage } from '../lib/types';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 
@@ -13,7 +15,9 @@ const STAGE_COLORS: Record<TaskStage, string> = {
 };
 
 export function TaskDetailPage() {
+  usePerformance('TaskDetailPage');
   const { id } = useParams<{ id: string }>();
+  useEffect(() => { reportUsage('page.view', { page: 'task_detail', taskId: id }); }, [id]);
   const [task, setTask] = useState<Task | null>(null);
   const [activities, setActivities] = useState<TaskActivity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +35,10 @@ export function TaskDetailPage() {
         setActivities(acts);
         setError(null);
       })
-      .catch(err => setError(err.message))
+      .catch(err => {
+        reportError('TaskDetailPage.load', err);
+        setError(err.message);
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -42,6 +49,7 @@ export function TaskDetailPage() {
       const t = await api.get<Task>(`/api/tasks/${id}`);
       setTask(t);
     } catch (err) {
+      reportError('TaskDetailPage.start', err);
       setError(err instanceof Error ? err.message : 'Start failed');
     }
   };
@@ -53,6 +61,7 @@ export function TaskDetailPage() {
       const t = await api.get<Task>(`/api/tasks/${id}`);
       setTask(t);
     } catch (err) {
+      reportError('TaskDetailPage.stop', err);
       setError(err instanceof Error ? err.message : 'Stop failed');
     }
   };
