@@ -1,5 +1,5 @@
 # Soul v2 — Global Pillar Definitions
-# This is NOT a module spec. It defines the five non-negotiable constraints
+# This is NOT a module spec. It defines the six non-negotiable constraints
 # that every module, every line of code, and every commit must satisfy.
 
 pillars:
@@ -125,6 +125,34 @@ pillars:
         target: "offline reading via service worker"
         enforcement: "E2E offline test"
 
+  transparent:
+    description: "Every action is observable, every state change is traceable"
+    constraints:
+      - metric: "structured_event_logging"
+        target: "every state transition logged as structured JSONL event"
+        enforcement: "Unit tests per event emitter"
+      - metric: "cli_queryability"
+        target: "metrics queryable via CLI (status, cost, latency, errors)"
+        enforcement: "Integration test"
+      - metric: "frontend_telemetry"
+        target: "frontend errors and slow renders reported to backend"
+        enforcement: "E2E telemetry check"
+      - metric: "alert_thresholds"
+        target: "alerts fire on anomalies (latency, error rate, memory)"
+        enforcement: "Unit test"
+      - metric: "no_silent_failures"
+        target: "all errors surface to user or log — no swallowed exceptions"
+        enforcement: "Opus review"
+      - metric: "cost_tracking"
+        target: "API cost and token usage tracked per request"
+        enforcement: "Integration test"
+      - metric: "db_profiling"
+        target: "DB query performance profiled per method with percentiles"
+        enforcement: "Integration test"
+      - metric: "log_rotation"
+        target: "daily log rotation with retention"
+        enforcement: "Unit test"
+
 verification_matrix:
   - layer: "L1: Static Analysis"
     checks: "go vet, tsc --noEmit, secret scan, dep audit"
@@ -132,11 +160,11 @@ verification_matrix:
     cadence: "every commit"
   - layer: "L2: Unit Tests"
     checks: "public functions, edge cases, error paths"
-    pillars: ["robust", "resilient"]
+    pillars: ["robust", "resilient", "transparent"]
     cadence: "every commit"
   - layer: "L3: Integration Tests"
     checks: "API contracts, WS protocol, DB operations"
-    pillars: ["performant", "robust", "resilient", "secure"]
+    pillars: ["performant", "robust", "resilient", "secure", "transparent"]
     cadence: "every commit"
   - layer: "L4: E2E Tests"
     checks: "full user flows, timing, rendering"
@@ -148,7 +176,7 @@ verification_matrix:
     cadence: "weekly"
   - layer: "L6: Opus Review"
     checks: "diff review, architecture alignment, pillar compliance"
-    pillars: ["performant", "robust", "resilient", "secure", "sovereign"]
+    pillars: ["performant", "robust", "resilient", "secure", "sovereign", "transparent"]
     cadence: "pre-merge"
   - layer: "L7: Visual Regression"
     checks: "screenshot comparison, layout shifts"

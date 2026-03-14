@@ -1,6 +1,6 @@
 # Soul v2 — Design Pillars
 
-Five non-negotiable constraints. Every feature, every line of code, every commit is measured against these pillars. If a change violates any constraint, it does not ship.
+Six non-negotiable constraints. Every feature, every line of code, every commit is measured against these pillars. If a change violates any constraint, it does not ship.
 
 ## 1. PERFORMANT
 
@@ -71,14 +71,29 @@ You own everything.
 | Claude API abstracted, swappable | Opus review |
 | Offline reading (service worker) | E2E offline test |
 
+## 6. TRANSPARENT
+
+Every action is observable, every state change is traceable.
+
+| Constraint | Enforcement |
+|------------|-------------|
+| Every state transition logged as structured event | Unit tests per event emitter |
+| Metrics queryable via CLI (status, cost, latency, errors) | Integration test |
+| Frontend errors and slow renders reported to backend | E2E telemetry check |
+| Alert thresholds fire on anomalies | Unit test |
+| No silent failures — all errors surface to user or log | Opus review |
+| API cost and token usage tracked per request | Integration test |
+| DB query performance profiled per method | Integration test |
+| Daily log rotation with retention | Unit test |
+
 ## Pillar Verification Matrix
 
 | Layer | What it checks | Pillars covered | When it runs |
 |-------|---------------|-----------------|--------------|
 | L1: Static Analysis | `go vet`, `tsc --noEmit`, secret scan, dep audit | Robust, Secure | Every commit |
-| L2: Unit Tests | Public functions, edge cases, error paths | Robust, Resilient | Every commit |
-| L3: Integration Tests | API contracts, WS protocol, DB operations | Performant, Robust, Resilient, Secure | Every commit |
+| L2: Unit Tests | Public functions, edge cases, error paths | Robust, Resilient, Transparent | Every commit |
+| L3: Integration Tests | API contracts, WS protocol, DB operations | Performant, Robust, Resilient, Secure, Transparent | Every commit |
 | L4: E2E Tests | Full user flows, timing, rendering | Performant, Robust, Sovereign | Pre-merge |
 | L5: Load Tests | Concurrency, memory, degradation | Performant, Resilient | Weekly |
-| L6: Opus Review | Diff review, architecture alignment, pillar compliance | All pillars | Pre-merge |
+| L6: Opus Review | Diff review, architecture alignment, pillar compliance | All six pillars | Pre-merge |
 | L7: Visual Regression | Screenshot comparison, layout shifts | Performant, Robust | Pre-merge (UI changes) |
