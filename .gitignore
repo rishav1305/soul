@@ -18,6 +18,9 @@ web/dist/
 # Build artifacts
 *.log
 
+# Worktrees (autonomous execution)
+.worktrees/
+
 # Secrets
 .env
 .env.*

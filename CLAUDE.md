@@ -30,6 +30,13 @@ internal/chat/
 internal/tasks/
   server/                     HTTP server, REST API, SSE broadcaster
   store/                      SQLite task CRUD (tasks.db)
+  executor/                   Autonomous execution engine
+    executor.go               Lifecycle — start/stop/track running tasks
+    agent.go                  Tool-calling agent loop with Claude API
+    tools.go                  Agent tools (file_read/write, bash, list_files)
+    classify.go               Workflow classifier (micro/quick/full)
+    worktree.go               Git worktree isolation per task
+    verify.go                 L1 verification gate (go vet + tsc)
 web/src/
   components/                 React components (Shell, Chat, Sessions)
   hooks/                      Custom hooks (useWebSocket, useSessions)
@@ -49,6 +56,7 @@ tools/                        specgen, monitor
 | `SOUL_TASKS_HOST` | `127.0.0.1` | Tasks server bind address |
 | `SOUL_TASKS_PORT` | `3004` | Tasks server port |
 | `SOUL_TASKS_URL` | `http://127.0.0.1:3004` | Tasks server URL (for chat proxy) |
+| `SOUL_V2_REPO_DIR` | `(cwd)` | Project root for worktree creation |
 
 Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
 
