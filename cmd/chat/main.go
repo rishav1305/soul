@@ -72,21 +72,14 @@ func runServe() {
 	}
 
 	// Auto-migrate sessions.db → chat.db
-	chatDBPath := filepath.Join(dataDir, "chat.db")
-	oldDBPath := filepath.Join(dataDir, "sessions.db")
-	if _, err := os.Stat(chatDBPath); os.IsNotExist(err) {
-		if _, err := os.Stat(oldDBPath); err == nil {
-			log.Printf("Migrating %s → %s", oldDBPath, chatDBPath)
-			if err := os.Rename(oldDBPath, chatDBPath); err != nil {
-				log.Fatalf("Failed to rename database: %v", err)
-			}
-			// Also rename WAL and SHM files if they exist
-			os.Rename(oldDBPath+"-wal", chatDBPath+"-wal")
-			os.Rename(oldDBPath+"-shm", chatDBPath+"-shm")
-		}
+	if migrated, err := session.MigrateDBPath(dataDir); err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	} else if migrated {
+		log.Printf("Migrated sessions.db → chat.db")
 	}
 
 	// Open session store.
+	chatDBPath := filepath.Join(dataDir, "chat.db")
 	rawStore, err := session.Open(chatDBPath)
 	if err != nil {
 		log.Fatalf("open session store: %v", err)

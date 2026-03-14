@@ -6,51 +6,98 @@ import (
 	"testing"
 )
 
-func TestDBRename_MigratesOldFile(t *testing.T) {
+func TestMigrateDBPath_MigratesOldFile(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "sessions.db")
 	newPath := filepath.Join(dir, "chat.db")
 
-	// Create old DB file
 	if err := os.WriteFile(oldPath, []byte("test"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Simulate migration
-	if _, err := os.Stat(newPath); os.IsNotExist(err) {
-		if _, err := os.Stat(oldPath); err == nil {
-			if err := os.Rename(oldPath, newPath); err != nil {
-				t.Fatal(err)
-			}
-		}
+	migrated, err := MigrateDBPath(dir)
+	if err != nil {
+		t.Fatalf("MigrateDBPath() error: %v", err)
+	}
+	if !migrated {
+		t.Error("MigrateDBPath() = false, want true")
 	}
 
-	// Verify old file gone, new file exists
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
-		t.Error("old file should not exist")
+		t.Error("old file should not exist after migration")
 	}
 	if _, err := os.Stat(newPath); err != nil {
-		t.Error("new file should exist")
+		t.Error("new file should exist after migration")
 	}
 }
 
-func TestDBRename_SkipsIfNewExists(t *testing.T) {
+func TestMigrateDBPath_MigratesWALAndSHM(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "sessions.db")
+
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.WriteFile(oldPath+suffix, []byte("data"+suffix), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	migrated, err := MigrateDBPath(dir)
+	if err != nil {
+		t.Fatalf("MigrateDBPath() error: %v", err)
+	}
+	if !migrated {
+		t.Error("MigrateDBPath() = false, want true")
+	}
+
+	newPath := filepath.Join(dir, "chat.db")
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if _, err := os.Stat(newPath + suffix); err != nil {
+			t.Errorf("chat.db%s should exist", suffix)
+		}
+		if _, err := os.Stat(oldPath + suffix); !os.IsNotExist(err) {
+			t.Errorf("sessions.db%s should not exist", suffix)
+		}
+	}
+}
+
+func TestMigrateDBPath_SkipsIfNewExists(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "sessions.db")
 	newPath := filepath.Join(dir, "chat.db")
 
-	// Create both files
-	os.WriteFile(oldPath, []byte("old"), 0600)
-	os.WriteFile(newPath, []byte("new"), 0600)
-
-	// Migration should skip (chat.db already exists)
-	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
-		// chat.db exists, skip migration
+	if err := os.WriteFile(oldPath, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte("new"), 0600); err != nil {
+		t.Fatal(err)
 	}
 
-	// Verify new file unchanged
+	migrated, err := MigrateDBPath(dir)
+	if err != nil {
+		t.Fatalf("MigrateDBPath() error: %v", err)
+	}
+	if migrated {
+		t.Error("MigrateDBPath() = true, want false when chat.db exists")
+	}
+
 	data, _ := os.ReadFile(newPath)
 	if string(data) != "new" {
-		t.Error("new file should be unchanged")
+		t.Error("chat.db should be unchanged")
+	}
+	oldData, _ := os.ReadFile(oldPath)
+	if string(oldData) != "old" {
+		t.Error("sessions.db should be preserved")
+	}
+}
+
+func TestMigrateDBPath_FreshInstall(t *testing.T) {
+	dir := t.TempDir()
+
+	migrated, err := MigrateDBPath(dir)
+	if err != nil {
+		t.Fatalf("MigrateDBPath() error: %v", err)
+	}
+	if migrated {
+		t.Error("MigrateDBPath() = true, want false on fresh install")
 	}
 }
