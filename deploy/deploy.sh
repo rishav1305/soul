@@ -14,7 +14,7 @@ npm run build
 # 2. Build Go binary
 echo "Building Go binary..."
 cd "$PROJECT_DIR"
-go build -o soul ./cmd/soul
+go build -o soul-chat ./cmd/chat
 
 # 3. Run tests
 echo "Running tests..."

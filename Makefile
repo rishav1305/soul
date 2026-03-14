@@ -1,17 +1,19 @@
-.PHONY: build build-go web serve types clean deploy
+.PHONY: build build-go build-tasks web serve types clean deploy
 .PHONY: verify verify-static verify-unit verify-integ verify-e2e verify-review
 .PHONY: check-bundle check-secrets check-deps
 
 # Build
 build: web build-go
 build-go:
-	go build -o soul ./cmd/soul
+	go build -o soul-chat ./cmd/chat
+build-tasks:
+	@echo "Tasks server not yet implemented"
 web:
 	cd web && npx vite build
 serve: build
-	./soul serve
+	./soul-chat serve
 clean:
-	rm -f soul
+	rm -f soul-chat
 	rm -rf web/dist
 
 # Generate
@@ -27,7 +29,7 @@ verify-static-go:
 verify-static-ts:
 	cd web && npx tsc --noEmit
 verify-unit:
-	go test -race -count=1 ./internal/...
+	go test -race -count=1 ./internal/... ./pkg/...
 verify-integ:
 	go test -race -count=1 ./tests/integration/...
 

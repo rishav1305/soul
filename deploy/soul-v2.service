@@ -7,7 +7,7 @@ Type=simple
 User=rishav
 Group=rishav
 WorkingDirectory=/home/rishav/soul-v2
-ExecStart=/home/rishav/soul-v2/soul serve
+ExecStart=/home/rishav/soul-v2/soul-chat serve
 Restart=on-failure
 RestartSec=5
 Environment=SOUL_V2_HOST=0.0.0.0
