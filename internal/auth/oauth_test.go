@@ -13,8 +13,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/metrics"
+	"github.com/rishav1305/soul-v2/pkg/events"
 )
+
+// testLogger records event types for assertion.
+type testLogger struct {
+	events []string
+}
+
+func (l *testLogger) Log(eventType string, data map[string]interface{}) error {
+	l.events = append(l.events, eventType)
+	return nil
+}
 
 // validCredJSON returns a JSON credentials file with the given expiry (Unix ms).
 func validCredJSON(t *testing.T, expiresAt int64) []byte {
@@ -166,31 +176,21 @@ func TestLoad_RejectsWorldReadablePermissions(t *testing.T) {
 
 func TestLoad_LogsOAuthReloadEvent(t *testing.T) {
 	dir := t.TempDir()
-	metricsDir := t.TempDir()
-
-	logger, err := metrics.NewEventLogger(metricsDir)
-	if err != nil {
-		t.Fatalf("create logger: %v", err)
-	}
-	defer logger.Close()
-
 	expiry := futureMs(1 * time.Hour)
 	path := writeCredFile(t, dir, validCredJSON(t, expiry), 0600)
 
+	logger := &testLogger{}
 	src := NewOAuthTokenSource(path, logger)
-	_, err = src.Load()
+	_, err := src.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	// Verify the metrics file was written to (at least one line).
-	metricsPath := filepath.Join(metricsDir, "metrics.jsonl")
-	data, err := os.ReadFile(metricsPath)
-	if err != nil {
-		t.Fatalf("read metrics file: %v", err)
+	if len(logger.events) == 0 {
+		t.Error("expected oauth.reload event, got none")
 	}
-	if len(data) == 0 {
-		t.Error("expected oauth.reload event in metrics log, got empty file")
+	if logger.events[0] != events.EventOAuthReload {
+		t.Errorf("event type = %q, want %q", logger.events[0], events.EventOAuthReload)
 	}
 }
 

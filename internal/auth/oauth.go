@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/metrics"
+	"github.com/rishav1305/soul-v2/pkg/events"
 )
 
 // OAuth constants — used by token refresh in Step 1.4.
@@ -76,13 +76,16 @@ type OAuthTokenSource struct {
 	mu               sync.RWMutex
 	refreshMu        sync.Mutex
 	httpClient       *http.Client
-	logger           *metrics.EventLogger
+	logger           events.Logger
 	tokenURLOverride string // for testing — overrides OAuthTokenURL
 }
 
 // NewOAuthTokenSource creates a token source that loads credentials from credPath.
-// The logger parameter may be nil — logging is skipped when nil.
-func NewOAuthTokenSource(credPath string, logger *metrics.EventLogger) *OAuthTokenSource {
+// The logger parameter may be nil — a NopLogger is used when nil.
+func NewOAuthTokenSource(credPath string, logger events.Logger) *OAuthTokenSource {
+	if logger == nil {
+		logger = events.NopLogger{}
+	}
 	return &OAuthTokenSource{
 		credPath:   credPath,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
@@ -136,13 +139,11 @@ func (s *OAuthTokenSource) Load() (*OAuthCredentials, error) {
 	s.creds = creds
 	s.mu.Unlock()
 
-	// Log the reload event (if logger provided).
-	if s.logger != nil {
-		_ = s.logger.Log(metrics.EventOAuthReload, map[string]interface{}{
-			"path":    s.credPath,
-			"expired": creds.IsExpired(),
-		})
-	}
+	// Log the reload event.
+	_ = s.logger.Log(events.EventOAuthReload, map[string]interface{}{
+		"path":    s.credPath,
+		"expired": creds.IsExpired(),
+	})
 
 	return creds, nil
 }
@@ -263,27 +264,23 @@ func (s *OAuthTokenSource) Refresh() error {
 		err := s.doRefresh(refreshToken)
 		if err == nil {
 			// Log success (never log token values).
-			if s.logger != nil {
-				_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
-					"success":  true,
-					"duration": time.Since(start).Milliseconds(),
-					"attempts": attempt + 1,
-				})
-			}
+			_ = s.logger.Log(events.EventOAuthRefresh, map[string]interface{}{
+				"success":  true,
+				"duration": time.Since(start).Milliseconds(),
+				"attempts": attempt + 1,
+			})
 			return nil
 		}
 		lastErr = err
 	}
 
 	// Log failure.
-	if s.logger != nil {
-		_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
-			"success":  false,
-			"duration": time.Since(start).Milliseconds(),
-			"attempts": len(refreshBackoff),
-			"error":    lastErr.Error(),
-		})
-	}
+	_ = s.logger.Log(events.EventOAuthRefresh, map[string]interface{}{
+		"success":  false,
+		"duration": time.Since(start).Milliseconds(),
+		"attempts": len(refreshBackoff),
+		"error":    lastErr.Error(),
+	})
 
 	return fmt.Errorf("refresh failed after %d attempts: %w", len(refreshBackoff), lastErr)
 }
@@ -350,11 +347,9 @@ func (s *OAuthTokenSource) doRefresh(refreshToken string) error {
 	// Persist new creds to disk.
 	if err := s.Persist(); err != nil {
 		// Log but don't fail — the in-memory creds are still valid.
-		if s.logger != nil {
-			_ = s.logger.Log(metrics.EventOAuthRefresh, map[string]interface{}{
-				"persist_error": err.Error(),
-			})
-		}
+		_ = s.logger.Log(events.EventOAuthRefresh, map[string]interface{}{
+			"persist_error": err.Error(),
+		})
 	}
 
 	return nil
@@ -435,8 +430,8 @@ func (s *OAuthTokenSource) ReloadFromDisk() bool {
 
 	updated := old == nil || old.AccessToken != cf.ClaudeAIOAuth.AccessToken
 
-	if updated && s.logger != nil {
-		_ = s.logger.Log(metrics.EventOAuthReload, map[string]interface{}{
+	if updated {
+		_ = s.logger.Log(events.EventOAuthReload, map[string]interface{}{
 			"path":    s.credPath,
 			"expired": cf.ClaudeAIOAuth.IsExpired(),
 		})
