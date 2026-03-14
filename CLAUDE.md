@@ -5,7 +5,7 @@ Go + React/TypeScript monorepo. AI-agent-maintained, spec-driven chat interface 
 ## Quick Commands
 
 ```bash
-make build          # Build Go binary + frontend
+make build          # Build soul-chat binary + frontend
 make serve          # Build and run on :3002
 make verify         # Run L1-L3 verification (static + unit + integration)
 make verify-static  # Go vet + tsc --noEmit + secret scan + dep audit
@@ -16,13 +16,15 @@ make clean          # Remove build artifacts
 ## Architecture
 
 ```
-cmd/soul/main.go              CLI entrypoint
-internal/
-  auth/                       Claude OAuth — load, refresh, persist tokens
-  session/                    SQLite session CRUD
+cmd/chat/main.go              Chat server CLI entrypoint
+pkg/
+  auth/                       Claude OAuth — shared by both servers
+  events/                     Logger interface + Event type
+internal/chat/
+  server/                     HTTP server + SPA serving
+  session/                    SQLite session CRUD (chat.db)
   stream/                     Claude API streaming — SSE parse
   ws/                         WebSocket hub — session-scoped routing
-  server/                     HTTP server + SPA serving
   metrics/                    Event logging, aggregation, CLI reporting
 web/src/
   components/                 React components (Shell, Chat, Sessions)
@@ -30,7 +32,7 @@ web/src/
   lib/                        types.ts (generated), ws.ts, api.ts
 specs/                        YAML module specs (source of truth)
 tests/                        Integration, E2E, load, verification
-tools/                        specgen, classifier, reviewer, monitor
+tools/                        specgen, monitor
 ```
 
 ## Environment Variables
@@ -46,7 +48,7 @@ Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
 ## Conventions — Go
 
 - Go 1.24+, standard library preferred
-- All Claude API calls through `internal/stream/` — never direct HTTP
+- All Claude API calls through `internal/chat/stream/` — never direct HTTP
 - Parameterized SQL queries only (`?` placeholders) — never string concat
 - No hardcoded secrets — env vars or Vaultwarden
 - Error returns, not panics

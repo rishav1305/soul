@@ -1,7 +1,7 @@
 module: stream
 purpose: "Claude API streaming client — build requests, parse SSE"
 language: go
-package: github.com/rishav1305/soul-v2/internal/stream
+package: github.com/rishav1305/soul-v2/internal/chat/stream
 
 invariants:
   - "Only external HTTP call target is api.anthropic.com — no other hosts"

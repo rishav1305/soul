@@ -1,7 +1,7 @@
 module: metrics
 purpose: "Event logging, aggregation, and CLI reporting"
 language: go
-package: github.com/rishav1305/soul-v2/internal/metrics
+package: github.com/rishav1305/soul-v2/internal/chat/metrics
 
 invariants:
   - "All writes are goroutine-safe — protected by sync.Mutex"

@@ -1,7 +1,7 @@
 module: session
 purpose: "SQLite session CRUD with message storage"
 language: go
-package: github.com/rishav1305/soul-v2/internal/session
+package: github.com/rishav1305/soul-v2/internal/chat/session
 
 invariants:
   - "Database always opened in WAL mode for concurrent read support"

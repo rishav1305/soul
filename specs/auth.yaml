@@ -1,7 +1,7 @@
 module: auth
 purpose: "Claude OAuth token management — load, refresh, persist"
 language: go
-package: github.com/rishav1305/soul-v2/internal/auth
+package: github.com/rishav1305/soul-v2/pkg/auth
 
 invariants:
   - "Tokens loaded exclusively from ~/.claude/.credentials.json — no other source"

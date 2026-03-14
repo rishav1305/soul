@@ -1,7 +1,7 @@
 module: server
 purpose: "HTTP server — SPA serving, API routes, middleware"
 language: go
-package: github.com/rishav1305/soul-v2/internal/server
+package: github.com/rishav1305/soul-v2/internal/chat/server
 
 invariants:
   - "Default port: 3002, configurable via SOUL_V2_PORT env var"

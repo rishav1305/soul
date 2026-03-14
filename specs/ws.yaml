@@ -1,7 +1,7 @@
 module: ws
 purpose: "WebSocket hub — per-client connections, session-scoped routing"
 language: go
-package: github.com/rishav1305/soul-v2/internal/ws
+package: github.com/rishav1305/soul-v2/internal/chat/ws
 
 invariants:
   - "Send channel bounded to 256 messages — drops oldest if full"
