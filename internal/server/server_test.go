@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/auth"
+	"github.com/rishav1305/soul-v2/pkg/auth"
 	"github.com/rishav1305/soul-v2/internal/session"
 )
 

@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/auth"
+	"github.com/rishav1305/soul-v2/pkg/auth"
 	"github.com/rishav1305/soul-v2/internal/metrics"
 	"github.com/rishav1305/soul-v2/internal/session"
 	"github.com/rishav1305/soul-v2/internal/ws"
