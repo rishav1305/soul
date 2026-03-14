@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ChatProvider } from './contexts/ChatContext';
 import { router } from './router';
 import './app.css';
 
@@ -10,7 +11,9 @@ if (root) {
   createRoot(root).render(
     <StrictMode>
       <ErrorBoundary>
-        <RouterProvider router={router} />
+        <ChatProvider>
+          <RouterProvider router={router} />
+        </ChatProvider>
       </ErrorBoundary>
     </StrictMode>,
   );
