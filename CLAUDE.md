@@ -5,8 +5,8 @@ Go + React/TypeScript monorepo. AI-agent-maintained, spec-driven chat interface 
 ## Quick Commands
 
 ```bash
-make build          # Build soul-chat + soul-tasks binaries + frontend
-make serve          # Build and run both servers (:3002 + :3004)
+make build          # Build soul-chat + soul-tasks + soul-tutor binaries + frontend
+make serve          # Build and run all servers (:3002 + :3004 + :3006)
 make verify         # Run L1-L3 verification (static + unit + integration)
 make verify-static  # Go vet + tsc --noEmit + secret scan + dep audit
 make types          # Generate types.ts from specs
@@ -18,11 +18,12 @@ make clean          # Remove build artifacts
 ```
 cmd/chat/main.go              Chat server CLI entrypoint (:3002)
 cmd/tasks/main.go             Tasks server CLI entrypoint (:3004)
+cmd/tutor/main.go             Tutor server CLI entrypoint (:3006)
 pkg/
-  auth/                       Claude OAuth — shared by both servers
+  auth/                       Claude OAuth — shared by all servers
   events/                     Logger interface + Event type
 internal/chat/
-  server/                     HTTP server + SPA serving + tasks proxy
+  server/                     HTTP server + SPA serving + tasks/tutor proxy
   session/                    SQLite session CRUD (chat.db)
   stream/                     Claude API streaming — SSE parse
   ws/                         WebSocket hub — session-scoped routing
@@ -37,9 +38,13 @@ internal/tasks/
     classify.go               Workflow classifier (micro/quick/full)
     worktree.go               Git worktree isolation per task
     verify.go                 L1 verification gate (go vet + tsc)
+internal/tutor/
+  server/                     HTTP server, REST API, tool execution
+  store/                      SQLite CRUD (tutor.db) — 11 tables
+  modules/                    5 modules (DSA, AI, Behavioral, Mock, Planner) + SM-2 + importer
 web/src/
   main.tsx                    Entry — RouterProvider with lazy-loaded routes
-  router.tsx                  Route definitions (/, /chat, /tasks, /tasks/:id)
+  router.tsx                  Route definitions (/, /chat, /tasks, /tasks/:id, /tutor, /tutor/drill/:id, /tutor/mock/:id)
   layouts/
     AppLayout.tsx             Shared header + nav + Outlet
   pages/
@@ -47,8 +52,11 @@ web/src/
     DashboardPage.tsx         System overview — task counts, recent tasks
     TasksPage.tsx             Kanban board — Backlog/Active/Validation/Done/Blocked
     TaskDetailPage.tsx        Single task view with activity timeline
-  components/                 React components (Shell, Chat, Sessions, TaskCard)
-  hooks/                      Custom hooks (useChat, useTasks, useTaskEvents)
+    TutorPage.tsx             Interview prep — 5 tabs (Dashboard, Analytics, Topics, Mocks, Guide)
+    DrillPage.tsx             Interactive quiz drill with SM-2 spaced repetition
+    MockPage.tsx              Mock interview session detail
+  components/                 React components (Shell, Chat, Sessions, TaskCard, ModuleCard, etc.)
+  hooks/                      Custom hooks (useChat, useTasks, useTaskEvents, useTutor, useDrill, useMockSession)
   lib/                        types.ts (generated), ws.ts, api.ts
 specs/                        YAML module specs (source of truth)
 tests/                        Integration, E2E, load, verification
@@ -65,6 +73,9 @@ tools/                        specgen, monitor
 | `SOUL_TASKS_HOST` | `127.0.0.1` | Tasks server bind address |
 | `SOUL_TASKS_PORT` | `3004` | Tasks server port |
 | `SOUL_TASKS_URL` | `http://127.0.0.1:3004` | Tasks server URL (for chat proxy) |
+| `SOUL_TUTOR_HOST` | `127.0.0.1` | Tutor server bind address |
+| `SOUL_TUTOR_PORT` | `3006` | Tutor server port |
+| `SOUL_TUTOR_URL` | `http://127.0.0.1:3006` | Tutor server URL (for chat proxy) |
 | `SOUL_V2_REPO_DIR` | `(cwd)` | Project root for worktree creation |
 
 Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
