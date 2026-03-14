@@ -35,7 +35,19 @@ function formatTime(seconds: number): string {
 
 // --- Dashboard Tab ---
 function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
-  const readinessPercent = Math.round(dashboard.readiness * 100);
+  const readinessPercent = Math.round(dashboard.readinessPct);
+  const todaySummary = (dashboard.todayActivity ?? []).reduce(
+    (acc, a) => ({
+      time: acc.time + a.timeSpentSeconds,
+      sessions: acc.sessions + a.sessionsCount,
+      questions: acc.questions + a.questionsAnswered,
+      scoreSum: acc.scoreSum + a.scoreAvg,
+      count: acc.count + (a.scoreAvg > 0 ? 1 : 0),
+    }),
+    { time: 0, sessions: 0, questions: 0, scoreSum: 0, count: 0 },
+  );
+  const todayAvgScore = todaySummary.count > 0 ? todaySummary.scoreSum / todaySummary.count : 0;
+
   return (
     <div className="space-y-6" data-testid="dashboard-tab">
       {/* Readiness + badges */}
@@ -51,9 +63,9 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
           <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400" data-testid="streak-badge">
             {dashboard.streak} day streak
           </span>
-          {dashboard.due_reviews > 0 && (
+          {dashboard.dueReviewCount > 0 && (
             <span className="px-2 py-0.5 text-xs rounded-full bg-red-500/20 text-red-400" data-testid="due-reviews-badge">
-              {dashboard.due_reviews} due reviews
+              {dashboard.dueReviewCount} due reviews
             </span>
           )}
         </div>
@@ -63,25 +75,20 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
       <div>
         <h3 className="text-sm font-medium text-zinc-400 mb-3">Modules</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="module-grid">
-          {dashboard.modules.map(mod => {
-            const completionPercent = Math.round(mod.completion * 100);
+          {(dashboard.moduleStats ?? []).map(mod => {
+            const completionPercent = Math.round(mod.completionPct);
             return (
               <div key={mod.module} className="bg-zinc-800 rounded-lg p-4 space-y-2" data-testid={`module-card-${mod.module}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-zinc-100">{mod.module}</span>
+                  <span className="text-sm font-medium text-zinc-100 capitalize">{mod.module}</span>
                   <span className={`text-xs font-medium ${scoreColor(completionPercent)}`}>{completionPercent}%</span>
                 </div>
                 <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
                   <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${completionPercent}%` }} />
                 </div>
                 <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>{mod.mastered}/{mod.total} mastered</span>
-                  <span>{formatTime(mod.total_time)}</span>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {mod.not_started > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-zinc-600 text-zinc-300">{mod.not_started} new</span>}
-                  {mod.learning > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-blue-500/20 text-blue-400">{mod.learning} learning</span>}
-                  {mod.drilling > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-400">{mod.drilling} drilling</span>}
+                  <span>{mod.completed}/{mod.topicCount} completed</span>
+                  <span>{mod.inProgress} in progress</span>
                 </div>
               </div>
             );
@@ -94,20 +101,20 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
         <h3 className="text-sm font-medium text-zinc-400 mb-3">Today</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{formatTime(dashboard.today.time_spent_seconds)}</div>
+            <div className="text-lg font-bold text-zinc-100">{formatTime(todaySummary.time)}</div>
             <div className="text-xs text-zinc-400">Time</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{dashboard.today.sessions_count}</div>
+            <div className="text-lg font-bold text-zinc-100">{todaySummary.sessions}</div>
             <div className="text-xs text-zinc-400">Sessions</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-bold text-zinc-100">{dashboard.today.questions_answered}</div>
+            <div className="text-lg font-bold text-zinc-100">{todaySummary.questions}</div>
             <div className="text-xs text-zinc-400">Questions</div>
           </div>
           <div className="text-center">
-            <div className={`text-lg font-bold ${scoreColor(Math.round(dashboard.today.score_avg))}`}>
-              {dashboard.today.score_avg > 0 ? `${Math.round(dashboard.today.score_avg)}%` : '--'}
+            <div className={`text-lg font-bold ${scoreColor(Math.round(todayAvgScore))}`}>
+              {todayAvgScore > 0 ? `${Math.round(todayAvgScore)}%` : '--'}
             </div>
             <div className="text-xs text-zinc-400">Avg Score</div>
           </div>
@@ -119,12 +126,18 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
 
 // --- Analytics Tab ---
 function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
+  // Flatten last30Days into activity rows (skip null days)
+  const activityRows = (analytics.last30Days ?? []).flatMap(day =>
+    (day.activity ?? []).map(a => ({ ...a, date: day.date }))
+  );
+  const gaps = analytics.confidenceGaps ?? [];
+
   return (
     <div className="space-y-6" data-testid="analytics-tab">
       {/* Activity table */}
       <div>
         <h3 className="text-sm font-medium text-zinc-400 mb-3">Daily Activity</h3>
-        {analytics.activity.length === 0 ? (
+        {activityRows.length === 0 ? (
           <div className="text-sm text-zinc-500">No activity recorded yet.</div>
         ) : (
           <div className="bg-zinc-800 rounded-lg overflow-hidden">
@@ -140,15 +153,15 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
                 </tr>
               </thead>
               <tbody>
-                {analytics.activity.map((row, i) => (
+                {activityRows.map((row, i) => (
                   <tr key={`${row.date}-${row.module}-${i}`} className="border-b border-zinc-700/50 text-zinc-300">
                     <td className="px-3 py-2">{row.date}</td>
                     <td className="px-3 py-2">{row.module}</td>
-                    <td className="px-3 py-2 text-right">{formatTime(row.time_spent_seconds)}</td>
-                    <td className="px-3 py-2 text-right">{row.sessions_count}</td>
-                    <td className="px-3 py-2 text-right">{row.questions_answered}</td>
-                    <td className={`px-3 py-2 text-right ${scoreColor(Math.round(row.score_avg))}`}>
-                      {row.score_avg > 0 ? `${Math.round(row.score_avg)}%` : '--'}
+                    <td className="px-3 py-2 text-right">{formatTime(row.timeSpentSeconds)}</td>
+                    <td className="px-3 py-2 text-right">{row.sessionsCount}</td>
+                    <td className="px-3 py-2 text-right">{row.questionsAnswered}</td>
+                    <td className={`px-3 py-2 text-right ${scoreColor(Math.round(row.scoreAvg))}`}>
+                      {row.scoreAvg > 0 ? `${Math.round(row.scoreAvg)}%` : '--'}
                     </td>
                   </tr>
                 ))}
@@ -161,25 +174,25 @@ function AnalyticsTab({ analytics }: { analytics: TutorAnalytics }) {
       {/* Confidence gaps */}
       <div>
         <h3 className="text-sm font-medium text-zinc-400 mb-3">Confidence Gaps</h3>
-        {analytics.confidence_gaps.length === 0 ? (
+        {gaps.length === 0 ? (
           <div className="text-sm text-zinc-500">No confidence gaps detected.</div>
         ) : (
           <div className="bg-zinc-800 rounded-lg overflow-hidden">
             <table className="w-full text-sm" data-testid="confidence-gaps-table">
               <thead>
                 <tr className="text-xs text-zinc-400 border-b border-zinc-700">
-                  <th className="text-left px-3 py-2 font-medium">Topic ID</th>
+                  <th className="text-left px-3 py-2 font-medium">Topic</th>
                   <th className="text-right px-3 py-2 font-medium">Self-Rated</th>
                   <th className="text-right px-3 py-2 font-medium">Actual</th>
                   <th className="text-right px-3 py-2 font-medium">Gap</th>
                 </tr>
               </thead>
               <tbody>
-                {analytics.confidence_gaps.map(gap => (
-                  <tr key={gap.topic_id} className="border-b border-zinc-700/50 text-zinc-300">
-                    <td className="px-3 py-2">{gap.topic_id}</td>
-                    <td className="px-3 py-2 text-right">{Math.round(gap.self_rated_score)}%</td>
-                    <td className="px-3 py-2 text-right">{Math.round(gap.actual_score)}%</td>
+                {gaps.map(gap => (
+                  <tr key={gap.topicId} className="border-b border-zinc-700/50 text-zinc-300">
+                    <td className="px-3 py-2">{gap.topicName || gap.topicId}</td>
+                    <td className="px-3 py-2 text-right">{Math.round(gap.avgSelfRated)}%</td>
+                    <td className="px-3 py-2 text-right">{Math.round(gap.avgActual)}%</td>
                     <td className={`px-3 py-2 text-right font-medium ${gap.gap > 20 ? 'text-red-400' : 'text-amber-400'}`}>
                       {Math.round(gap.gap)}%
                     </td>

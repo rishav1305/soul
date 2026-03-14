@@ -439,55 +439,50 @@ export interface TutorTopic {
   category: string;
   name: string;
   difficulty: 'easy' | 'medium' | 'hard';
-  content_path: string;
+  contentPath: string;
   status: 'not_started' | 'learning' | 'drilling' | 'mastered';
-  created_at: string;
+  createdAt: string;
 }
 
 export interface TutorModuleStats {
   module: string;
-  total: number;
-  not_started: number;
-  learning: number;
-  drilling: number;
-  mastered: number;
-  avg_score: number;
-  total_time: number;
-  completion: number;
+  topicCount: number;
+  completed: number;
+  inProgress: number;
+  completionPct: number;
+  avgScore: number;
 }
 
 export interface TutorDashboard {
-  readiness: number;
-  modules: TutorModuleStats[];
+  readinessPct: number;
+  moduleStats: TutorModuleStats[];
   streak: number;
-  due_reviews: number;
-  today: {
-    time_spent_seconds: number;
-    sessions_count: number;
-    questions_answered: number;
-    score_avg: number;
-  };
+  dueReviewCount: number;
+  todayActivity: TutorDailyActivity[] | null;
 }
 
 export interface TutorDailyActivity {
+  id: number;
   date: string;
   module: string;
-  time_spent_seconds: number;
-  sessions_count: number;
-  questions_answered: number;
-  score_avg: number;
+  timeSpentSeconds: number;
+  sessionsCount: number;
+  questionsAnswered: number;
+  scoreAvg: number;
 }
 
 export interface TutorConfidenceGap {
-  topic_id: number;
-  self_rated_score: number;
-  actual_score: number;
+  topicId: number;
+  topicName: string;
+  module: string;
+  avgSelfRated: number;
+  avgActual: number;
   gap: number;
 }
 
 export interface TutorAnalytics {
-  activity: TutorDailyActivity[];
-  confidence_gaps: TutorConfidenceGap[];
+  last30Days: { date: string; activity: TutorDailyActivity[] | null }[];
+  confidenceGaps: TutorConfidenceGap[] | null;
 }
 
 export interface TutorQuizQuestion {

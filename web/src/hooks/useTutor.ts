@@ -46,13 +46,13 @@ export function useTutor(): UseTutorReturn {
         }
         case 'topics': {
           const url = module ? `/api/tutor/topics?module=${module}` : '/api/tutor/topics';
-          const data = await api.get<TutorTopic[]>(url);
-          setTopics(data ?? []);
+          const data = await api.get<{ topics: TutorTopic[] | null }>(url);
+          setTopics(data.topics ?? []);
           break;
         }
         case 'mocks': {
-          const data = await api.get<TutorMockSession[]>('/api/tutor/mocks');
-          setMocks(data ?? []);
+          const data = await api.get<{ sessions: TutorMockSession[] | null }>('/api/tutor/mocks');
+          setMocks(data.sessions ?? []);
           break;
         }
       }
