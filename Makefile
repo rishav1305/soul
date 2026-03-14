@@ -1,19 +1,21 @@
-.PHONY: build build-go build-tasks web serve types clean deploy
+.PHONY: build build-go build-tasks build-tutor web serve types clean deploy
 .PHONY: verify verify-static verify-unit verify-integ verify-e2e verify-review
 .PHONY: check-bundle check-secrets check-deps
 
 # Build
-build: web build-go build-tasks
+build: web build-go build-tasks build-tutor
 build-go:
 	go build -o soul-chat ./cmd/chat
 build-tasks:
 	go build -o soul-tasks ./cmd/tasks
+build-tutor:
+	go build -o soul-tutor ./cmd/tutor
 web:
 	cd web && npx vite build
 serve: build
-	./soul-chat serve & ./soul-tasks serve & wait
+	./soul-chat serve & ./soul-tasks serve & ./soul-tutor serve & wait
 clean:
-	rm -f soul-chat soul-tasks
+	rm -f soul-chat soul-tasks soul-tutor
 	rm -rf web/dist
 
 # Generate
