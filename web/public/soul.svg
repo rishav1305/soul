@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8a849" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#e8a849" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="diamond" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0c060"/>
+      <stop offset="50%" stop-color="#e8a849"/>
+      <stop offset="100%" stop-color="#d09030"/>
+    </linearGradient>
+  </defs>
+  <!-- Glow background -->
+  <circle cx="32" cy="32" r="30" fill="url(#glow)"/>
+  <!-- Diamond shape -->
+  <path d="M32 8 L52 32 L32 56 L12 32 Z" fill="url(#diamond)"/>
+  <!-- Inner highlight -->
+  <path d="M32 14 L46 32 L32 50 L18 32 Z" fill="none" stroke="#f5d090" stroke-width="1.5" opacity="0.5"/>
+</svg>
