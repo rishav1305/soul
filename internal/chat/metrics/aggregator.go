@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
 // Aggregator reads JSONL events and computes derived metrics reports.
 type Aggregator struct {
 	dataDir string
+	product string // optional product filter; empty = all products
 }
 
 // StatusReport provides a system overview: uptime, sessions, messages, errors.
@@ -142,13 +144,43 @@ const (
 )
 
 // NewAggregator creates a new Aggregator for the given data directory.
+// It reads events from all product files (no product filter).
 func NewAggregator(dataDir string) *Aggregator {
 	return &Aggregator{dataDir: dataDir}
 }
 
+// NewAggregatorForProduct creates an Aggregator that filters events to a
+// specific product. If product is empty, it behaves like NewAggregator.
+func NewAggregatorForProduct(dataDir string, product string) *Aggregator {
+	return &Aggregator{dataDir: dataDir, product: product}
+}
+
+// readProductEvents reads events from product-aware metric files, optionally
+// filtering by type prefix. When the aggregator has a product set, only that
+// product's files are read; otherwise all product files are included.
+func (a *Aggregator) readProductEvents(typePrefix string) ([]Event, error) {
+	events, err := ReadAllProducts(a.dataDir, a.product)
+	if err != nil {
+		return nil, fmt.Errorf("read events: %w", err)
+	}
+	if typePrefix == "" {
+		return events, nil
+	}
+	var filtered []Event
+	for _, ev := range events {
+		if strings.HasPrefix(ev.EventType, typePrefix) {
+			filtered = append(filtered, ev)
+		}
+	}
+	if filtered == nil {
+		filtered = []Event{}
+	}
+	return filtered, nil
+}
+
 // Status reads all events and computes a system overview.
 func (a *Aggregator) Status() (*StatusReport, error) {
-	events, err := ReadEvents(a.dataDir)
+	events, err := a.readProductEvents("")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -204,7 +236,7 @@ func (a *Aggregator) Status() (*StatusReport, error) {
 
 // Quality reads override events and computes error taxonomy counts and quality ratings.
 func (a *Aggregator) Quality() (*QualityReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "override")
+	events, err := a.readProductEvents("override")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -242,7 +274,7 @@ func (a *Aggregator) Quality() (*QualityReport, error) {
 
 // Layers reads gate events and computes pass/fail/retry counts per gate.
 func (a *Aggregator) Layers() (*LayersReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "gate")
+	events, err := a.readProductEvents("gate")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -294,7 +326,7 @@ func (a *Aggregator) Layers() (*LayersReport, error) {
 
 // Cost reads api.request events and computes token usage and estimated cost.
 func (a *Aggregator) Cost() (*CostReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "api")
+	events, err := a.readProductEvents("api")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -317,7 +349,7 @@ func (a *Aggregator) Cost() (*CostReport, error) {
 
 // Latency reads ws.stream.token and ws.stream.end events and computes percentiles.
 func (a *Aggregator) Latency() (*LatencyReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "ws.stream")
+	events, err := a.readProductEvents("ws.stream")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -361,7 +393,7 @@ func (a *Aggregator) Latency() (*LatencyReport, error) {
 
 // Alerts reads alert events and returns all threshold breach entries.
 func (a *Aggregator) Alerts() (*AlertsReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "alert")
+	events, err := a.readProductEvents("alert")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -384,7 +416,7 @@ func (a *Aggregator) Alerts() (*AlertsReport, error) {
 
 // DB reads db events and computes per-method performance percentiles and slow queries.
 func (a *Aggregator) DB() (*DBReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "db")
+	events, err := a.readProductEvents("db")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -422,7 +454,7 @@ func (a *Aggregator) DB() (*DBReport, error) {
 
 // Requests reads api events and computes per-path performance percentiles and status code counts.
 func (a *Aggregator) Requests() (*RequestsReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "api")
+	events, err := a.readProductEvents("api")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -461,7 +493,7 @@ func (a *Aggregator) Requests() (*RequestsReport, error) {
 
 // Frontend reads frontend events and computes error counts and slow render entries.
 func (a *Aggregator) Frontend() (*FrontendReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "frontend")
+	events, err := a.readProductEvents("frontend")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
@@ -487,7 +519,7 @@ func (a *Aggregator) Frontend() (*FrontendReport, error) {
 
 // Usage reads frontend.usage events and computes page views and action counts.
 func (a *Aggregator) Usage() (*UsageReport, error) {
-	events, err := ReadEventsFiltered(a.dataDir, "frontend.usage")
+	events, err := a.readProductEvents("frontend.usage")
 	if err != nil {
 		return nil, fmt.Errorf("read events: %w", err)
 	}
