@@ -3,10 +3,25 @@ package watcher
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 )
+
+type mockSender struct {
+	called bool
+}
+
+func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	m.called = true
+	return &stream.Response{
+		StopReason: "end_turn",
+		Content:    []stream.ContentBlock{{Type: "text", Text: "I've reviewed the feedback."}},
+		Usage:      &stream.Usage{InputTokens: 200, OutputTokens: 50},
+	}, nil
+}
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -19,7 +34,7 @@ func newTestStore(t *testing.T) *store.Store {
 	return s
 }
 
-func TestWatcher_PollsComments(t *testing.T) {
+func TestWatcher_PollsComments_WithAgent(t *testing.T) {
 	s := newTestStore(t)
 	task, err := s.Create("Active task", "", "")
 	if err != nil {
@@ -33,8 +48,13 @@ func TestWatcher_PollsComments(t *testing.T) {
 		t.Fatalf("InsertComment: %v", err)
 	}
 
-	cw := New(s)
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test-project")
 	cw.poll(context.Background())
+
+	if !ms.called {
+		t.Fatal("expected sender.Send to be called")
+	}
 
 	comments, err := s.GetComments(task.ID)
 	if err != nil {
@@ -46,8 +66,8 @@ func TestWatcher_PollsComments(t *testing.T) {
 	if comments[1].Author != "soul" {
 		t.Errorf("reply author = %q, want %q", comments[1].Author, "soul")
 	}
-	if comments[1].Body != "Received feedback. Agent processing not yet implemented." {
-		t.Errorf("reply body = %q", comments[1].Body)
+	if !strings.Contains(comments[1].Body, "I've reviewed the feedback.") {
+		t.Errorf("reply body = %q, want it to contain agent response", comments[1].Body)
 	}
 }
 
@@ -63,8 +83,13 @@ func TestWatcher_SkipsNonActionable(t *testing.T) {
 		t.Fatalf("InsertComment: %v", err)
 	}
 
-	cw := New(s)
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test-project")
 	cw.poll(context.Background())
+
+	if ms.called {
+		t.Error("expected sender.Send NOT to be called for non-actionable task")
+	}
 
 	comments, err := s.GetComments(task.ID)
 	if err != nil {
@@ -74,6 +99,36 @@ func TestWatcher_SkipsNonActionable(t *testing.T) {
 		t.Fatalf("expected 2 comments, got %d", len(comments))
 	}
 	expected := "Task is in backlog — comment noted but no action taken."
+	if comments[1].Body != expected {
+		t.Errorf("reply body = %q, want %q", comments[1].Body, expected)
+	}
+}
+
+func TestWatcher_NilSender(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Active task", "", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "active"}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "Some feedback"); err != nil {
+		t.Fatalf("InsertComment: %v", err)
+	}
+
+	cw := New(s, nil, "/tmp/test-project")
+	cw.poll(context.Background())
+
+	comments, err := s.GetComments(task.ID)
+	if err != nil {
+		t.Fatalf("GetComments: %v", err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("expected 2 comments, got %d", len(comments))
+	}
+	expected := "Received feedback. Agent not configured."
 	if comments[1].Body != expected {
 		t.Errorf("reply body = %q, want %q", comments[1].Body, expected)
 	}
