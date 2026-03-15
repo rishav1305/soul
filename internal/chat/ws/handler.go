@@ -255,6 +255,22 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		Model:     msg.Model,
 	}
 
+	if msg.Thinking != nil && msg.Thinking.Type != "" && msg.Thinking.Type != "disabled" {
+		req.Thinking = &stream.ThinkingParam{
+			Type:         msg.Thinking.Type,
+			BudgetTokens: msg.Thinking.BudgetTokens,
+		}
+		if msg.Thinking.Type == "enabled" && msg.Thinking.BudgetTokens > 0 {
+			needed := msg.Thinking.BudgetTokens + 1024
+			if needed > req.MaxTokens {
+				req.MaxTokens = needed
+			}
+		}
+		if msg.Thinking.Type == "adaptive" && req.MaxTokens < 64000 {
+			req.MaxTokens = 64000
+		}
+	}
+
 	// Inject product context if session has a product set.
 	if sess != nil && sess.Product != "" {
 		pctx := prodctx.ForProduct(sess.Product)
@@ -642,6 +658,7 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 				Model:          req.Model,
 				System:         req.System,
 				Tools:          req.Tools,
+				Thinking:       req.Thinking,
 				SkipValidation: true,
 			}
 

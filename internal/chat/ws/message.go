@@ -53,14 +53,21 @@ type Attachment struct {
 	Data      string `json:"data"` // base64 encoded
 }
 
+// ThinkingConfig configures Claude's extended thinking mode.
+type ThinkingConfig struct {
+	Type         string `json:"type"`                    // "disabled", "adaptive", "enabled"
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
 // InboundMessage represents a message received from a WebSocket client.
 type InboundMessage struct {
-	Type        string       `json:"type"`
-	SessionID   string       `json:"sessionId,omitempty"`
-	Content     string       `json:"content,omitempty"`
-	Model       string       `json:"model,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"`
-	Product     string       `json:"product,omitempty"`
+	Type        string          `json:"type"`
+	SessionID   string          `json:"sessionId,omitempty"`
+	Content     string          `json:"content,omitempty"`
+	Model       string          `json:"model,omitempty"`
+	Attachments []Attachment    `json:"attachments,omitempty"`
+	Product     string          `json:"product,omitempty"`
+	Thinking    *ThinkingConfig `json:"thinking,omitempty"`
 }
 
 // OutboundMessage represents a message sent to a WebSocket client.
