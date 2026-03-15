@@ -65,6 +65,8 @@ Prefix match: `claude-opus-4-6` matches `claude-opus-4`. Unknown models default 
 
 **Error handling:** If the Claude API call fails (network, auth), return cached data if available. If no cache, return HTTP 503 with `{"error": "unable to fetch models"}`.
 
+**Nil guard:** `s.auth` can be nil (auth is optional via `WithAuth`). The handler must check `s.auth != nil` before calling `s.auth.Token()`. If nil, return 503 with `{"error": "authentication not configured"}`.
+
 ### Route Registration (`internal/chat/server/server.go`)
 
 Add `s.mux.HandleFunc("GET /api/models", s.handleModels)` alongside existing API routes.
@@ -98,7 +100,12 @@ Thinking *ThinkingParam `json:"thinking,omitempty"`
 
 ### Stream Client (`internal/chat/stream/client.go`)
 
-The thinking param is already part of the Request struct and will be marshaled into the API request body automatically. No special handling needed — the existing JSON marshaling includes it when non-nil.
+The thinking param is part of the Request struct and will be marshaled into the API request body automatically.
+
+**Required beta header:** The Claude API requires `interleaved-thinking-2025-05-14` in the `anthropic-beta` header for thinking support. Update `cmd/chat/main.go` where the stream client is created — add the thinking beta to the existing beta header string:
+```go
+stream.WithBetaHeader("prompt-caching-2024-07-31," + auth.OAuthBetaHeader + ",interleaved-thinking-2025-05-14")
+```
 
 ### WS Handler (`internal/chat/ws/handler.go`)
 
@@ -113,6 +120,14 @@ if msg.Thinking != nil && msg.Thinking.Type != "disabled" {
 ```
 
 When thinking is `disabled` or nil, omit the field entirely (don't send `{"type":"disabled"}` — just omit it).
+
+**MaxTokens adjustment:** The handler currently hardcodes `MaxTokens: 4096`. When thinking is enabled with a large `budget_tokens`, the API requires `max_tokens > budget_tokens`. Override `MaxTokens` when thinking is set:
+```go
+if msg.Thinking != nil && msg.Thinking.Type == "enabled" && msg.Thinking.BudgetTokens > 0 {
+    req.MaxTokens = msg.Thinking.BudgetTokens + 1024 // budget + room for response
+}
+```
+For `adaptive` type, set `MaxTokens` to the model's max (passed from frontend or looked up from the known mapping).
 
 ## Frontend: useModels Hook
 
@@ -146,9 +161,15 @@ function useModels(): {
 
 ### `web/src/components/ChatInput.tsx`
 
-**Remove:** Hardcoded `MODELS` array.
+**Remove:**
+- Hardcoded `MODELS` array
+- `/think` entry from `SLASH_COMMANDS` array
+- `thinkingEnabled` boolean state variable
+- `handleThinkingToggle` function
+- The `think` branch in `handleSlashSelect`
+- The old thinking toggle button (the binary on/off one)
 
-**Add:** Call `useModels()` to get dynamic model list.
+**Add:** Call `useModels()` to get dynamic model list. Integrate `ThinkingToggle` component (replaces old binary toggle).
 
 **Model dropdown:** Populated from `models` array. Each option shows `model.name` with value `model.id`.
 
@@ -227,6 +248,7 @@ Update `ChatInputProps.onSend` options to include `thinking?: ThinkingConfig`.
 | `internal/chat/ws/handler.go` | Modify | Pass thinking config to stream.Request |
 | `internal/chat/stream/types.go` | Modify | Add ThinkingParam + field to Request |
 | `internal/chat/stream/client.go` | Modify | Ensure thinking marshaled in API body (verify) |
+| `cmd/chat/main.go` | Modify | Add interleaved-thinking beta header to stream client |
 | `web/src/hooks/useModels.ts` | Create | Fetch /api/models, cache |
 | `web/src/components/ChatInput.tsx` | Modify | Dynamic models, integrate ThinkingToggle |
 | `web/src/components/ThinkingToggle.tsx` | Create | Cycling toggle button |
