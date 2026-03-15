@@ -152,6 +152,12 @@ func runServe() {
 	}
 	serverOpts = append(serverOpts, server.WithObserveProxy(observeURL))
 
+	// Enable infra, quality, data, docs server proxies.
+	serverOpts = append(serverOpts, server.WithInfraProxy())
+	serverOpts = append(serverOpts, server.WithQualityProxy())
+	serverOpts = append(serverOpts, server.WithDataProxy())
+	serverOpts = append(serverOpts, server.WithDocsProxy())
+
 	srv := server.New(serverOpts...)
 
 	// Start tasks server SSE relay.

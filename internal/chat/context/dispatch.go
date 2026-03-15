@@ -42,6 +42,10 @@ func NewDispatcher() *Dispatcher {
 			"tutor":    envOr("SOUL_TUTOR_URL", "http://127.0.0.1:3006"),
 			"projects": envOr("SOUL_PROJECTS_URL", "http://127.0.0.1:3008"),
 			"observe":  envOr("SOUL_OBSERVE_URL", "http://127.0.0.1:3010"),
+			"infra":    envOr("SOUL_INFRA_URL", "http://127.0.0.1:3012"),
+			"quality":  envOr("SOUL_QUALITY_URL", "http://127.0.0.1:3014"),
+			"data":     envOr("SOUL_DATA_URL", "http://127.0.0.1:3016"),
+			"docs":     envOr("SOUL_DOCS_URL", "http://127.0.0.1:3018"),
 		},
 		routes: map[string]ToolRoute{
 			// Tasks
@@ -71,6 +75,34 @@ func NewDispatcher() *Dispatcher {
 			"observe_pillars":  {Method: "GET", Path: "/api/pillars", Product: "observe"},
 			"observe_tail":     {Method: "GET", Path: "/api/tail", Product: "observe"},
 			"observe_alerts":   {Method: "GET", Path: "/api/alerts", Product: "observe"},
+			// Infra — devops, dba, migrate
+			"devops__analyze":  {Method: "POST", Path: "/api/tools/devops__analyze/execute", Product: "infra"},
+			"devops__report":   {Method: "POST", Path: "/api/tools/devops__report/execute", Product: "infra"},
+			"dba__analyze":     {Method: "POST", Path: "/api/tools/dba__analyze/execute", Product: "infra"},
+			"dba__report":      {Method: "POST", Path: "/api/tools/dba__report/execute", Product: "infra"},
+			"migrate__analyze": {Method: "POST", Path: "/api/tools/migrate__analyze/execute", Product: "infra"},
+			"migrate__report":  {Method: "POST", Path: "/api/tools/migrate__report/execute", Product: "infra"},
+			// Quality — compliance, qa, analytics
+			"compliance__scan":   {Method: "POST", Path: "/api/tools/compliance__scan/execute", Product: "quality"},
+			"compliance__fix":    {Method: "POST", Path: "/api/tools/compliance__fix/execute", Product: "quality"},
+			"compliance__badge":  {Method: "POST", Path: "/api/tools/compliance__badge/execute", Product: "quality"},
+			"compliance__report": {Method: "POST", Path: "/api/tools/compliance__report/execute", Product: "quality"},
+			"qa__analyze":        {Method: "POST", Path: "/api/tools/qa__analyze/execute", Product: "quality"},
+			"qa__report":         {Method: "POST", Path: "/api/tools/qa__report/execute", Product: "quality"},
+			"analytics__analyze": {Method: "POST", Path: "/api/tools/analytics__analyze/execute", Product: "quality"},
+			"analytics__report":  {Method: "POST", Path: "/api/tools/analytics__report/execute", Product: "quality"},
+			// Data — dataeng, costops, viz
+			"dataeng__analyze": {Method: "POST", Path: "/api/tools/dataeng__analyze/execute", Product: "data"},
+			"dataeng__report":  {Method: "POST", Path: "/api/tools/dataeng__report/execute", Product: "data"},
+			"costops__analyze": {Method: "POST", Path: "/api/tools/costops__analyze/execute", Product: "data"},
+			"costops__report":  {Method: "POST", Path: "/api/tools/costops__report/execute", Product: "data"},
+			"viz__analyze":     {Method: "POST", Path: "/api/tools/viz__analyze/execute", Product: "data"},
+			"viz__report":      {Method: "POST", Path: "/api/tools/viz__report/execute", Product: "data"},
+			// Docs — docs, api
+			"docs__analyze": {Method: "POST", Path: "/api/tools/docs__analyze/execute", Product: "docs"},
+			"docs__report":  {Method: "POST", Path: "/api/tools/docs__report/execute", Product: "docs"},
+			"api__analyze":  {Method: "POST", Path: "/api/tools/api__analyze/execute", Product: "docs"},
+			"api__report":   {Method: "POST", Path: "/api/tools/api__report/execute", Product: "docs"},
 		},
 	}
 	return d

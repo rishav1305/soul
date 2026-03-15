@@ -44,6 +44,10 @@ type Server struct {
 	tutorProxy    *tutorProxy
 	projectsProxy *projectsProxy
 	observeProxy  *observeProxy
+	infraProxy    *simpleProxy
+	qualityProxy  *simpleProxy
+	dataProxy     *simpleProxy
+	docsProxy     *simpleProxy
 }
 
 // Option configures a Server.
@@ -120,6 +124,34 @@ func WithObserveProxy(target string) Option {
 	}
 }
 
+// WithInfraProxy enables the reverse proxy to the infra server.
+func WithInfraProxy() Option {
+	return func(s *Server) {
+		s.infraProxy = newSimpleProxy("SOUL_INFRA_URL", "http://127.0.0.1:3012", "/api/infra", "infra")
+	}
+}
+
+// WithQualityProxy enables the reverse proxy to the quality server.
+func WithQualityProxy() Option {
+	return func(s *Server) {
+		s.qualityProxy = newSimpleProxy("SOUL_QUALITY_URL", "http://127.0.0.1:3014", "/api/quality", "quality")
+	}
+}
+
+// WithDataProxy enables the reverse proxy to the data server.
+func WithDataProxy() Option {
+	return func(s *Server) {
+		s.dataProxy = newSimpleProxy("SOUL_DATA_URL", "http://127.0.0.1:3016", "/api/data", "data")
+	}
+}
+
+// WithDocsProxy enables the reverse proxy to the docs server.
+func WithDocsProxy() Option {
+	return func(s *Server) {
+		s.docsProxy = newSimpleProxy("SOUL_DOCS_URL", "http://127.0.0.1:3018", "/api/docs", "docs")
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -184,6 +216,30 @@ func New(opts ...Option) *Server {
 	if s.observeProxy != nil {
 		s.mux.Handle("/api/observe/", s.observeProxy)
 		s.mux.Handle("/api/observe", s.observeProxy)
+	}
+
+	// Infra server proxy — forward /api/infra/* to infra server.
+	if s.infraProxy != nil {
+		s.mux.Handle("/api/infra/", s.infraProxy)
+		s.mux.Handle("/api/infra", s.infraProxy)
+	}
+
+	// Quality server proxy — forward /api/quality/* to quality server.
+	if s.qualityProxy != nil {
+		s.mux.Handle("/api/quality/", s.qualityProxy)
+		s.mux.Handle("/api/quality", s.qualityProxy)
+	}
+
+	// Data server proxy — forward /api/data/* to data server.
+	if s.dataProxy != nil {
+		s.mux.Handle("/api/data/", s.dataProxy)
+		s.mux.Handle("/api/data", s.dataProxy)
+	}
+
+	// Docs server proxy — forward /api/docs/* to docs server.
+	if s.docsProxy != nil {
+		s.mux.Handle("/api/docs/", s.docsProxy)
+		s.mux.Handle("/api/docs", s.docsProxy)
 	}
 
 	// WebSocket route — must be registered before SPA fallback.
@@ -684,7 +740,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 func cspMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'")
+			"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)

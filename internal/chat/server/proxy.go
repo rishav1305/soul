@@ -293,3 +293,49 @@ func (op *observeProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	op.reverseProxy.ServeHTTP(w, r)
 }
+
+// simpleProxy manages a reverse proxy to a product server with path rewriting.
+type simpleProxy struct {
+	reverseProxy *httputil.ReverseProxy
+	pathPrefix   string // e.g., "/api/infra"
+}
+
+func newSimpleProxy(envKey, defaultURL, pathPrefix, productName string) *simpleProxy {
+	rawURL := os.Getenv(envKey)
+	if rawURL == "" {
+		rawURL = defaultURL
+	}
+
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		log.Printf("warn: invalid %s %q: %v", envKey, rawURL, err)
+		return nil
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(target)
+
+	rp.Transport = &http.Transport{
+		ResponseHeaderTimeout: 5 * time.Second,
+	}
+
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("%s proxy error: %v", productName, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"%s server unavailable"}`, productName)
+	}
+
+	return &simpleProxy{
+		reverseProxy: rp,
+		pathPrefix:   pathPrefix,
+	}
+}
+
+// ServeHTTP forwards requests, rewriting the path prefix to /api.
+func (sp *simpleProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.URL.Path = strings.Replace(r.URL.Path, sp.pathPrefix, "/api", 1)
+	if r.URL.Path == "" {
+		r.URL.Path = "/"
+	}
+	sp.reverseProxy.ServeHTTP(w, r)
+}

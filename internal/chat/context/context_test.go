@@ -8,7 +8,13 @@ import (
 )
 
 func TestForProduct_ReturnsCorrectContext(t *testing.T) {
-	products := []string{"tasks", "tutor", "projects", "observe"}
+	products := []string{
+		"tasks", "tutor", "projects", "observe",
+		"devops", "dba", "migrate",
+		"compliance", "qa", "analytics",
+		"dataeng", "costops", "viz",
+		"docs", "api",
+	}
 	for _, p := range products {
 		ctx := ForProduct(p)
 		if ctx.System == "" {
@@ -47,8 +53,16 @@ func TestForProduct_EmptyReturnsDefault(t *testing.T) {
 }
 
 func TestToolCounts(t *testing.T) {
+	// Each product gets its product-specific tools + 8 built-in tools.
+	// tasks=6+8=14, tutor=7+8=15, projects=6+8=14, observe=4+8=12
+	// infra(devops/dba/migrate)=6+8=14, quality(compliance/qa/analytics)=8+8=16
+	// dataprod(dataeng/costops/viz)=6+8=14, docsprod(docs/api)=4+8=12
 	expected := map[string]int{
 		"tasks": 14, "tutor": 15, "projects": 14, "observe": 12,
+		"devops": 14, "dba": 14, "migrate": 14,
+		"compliance": 16, "qa": 16, "analytics": 16,
+		"dataeng": 14, "costops": 14, "viz": 14,
+		"docs": 12, "api": 12,
 	}
 	for product, count := range expected {
 		ctx := ForProduct(product)
@@ -74,7 +88,13 @@ func TestDispatcher_RoutesExist(t *testing.T) {
 		builtinSet[tool.Name] = true
 	}
 	// Every product-specific tool should have a matching dispatcher route.
-	for _, product := range []string{"tasks", "tutor", "projects", "observe"} {
+	for _, product := range []string{
+		"tasks", "tutor", "projects", "observe",
+		"devops", "dba", "migrate",
+		"compliance", "qa", "analytics",
+		"dataeng", "costops", "viz",
+		"docs", "api",
+	} {
 		ctx := ForProduct(product)
 		for _, tool := range ctx.Tools {
 			if builtinSet[tool.Name] {

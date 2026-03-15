@@ -22,6 +22,14 @@ func ForProduct(product string) ProductContext {
 		ctx = projectsContext()
 	case "observe":
 		ctx = observeContext()
+	case "devops", "dba", "migrate":
+		ctx = infraContext()
+	case "compliance", "qa", "analytics":
+		ctx = qualityContext()
+	case "dataeng", "costops", "viz":
+		ctx = dataprodContext()
+	case "docs", "api":
+		ctx = docsprodContext()
 	default:
 		return Default()
 	}
