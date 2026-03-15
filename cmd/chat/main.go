@@ -100,7 +100,7 @@ func runServe() {
 		ws.WithSessionStore(store),
 	)
 	streamClient := stream.NewClient(authSource,
-		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
+		stream.WithBetaHeader("prompt-caching-2024-07-31,interleaved-thinking-2025-05-14,"+auth.OAuthBetaHeader),
 	)
 	projectRoot, _ := os.Getwd()
 	builtin := ws.NewBuiltinExecutor(rawStore, ws.WithSender(streamClient), ws.WithProjectRoot(projectRoot))
