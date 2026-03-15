@@ -1,13 +1,23 @@
 import { reportError } from './telemetry';
+import { getToken, clearToken } from '../components/AuthGate';
 
 const BASE = '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
+    const token = getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const res = await fetch(`${BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       ...init,
     });
+    if (res.status === 401) {
+      clearToken();
+      throw new Error('Unauthorized');
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
       const err = new Error(body.error || `HTTP ${res.status}`);
