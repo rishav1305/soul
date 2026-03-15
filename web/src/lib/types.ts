@@ -617,3 +617,66 @@ export interface ProjectDetail extends Project {
   syncs: ProfileSync[];
   readiness: ProjectReadiness | null;
 }
+
+// ── Observe ──────────────────────────────────────────
+
+export interface ObservePillar {
+  name: string;
+  description: string;
+  constraints: ObserveConstraint[];
+  pass: number;
+  warn: number;
+  fail: number;
+  static: number;
+  total: number;
+}
+
+export interface ObserveConstraint {
+  name: string;
+  target: string;
+  enforcement: string;
+  status: 'pass' | 'warn' | 'fail' | 'static';
+  value?: string;
+}
+
+export interface ObserveOverview {
+  status: {
+    uptime_seconds: number;
+    sessions: number;
+    messages: number;
+    active_streams: number;
+    total_events: number;
+    errors: number;
+    last_event: string;
+  };
+  cost: {
+    input_tokens: number;
+    output_tokens: number;
+    requests: number;
+    estimated_usd: number;
+  };
+  alerts: {
+    breaches: ObserveAlert[];
+  };
+}
+
+export interface ObserveAlert {
+  timestamp: string;
+  metric: string;
+  field: string;
+  value: number;
+  threshold: number;
+  severity: string;
+}
+
+export interface ObserveTailResponse {
+  events: Array<{
+    timestamp: string;
+    event: string;
+    data: Record<string, unknown>;
+  }>;
+  total: number;
+}
+
+export type ObserveTab = 'overview' | 'performant' | 'robust' | 'resilient' | 'secure' | 'sovereign' | 'transparent' | 'tail';
+export type ObserveProduct = '' | 'chat' | 'tasks' | 'tutor' | 'projects';
