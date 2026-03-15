@@ -121,6 +121,10 @@ func (h *Hub) Run(ctx context.Context) {
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				client.closeSend()
+				// Cancel all running agents for this client.
+				if h.handler != nil {
+					go h.handler.OnClientDisconnect(client)
+				}
 			}
 		case reply := <-h.countReq:
 			reply <- len(h.clients)

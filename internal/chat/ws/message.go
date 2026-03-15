@@ -10,6 +10,7 @@ import (
 // Inbound message types sent by WebSocket clients.
 const (
 	TypeChatSend          = "chat.send"
+	TypeChatStop          = "chat.stop"
 	TypeSessionSwitch     = "session.switch"
 	TypeSessionCreate     = "session.create"
 	TypeSessionDelete     = "session.delete"

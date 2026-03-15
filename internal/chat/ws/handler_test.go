@@ -170,13 +170,20 @@ func TestHandleChatSend_Success(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	// Should receive chat.done.
-	msg := readMessage(t, ctx, conn)
-	if msg["type"] != TypeChatDone {
-		t.Errorf("expected chat.done, got %v", msg["type"])
+	// Should receive chat.done (possibly preceded by session.updated broadcasts).
+	var found bool
+	for i := 0; i < 10; i++ {
+		msg := readMessage(t, ctx, conn)
+		if msg["type"] == TypeChatDone {
+			if msg["sessionId"] != sess.ID {
+				t.Errorf("expected sessionId %s, got %v", sess.ID, msg["sessionId"])
+			}
+			found = true
+			break
+		}
 	}
-	if msg["sessionId"] != sess.ID {
-		t.Errorf("expected sessionId %s, got %v", sess.ID, msg["sessionId"])
+	if !found {
+		t.Fatalf("never received chat.done")
 	}
 
 	// Verify message was stored.

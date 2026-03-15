@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	prodctx "github.com/rishav1305/soul-v2/internal/chat/context"
@@ -17,6 +18,18 @@ import (
 
 // maxToolRounds is the maximum number of tool-use/result round-trips per message.
 const maxToolRounds = 5
+
+// agentEntry tracks a running stream agent for a single session.
+type agentEntry struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// chatSession tracks all running agents for a single WebSocket client.
+type chatSession struct {
+	mu     sync.Mutex
+	agents map[string]agentEntry // keyed by session ID
+}
 
 // MessageHandler processes inbound WebSocket messages and dispatches them
 // to the appropriate session and hub operations. It is safe for concurrent
@@ -30,6 +43,9 @@ type MessageHandler struct {
 	metrics      *metrics.EventLogger
 	dispatcher   *prodctx.Dispatcher
 	builtin      *BuiltinExecutor
+
+	sessionsMu sync.Mutex
+	sessions   map[*Client]*chatSession
 }
 
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
@@ -40,6 +56,7 @@ func NewMessageHandler(hub *Hub, store session.StoreInterface, mel *metrics.Even
 		hub:          hub,
 		sessionStore: store,
 		metrics:      mel,
+		sessions:     make(map[*Client]*chatSession),
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -84,6 +101,8 @@ func (h *MessageHandler) HandleMessage(client *Client, raw []byte) {
 	switch msg.Type {
 	case TypeChatSend:
 		h.handleChatSend(client, msg)
+	case TypeChatStop:
+		h.handleChatStop(client, msg)
 	case TypeSessionSwitch:
 		h.handleSessionSwitch(client, msg)
 	case TypeSessionCreate:
@@ -250,8 +269,39 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 	// the assistant message after streaming completes.
 	sessionID := msg.SessionID
 
+	// Get or create the per-client chat session tracker.
+	cs := h.getOrCreateChatSession(client)
+
+	cs.mu.Lock()
+	// Cancel any existing agent for this session before starting a new one.
+	if existing, ok := cs.agents[sessionID]; ok {
+		existing.cancel()
+		cs.mu.Unlock()
+		<-existing.done
+		cs.mu.Lock()
+	}
+
+	// Create a new context from Background — NOT from client.Context().
+	// This allows multiple sessions to run concurrently on the same connection
+	// and prevents a session switch from cancelling an in-flight stream.
+	agentCtx, agentCancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	cs.agents[sessionID] = agentEntry{cancel: agentCancel, done: done}
+	cs.mu.Unlock()
+
 	// Stream in a goroutine so we don't block the ReadPump.
-	go h.runStream(client, sessionID, req)
+	go func() {
+		defer func() {
+			close(done)
+			cs.mu.Lock()
+			// Only delete if this is still our entry (not replaced by a newer one).
+			if entry, ok := cs.agents[sessionID]; ok && entry.done == done {
+				delete(cs.agents, sessionID)
+			}
+			cs.mu.Unlock()
+		}()
+		h.runStream(client, sessionID, req, agentCtx)
+	}()
 }
 
 // buildAPIMessages converts stored session messages into Claude API messages,
@@ -320,12 +370,13 @@ type toolCall struct {
 // runStream executes the Claude API streaming call and forwards events to the client.
 // It handles tool-use loops: if Claude responds with tool_use blocks, it dispatches
 // them to product servers and sends the results back for up to maxToolRounds.
-func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request) {
+func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request, agentCtx context.Context) {
 	startTime := time.Now()
 
-	// Use the client's context with a 5-minute deadline.
-	// If the Claude API hangs, the stream times out instead of blocking forever.
-	ctx, cancel := context.WithTimeout(client.Context(), 5*time.Minute)
+	// Use the provided agent context with a 5-minute deadline.
+	// The agent context is derived from context.Background(), not client.Context(),
+	// so multiple sessions can run concurrently on the same connection.
+	ctx, cancel := context.WithTimeout(agentCtx, 5*time.Minute)
 	defer cancel()
 
 	// Log stream start.
@@ -778,6 +829,80 @@ func (h *MessageHandler) handleSessionRename(client *Client, msg *InboundMessage
 	}
 
 	h.broadcast(NewSessionUpdated(updated))
+}
+
+// getOrCreateChatSession returns the chatSession for the given client,
+// creating one if it doesn't exist yet.
+func (h *MessageHandler) getOrCreateChatSession(client *Client) *chatSession {
+	h.sessionsMu.Lock()
+	defer h.sessionsMu.Unlock()
+
+	cs, ok := h.sessions[client]
+	if !ok {
+		cs = &chatSession{agents: make(map[string]agentEntry)}
+		h.sessions[client] = cs
+	}
+	return cs
+}
+
+// handleChatStop cancels a running agent for a specific session.
+func (h *MessageHandler) handleChatStop(client *Client, msg *InboundMessage) {
+	if msg.SessionID == "" {
+		h.sendError(client, "", "session ID required")
+		return
+	}
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
+		return
+	}
+
+	h.sessionsMu.Lock()
+	cs, ok := h.sessions[client]
+	h.sessionsMu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	cs.mu.Lock()
+	entry, ok := cs.agents[msg.SessionID]
+	if ok {
+		delete(cs.agents, msg.SessionID)
+	}
+	cs.mu.Unlock()
+
+	if ok {
+		entry.cancel()
+		<-entry.done
+	}
+}
+
+// OnClientDisconnect cancels all running agents for the given client and
+// removes its chatSession entry. Called by the hub when a client unregisters.
+func (h *MessageHandler) OnClientDisconnect(client *Client) {
+	h.sessionsMu.Lock()
+	cs, ok := h.sessions[client]
+	if ok {
+		delete(h.sessions, client)
+	}
+	h.sessionsMu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	cs.mu.Lock()
+	agents := make(map[string]agentEntry, len(cs.agents))
+	for k, v := range cs.agents {
+		agents[k] = v
+	}
+	cs.agents = nil
+	cs.mu.Unlock()
+
+	for _, entry := range agents {
+		entry.cancel()
+		<-entry.done
+	}
 }
 
 // completeSession transitions a session from running to completed/completed_unread
