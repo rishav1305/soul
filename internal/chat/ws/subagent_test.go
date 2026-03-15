@@ -61,10 +61,10 @@ func TestReadOnlyTools(t *testing.T) {
 	}
 }
 
-func TestExecuteReadOnlyTool_Stub(t *testing.T) {
-	result := executeReadOnlyTool("/tmp", "file_read", `{"path":"test.go"}`)
-	expected := "Tool file_read not yet implemented"
-	if result != expected {
-		t.Errorf("expected %q, got %q", expected, result)
+func TestExecuteReadOnlyTool_RealFileRead(t *testing.T) {
+	// file_read is now implemented — returns error for missing file
+	result := executeReadOnlyTool("/tmp", "file_read", `{"path":"nonexistent_test_file_xyz.go"}`)
+	if result == "" {
+		t.Error("expected error message for missing file")
 	}
 }
