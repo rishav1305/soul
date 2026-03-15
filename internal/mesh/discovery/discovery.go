@@ -58,6 +58,8 @@ func DiscoverTailscale(meshPort int) ([]DiscoveredPeer, error) {
 		}
 
 		ip := peer.TailscaleIPs[0]
+		// Plain HTTP is acceptable here — Tailscale provides WireGuard
+		// encryption for all peer-to-peer traffic. No TLS needed on top.
 		url := fmt.Sprintf("http://%s:%d/api/mesh/identity", ip, meshPort)
 
 		resp, err := client.Get(url)
