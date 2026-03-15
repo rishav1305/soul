@@ -12,6 +12,8 @@ Restart=on-failure
 RestartSec=5
 Environment=SOUL_V2_HOST=0.0.0.0
 Environment=SOUL_V2_PORT=3002
+# REQUIRED: generate with `openssl rand -hex 16`, store in Vaultwarden
+Environment=SOUL_V2_AUTH_TOKEN=CHANGE_ME
 
 # Hardening
 NoNewPrivileges=true

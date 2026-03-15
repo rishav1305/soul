@@ -830,8 +830,9 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Check query param (for WebSocket upgrade — browsers can't set headers)
-			if r.URL.Query().Get("token") == token {
+			// Check query param for /ws only — browsers can't set headers on WebSocket.
+			// Not accepted on /api/* to prevent token leakage in logs/referrers.
+			if path == "/ws" && r.URL.Query().Get("token") == token {
 				next.ServeHTTP(w, r)
 				return
 			}

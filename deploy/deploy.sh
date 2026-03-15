@@ -22,6 +22,11 @@ go test -race -count=1 ./...
 
 # 4. Install systemd service
 echo "Installing systemd service..."
+if grep -q 'CHANGE_ME' deploy/soul-v2.service; then
+    echo "ERROR: SOUL_V2_AUTH_TOKEN is still CHANGE_ME in deploy/soul-v2.service"
+    echo "Generate a token: openssl rand -hex 16"
+    exit 1
+fi
 sudo cp deploy/soul-v2.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable soul-v2

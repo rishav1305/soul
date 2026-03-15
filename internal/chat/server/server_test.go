@@ -465,6 +465,96 @@ func TestClientIPExtraction(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_QueryTokenOnlyForWS(t *testing.T) {
+	srv := New(WithAuthToken("secret123"))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	// Query token on /api/* should be rejected (leak-prone)
+	resp, err := http.Get(ts.URL + "/api/sessions?token=secret123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 401 {
+		t.Errorf("expected 401 for query token on /api/*, got %d", resp.StatusCode)
+	}
+
+	// Query token on /ws should be accepted (browsers can't set WS headers)
+	req, _ := http.NewRequest("GET", ts.URL+"/ws?token=secret123", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Origin", ts.URL)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp2.StatusCode == 401 {
+		t.Error("expected non-401 for query token on /ws")
+	}
+}
+
+func TestAuthMiddleware_RejectsWithoutToken(t *testing.T) {
+	srv := New(WithAuthToken("secret123"))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 401 {
+		t.Errorf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestAuthMiddleware_AcceptsValidHeader(t *testing.T) {
+	srv := New(WithAuthToken("secret123"))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/health", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode == 401 {
+		t.Error("expected non-401 with valid bearer token")
+	}
+}
+
+func TestAuthMiddleware_ExemptsStaticAssets(t *testing.T) {
+	srv := New(WithAuthToken("secret123"))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	for _, path := range []string{"/", "/manifest.json", "/favicon.ico", "/sw.js"} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode == 401 {
+			t.Errorf("expected %s to be exempt from auth, got 401", path)
+		}
+	}
+}
+
+func TestAuthMiddleware_DisabledWhenEmpty(t *testing.T) {
+	srv := New(WithAuthToken(""))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode == 401 {
+		t.Error("auth middleware should be disabled when token is empty")
+	}
+}
+
 func TestIsHashedAsset(t *testing.T) {
 	tests := []struct {
 		name string
