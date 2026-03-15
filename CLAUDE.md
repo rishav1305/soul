@@ -25,10 +25,11 @@ pkg/
   auth/                       Claude OAuth — shared by all servers
   events/                     Logger interface + Event type
 internal/chat/
-  server/                     HTTP server + SPA serving + tasks/tutor/projects proxy
-  session/                    SQLite session CRUD (chat.db)
-  stream/                     Claude API streaming — SSE parse
-  ws/                         WebSocket hub — session-scoped routing
+  server/                     HTTP server + SPA serving + product proxy
+  session/                    SQLite session CRUD (chat.db) — per-session product binding
+  stream/                     Claude API streaming — SSE parse, tool-use accumulation
+  ws/                         WebSocket hub — session-scoped routing, tool dispatch loop
+  context/                    Product context provider — system prompts, tool defs, dispatcher
   metrics/                    Event logging, aggregation, CLI reporting
 internal/tasks/
   server/                     HTTP server, REST API, SSE broadcaster
@@ -73,6 +74,18 @@ specs/                        YAML module specs (source of truth)
 tests/                        Integration, E2E, load, verification
 tools/                        specgen, monitor
 ```
+
+## Chat Product Routing
+
+Chat sessions can be bound to a product (tasks, tutor, projects, observe) via the tool selector in ChatInput. When bound:
+- `internal/chat/context/` injects product-specific system prompt + Claude tool definitions
+- Claude responds with `tool_use` blocks → `ws/handler.go` dispatches via `context/dispatch.go` to product REST APIs
+- Multi-turn tool loop: up to 5 rounds of tool_use → tool_result → follow-up per message
+- WS protocol: `session.setProduct` (inbound), `session.productSet` / `tool.call` / `tool.complete` (outbound)
+- Product stored per-session in SQLite (`sessions.product` column)
+- Default mode (no product): lightweight self-awareness prompt, no tools
+
+Tool counts: Tasks (6), Tutor (7), Projects (6), Observe (4) — 23 total.
 
 ## Environment Variables
 
