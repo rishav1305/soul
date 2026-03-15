@@ -77,6 +77,11 @@ export const router = createBrowserRouter([
         errorElement: <RouteErrorFallback />,
         lazy: () => import('./pages/ObservePage').then(m => ({ Component: m.ObservePage })),
       },
+      {
+        path: 'scout',
+        errorElement: <RouteErrorFallback />,
+        lazy: () => import('./pages/ScoutPage').then(m => ({ Component: m.ScoutPage })),
+      },
     ],
   },
 ]);
