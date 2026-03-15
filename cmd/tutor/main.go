@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/tutor/modules"
 	"github.com/rishav1305/soul-v2/internal/tutor/server"
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
@@ -56,6 +57,13 @@ func runServe() {
 	}
 	defer tutorStore.Close()
 
+	// Metrics logger.
+	metricsLogger, err := metrics.NewEventLogger(dataDir, "tutor")
+	if err != nil {
+		log.Fatalf("create metrics logger: %v", err)
+	}
+	defer metricsLogger.Close()
+
 	// Auto-import on first run if DB is empty.
 	topics, _ := tutorStore.ListTopics("", "")
 	if len(topics) == 0 {
@@ -87,6 +95,7 @@ func runServe() {
 		server.WithHost(host),
 		server.WithPort(port),
 		server.WithContentDir(contentDir),
+		server.WithMetrics(metricsLogger),
 	}
 
 	srv := server.New(opts...)

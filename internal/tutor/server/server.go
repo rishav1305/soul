@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/tutor/modules"
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
 )
@@ -21,6 +22,7 @@ import (
 type Server struct {
 	store      *store.Store
 	modules    *modules.Registry
+	metrics    *metrics.EventLogger
 	mux        *http.ServeMux
 	httpServer *http.Server
 	host       string
@@ -36,6 +38,7 @@ func WithStore(s *store.Store) Option       { return func(srv *Server) { srv.sto
 func WithHost(h string) Option              { return func(srv *Server) { srv.host = h } }
 func WithPort(p int) Option                 { return func(srv *Server) { srv.port = p } }
 func WithContentDir(d string) Option        { return func(srv *Server) { srv.contentDir = d } }
+func WithMetrics(l *metrics.EventLogger) Option { return func(srv *Server) { srv.metrics = l } }
 
 // New creates a new tutor Server.
 func New(opts ...Option) *Server {
@@ -73,6 +76,9 @@ func New(opts ...Option) *Server {
 
 	// Build middleware chain.
 	handler := http.Handler(s.mux)
+	if s.metrics != nil {
+		handler = requestLoggerMiddleware(s.metrics)(handler)
+	}
 	handler = bodyLimitMiddleware(64 << 10)(handler)
 	handler = cspMiddleware(handler)
 	handler = recoveryMiddleware(handler)
@@ -467,6 +473,49 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// --- Request metrics ---
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+// requestLoggerMiddleware times every HTTP request and logs api.request events.
+// Requests exceeding 500ms also produce an api.slow event.
+// Health-check requests are passed through without logging.
+func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			sr := &statusRecorder{ResponseWriter: w, status: 200}
+			next.ServeHTTP(sr, r)
+			duration := time.Since(start).Milliseconds()
+
+			data := map[string]interface{}{
+				"method":      r.Method,
+				"path":        r.URL.Path,
+				"status":      sr.status,
+				"duration_ms": duration,
+			}
+			_ = logger.Log(metrics.EventAPIRequest, data)
+
+			if duration > 500 {
+				_ = logger.Log(metrics.EventAPISlow, data)
+			}
+		})
+	}
 }
 
 // --- Middleware ---

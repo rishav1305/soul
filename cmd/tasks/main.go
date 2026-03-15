@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/server"
@@ -52,6 +53,13 @@ func runServe() {
 		log.Fatalf("open task store: %v", err)
 	}
 	defer taskStore.Close()
+
+	// Metrics logger.
+	metricsLogger, err := metrics.NewEventLogger(dataDir, "tasks")
+	if err != nil {
+		log.Fatalf("create metrics logger: %v", err)
+	}
+	defer metricsLogger.Close()
 
 	// Recover interrupted tasks on startup.
 	recoverInterruptedTasks(taskStore)
@@ -99,6 +107,7 @@ func runServe() {
 		server.WithHost(host),
 		server.WithPort(port),
 		server.WithExecutor(exec),
+		server.WithMetrics(metricsLogger),
 	}
 
 	srv := server.New(opts...)

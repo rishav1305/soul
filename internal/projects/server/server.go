@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/projects/content"
 	"github.com/rishav1305/soul-v2/internal/projects/store"
 )
@@ -22,6 +23,7 @@ import (
 // Server is the projects HTTP server.
 type Server struct {
 	store      *store.Store
+	metrics    *metrics.EventLogger
 	mux        *http.ServeMux
 	httpServer *http.Server
 	host       string
@@ -37,6 +39,7 @@ func WithStore(s *store.Store) Option    { return func(srv *Server) { srv.store 
 func WithHost(h string) Option           { return func(srv *Server) { srv.host = h } }
 func WithPort(p string) Option           { return func(srv *Server) { srv.port = p } }
 func WithContentDir(d string) Option     { return func(srv *Server) { srv.contentDir = d } }
+func WithMetrics(l *metrics.EventLogger) Option { return func(srv *Server) { srv.metrics = l } }
 
 // New creates a new projects Server.
 func New(opts ...Option) *Server {
@@ -65,9 +68,13 @@ func New(opts ...Option) *Server {
 
 	// Build middleware chain.
 	handler := http.Handler(s.mux)
+	if s.metrics != nil {
+		handler = requestLoggerMiddleware(s.metrics)(handler)
+	} else {
+		handler = requestLogMiddleware(handler)
+	}
 	handler = bodyLimitMiddleware(64 << 10)(handler)
 	handler = cspMiddleware(handler)
-	handler = requestLogMiddleware(handler)
 	handler = recoveryMiddleware(handler)
 
 	s.httpServer = &http.Server{
@@ -739,4 +746,35 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(sw, r)
 		log.Printf("%s %s %d %s", r.Method, r.URL.Path, sw.status, time.Since(start).Round(time.Microsecond))
 	})
+}
+
+// requestLoggerMiddleware times every HTTP request and logs api.request events.
+// Requests exceeding 500ms also produce an api.slow event.
+// Health-check requests are passed through without logging.
+func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(sw, r)
+			duration := time.Since(start).Milliseconds()
+
+			data := map[string]interface{}{
+				"method":      r.Method,
+				"path":        r.URL.Path,
+				"status":      sw.status,
+				"duration_ms": duration,
+			}
+			_ = logger.Log(metrics.EventAPIRequest, data)
+
+			if duration > 500 {
+				_ = logger.Log(metrics.EventAPISlow, data)
+			}
+		})
+	}
 }

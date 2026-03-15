@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/tasks/executor"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 	"github.com/rishav1305/soul-v2/pkg/events"
@@ -24,6 +25,7 @@ type Server struct {
 	executor    *executor.Executor
 	broadcaster *Broadcaster
 	logger      events.Logger
+	metrics     *metrics.EventLogger
 	host        string
 	port        int
 	startTime   time.Time
@@ -37,6 +39,7 @@ func WithLogger(l events.Logger) Option   { return func(srv *Server) { srv.logge
 func WithHost(h string) Option            { return func(srv *Server) { srv.host = h } }
 func WithPort(p int) Option               { return func(srv *Server) { srv.port = p } }
 func WithExecutor(e *executor.Executor) Option { return func(srv *Server) { srv.executor = e } }
+func WithMetrics(l *metrics.EventLogger) Option { return func(srv *Server) { srv.metrics = l } }
 
 // New creates a new tasks Server.
 func New(opts ...Option) *Server {
@@ -66,6 +69,9 @@ func New(opts ...Option) *Server {
 
 	// Build middleware chain.
 	handler := http.Handler(s.mux)
+	if s.metrics != nil {
+		handler = requestLoggerMiddleware(s.metrics)(handler)
+	}
 	handler = bodyLimitMiddleware(64 << 10)(handler)
 	handler = cspMiddleware(handler)
 	handler = requestIDMiddleware(handler)
@@ -330,6 +336,49 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		}
+	}
+}
+
+// --- Request metrics ---
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+// requestLoggerMiddleware times every HTTP request and logs api.request events.
+// Requests exceeding 500ms also produce an api.slow event.
+// Health-check and SSE stream requests are passed through without logging.
+func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/health" || r.URL.Path == "/api/stream" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			sr := &statusRecorder{ResponseWriter: w, status: 200}
+			next.ServeHTTP(sr, r)
+			duration := time.Since(start).Milliseconds()
+
+			data := map[string]interface{}{
+				"method":      r.Method,
+				"path":        r.URL.Path,
+				"status":      sr.status,
+				"duration_ms": duration,
+			}
+			_ = logger.Log(metrics.EventAPIRequest, data)
+
+			if duration > 500 {
+				_ = logger.Log(metrics.EventAPISlow, data)
+			}
+		})
 	}
 }
 

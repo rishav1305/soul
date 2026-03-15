@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/projects/content"
 	"github.com/rishav1305/soul-v2/internal/projects/server"
 	"github.com/rishav1305/soul-v2/internal/projects/store"
@@ -56,6 +57,13 @@ func runServe() {
 	}
 	defer projectsStore.Close()
 
+	// Metrics logger.
+	metricsLogger, err := metrics.NewEventLogger(dataDir, "projects")
+	if err != nil {
+		log.Fatalf("create metrics logger: %v", err)
+	}
+	defer metricsLogger.Close()
+
 	// Seed database (idempotent).
 	if err := projectsStore.Seed(); err != nil {
 		log.Printf("projects: seed error: %v", err)
@@ -79,6 +87,7 @@ func runServe() {
 		server.WithHost(host),
 		server.WithPort(port),
 		server.WithContentDir(contentDir),
+		server.WithMetrics(metricsLogger),
 	}
 
 	srv := server.New(opts...)
