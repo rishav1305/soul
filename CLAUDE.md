@@ -5,8 +5,8 @@ Go + React/TypeScript monorepo. AI-agent-maintained, spec-driven chat interface 
 ## Quick Commands
 
 ```bash
-make build          # Build soul-chat + soul-tasks + soul-tutor + soul-projects binaries + frontend
-make serve          # Build and run all servers (:3002 + :3004 + :3006 + :3008)
+make build          # Build soul-chat + soul-tasks + soul-tutor + soul-projects + soul-observe binaries + frontend
+make serve          # Build and run all servers (:3002 + :3004 + :3006 + :3008 + :3010)
 make verify         # Run L1-L3 verification (static + unit + integration)
 make verify-static  # Go vet + tsc --noEmit + secret scan + dep audit
 make types          # Generate types.ts from specs
@@ -20,6 +20,7 @@ cmd/chat/main.go              Chat server CLI entrypoint (:3002)
 cmd/tasks/main.go             Tasks server CLI entrypoint (:3004)
 cmd/tutor/main.go             Tutor server CLI entrypoint (:3006)
 cmd/projects/main.go          Projects server CLI entrypoint (:3008)
+cmd/observe/main.go           Observe server CLI entrypoint (:3010)
 pkg/
   auth/                       Claude OAuth — shared by all servers
   events/                     Logger interface + Event type
@@ -47,9 +48,11 @@ internal/projects/
   server/                     HTTP server, REST API, tool execution
   store/                      SQLite CRUD (projects.db) — 7 tables
   content/                    Embedded implementation guides (go:embed, 11 markdown files)
+internal/observe/
+  server/                     HTTP server — pillar-based metrics API (13 endpoints)
 web/src/
   main.tsx                    Entry — RouterProvider with lazy-loaded routes
-  router.tsx                  Route definitions (/, /chat, /tasks, /tasks/:id, /tutor, /tutor/drill/:id, /tutor/mock/:id, /projects, /projects/:id)
+  router.tsx                  Route definitions (/, /chat, /tasks, /tasks/:id, /tutor, /tutor/drill/:id, /tutor/mock/:id, /projects, /projects/:id, /observe)
   layouts/
     AppLayout.tsx             Shared header + nav + Outlet
   pages/
@@ -62,8 +65,9 @@ web/src/
     MockPage.tsx              Mock interview session detail
     ProjectsPage.tsx          Skill-building projects — 4 tabs (Dashboard, Projects, Timeline, Keywords)
     ProjectDetailPage.tsx     Single project (Milestones, Guide, Readiness, Metrics)
+    ObservePage.tsx           Pillar-based observability — 8 tabs (Overview + 6 pillars + Tail)
   components/                 React components (Shell, Chat, Sessions, TaskCard, ModuleCard, etc.)
-  hooks/                      Custom hooks (useChat, useTasks, useTaskEvents, useTutor, useDrill, useMockSession, useProjects, useProjectDetail)
+  hooks/                      Custom hooks (useChat, useTasks, useTaskEvents, useTutor, useDrill, useMockSession, useProjects, useProjectDetail, useObserve)
   lib/                        types.ts (generated), ws.ts, api.ts
 specs/                        YAML module specs (source of truth)
 tests/                        Integration, E2E, load, verification
@@ -86,6 +90,9 @@ tools/                        specgen, monitor
 | `SOUL_PROJECTS_HOST` | `127.0.0.1` | Projects server bind address |
 | `SOUL_PROJECTS_PORT` | `3008` | Projects server port |
 | `SOUL_PROJECTS_URL` | `http://127.0.0.1:3008` | Projects server URL (for chat proxy) |
+| `SOUL_OBSERVE_HOST` | `127.0.0.1` | Observe server bind address |
+| `SOUL_OBSERVE_PORT` | `3010` | Observe server port |
+| `SOUL_OBSERVE_URL` | `http://127.0.0.1:3010` | Observe server URL (for chat proxy) |
 | `SOUL_V2_REPO_DIR` | `(cwd)` | Project root for worktree creation |
 
 Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)

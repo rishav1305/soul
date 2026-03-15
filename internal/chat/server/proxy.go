@@ -285,9 +285,9 @@ func newObserveProxy(target string) *observeProxy {
 	}
 }
 
-// ServeHTTP forwards requests to the observe server, stripping the /api/observe prefix.
+// ServeHTTP forwards requests to the observe server, rewriting /api/observe → /api.
 func (op *observeProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/observe")
+	r.URL.Path = strings.Replace(r.URL.Path, "/api/observe", "/api", 1)
 	if r.URL.Path == "" {
 		r.URL.Path = "/"
 	}
