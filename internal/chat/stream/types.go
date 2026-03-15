@@ -9,12 +9,13 @@ import (
 
 // Request represents a Claude API request.
 type Request struct {
-	Model     string    `json:"model,omitempty"`
-	MaxTokens int       `json:"max_tokens"`
-	System    string    `json:"system,omitempty"`
-	Messages  []Message `json:"messages"`
-	Tools     []Tool    `json:"tools,omitempty"`
-	Stream    bool      `json:"stream"`
+	Model          string    `json:"model,omitempty"`
+	MaxTokens      int       `json:"max_tokens"`
+	System         string    `json:"system,omitempty"`
+	Messages       []Message `json:"messages"`
+	Tools          []Tool    `json:"tools,omitempty"`
+	Stream         bool      `json:"stream"`
+	SkipValidation bool      `json:"-"` // internal: skip role alternation check for tool loops
 }
 
 // Validate checks required fields and message alternation.
@@ -31,13 +32,15 @@ func (r *Request) Validate() error {
 		return fmt.Errorf("first message must have role \"user\", got %q", r.Messages[0].Role)
 	}
 
-	// Validate roles and alternation.
-	for i, m := range r.Messages {
-		if m.Role != "user" && m.Role != "assistant" {
-			return fmt.Errorf("message %d has invalid role %q (must be \"user\" or \"assistant\")", i, m.Role)
-		}
-		if i > 0 && m.Role == r.Messages[i-1].Role {
-			return fmt.Errorf("messages must alternate roles: message %d and %d both have role %q", i-1, i, m.Role)
+	// Validate roles and alternation (skipped for tool-use follow-up requests).
+	if !r.SkipValidation {
+		for i, m := range r.Messages {
+			if m.Role != "user" && m.Role != "assistant" {
+				return fmt.Errorf("message %d has invalid role %q (must be \"user\" or \"assistant\")", i, m.Role)
+			}
+			if i > 0 && m.Role == r.Messages[i-1].Role {
+				return fmt.Errorf("messages must alternate roles: message %d and %d both have role %q", i-1, i, m.Role)
+			}
 		}
 	}
 

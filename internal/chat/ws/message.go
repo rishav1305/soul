@@ -9,11 +9,12 @@ import (
 
 // Inbound message types sent by WebSocket clients.
 const (
-	TypeChatSend      = "chat.send"
-	TypeSessionSwitch = "session.switch"
-	TypeSessionCreate = "session.create"
-	TypeSessionDelete = "session.delete"
-	TypeSessionRename = "session.rename"
+	TypeChatSend          = "chat.send"
+	TypeSessionSwitch     = "session.switch"
+	TypeSessionCreate     = "session.create"
+	TypeSessionDelete     = "session.delete"
+	TypeSessionRename     = "session.rename"
+	TypeSessionSetProduct = "session.setProduct"
 )
 
 // Input validation limits.
@@ -38,7 +39,8 @@ const (
 	TypeSessionList     = "session.list"
 	TypeSessionUpdated  = "session.updated"
 	TypeSessionHistory  = "session.history"
-	TypeConnectionReady = "connection.ready"
+	TypeConnectionReady   = "connection.ready"
+	TypeSessionProductSet = "session.productSet"
 )
 
 // Attachment represents a file attached to a chat message.
@@ -55,6 +57,7 @@ type InboundMessage struct {
 	Content     string       `json:"content,omitempty"`
 	Model       string       `json:"model,omitempty"`
 	Attachments []Attachment `json:"attachments,omitempty"`
+	Product     string       `json:"product,omitempty"`
 }
 
 // OutboundMessage represents a message sent to a WebSocket client.
