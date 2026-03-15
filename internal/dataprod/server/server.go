@@ -3,10 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,13 +31,13 @@ func WithPort(p int) Option   { return func(s *Server) { s.port = p } }
 // products and validTools define the data server's capabilities.
 var (
 	products   = []string{"dataeng", "costops", "viz"}
-	validTools = map[string]bool{
-		"dataeng__analyze": true,
-		"dataeng__report":  true,
-		"costops__analyze": true,
-		"costops__report":  true,
-		"viz__analyze":     true,
-		"viz__report":      true,
+	validTools = map[string]string{
+		"dataeng__analyze": "dataeng",
+		"dataeng__report":  "dataeng",
+		"costops__analyze": "costops",
+		"costops__report":  "costops",
+		"viz__analyze":     "viz",
+		"viz__report":      "viz",
 	}
 )
 
@@ -52,12 +55,12 @@ func New(opts ...Option) *Server {
 
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
-	s.mux.HandleFunc("GET /api/products", s.handleProducts)
-	s.mux.HandleFunc("GET /api/tools", s.handleTools)
+	s.mux.HandleFunc("POST /api/tools/{name}/execute", s.handleToolExecute)
 
 	// Build middleware chain.
 	handler := http.Handler(s.mux)
-	handler = corsMiddleware(handler)
+	handler = bodyLimitMiddleware(64 << 10)(handler)
+	handler = cspMiddleware(handler)
 	handler = recoveryMiddleware(handler)
 
 	s.httpServer = &http.Server{
@@ -89,52 +92,69 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status": "ok",
-		"uptime": time.Since(s.startTime).Seconds(),
-	})
-}
-
-func (s *Server) handleProducts(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "ok",
+		"uptime":   time.Since(s.startTime).Round(time.Second).String(),
 		"products": products,
 	})
 }
 
-func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
-	tools := make([]string, 0, len(validTools))
-	for t := range validTools {
-		tools = append(tools, t)
+func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	product, ok := validTools[name]
+	if !ok {
+		names := make([]string, 0, len(validTools))
+		for k := range validTools {
+			names = append(names, k)
+		}
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown tool %q, valid tools: %s", name, strings.Join(names, ", ")))
+		return
 	}
+
+	tool := name
+	if idx := strings.Index(name, "__"); idx >= 0 {
+		tool = name[idx+2:]
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"tools": tools,
+		"success": true,
+		"data": map[string]string{
+			"status":  "not_yet_implemented",
+			"product": product,
+			"tool":    tool,
+		},
 	})
 }
 
 // --- Middleware ---
 
-// recoveryMiddleware catches panics and returns a 500 JSON error.
 func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v", err)
-				writeError(w, http.StatusInternalServerError, "internal server error")
+				log.Printf("[panic] %v\n%s", err, debug.Stack())
+				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
 }
 
-// corsMiddleware sets CORS headers for proxied access.
-func corsMiddleware(next http.Handler) http.Handler {
+func bodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH") {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func cspMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }
