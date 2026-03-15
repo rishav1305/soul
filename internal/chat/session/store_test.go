@@ -710,3 +710,47 @@ func TestRunInTransaction_RollbackOnError(t *testing.T) {
 		t.Errorf("expected 0 messages after rollback, got %d", len(msgs))
 	}
 }
+
+func TestSetProduct_NewProducts(t *testing.T) {
+	s := openTestStore(t)
+
+	sess, err := s.CreateSession("product test")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	newProducts := []string{
+		"scout", "sentinel", "mesh", "bench",
+		"compliance", "qa", "analytics",
+		"devops", "dba", "migrate",
+		"dataeng", "costops", "viz",
+		"docs", "api",
+	}
+
+	for _, p := range newProducts {
+		t.Run(p, func(t *testing.T) {
+			if err := s.SetProduct(sess.ID, p); err != nil {
+				t.Errorf("SetProduct(%q): %v", p, err)
+			}
+			got, err := s.GetSession(sess.ID)
+			if err != nil {
+				t.Fatalf("GetSession: %v", err)
+			}
+			if got.Product != p {
+				t.Errorf("Product = %q, want %q", got.Product, p)
+			}
+		})
+	}
+
+	// Also verify original products still work.
+	for _, p := range []string{"", "tasks", "tutor", "projects", "observe"} {
+		if err := s.SetProduct(sess.ID, p); err != nil {
+			t.Errorf("SetProduct(%q) original product: %v", p, err)
+		}
+	}
+
+	// Verify invalid product is rejected.
+	if err := s.SetProduct(sess.ID, "bogus"); err == nil {
+		t.Error("expected error for invalid product 'bogus'")
+	}
+}

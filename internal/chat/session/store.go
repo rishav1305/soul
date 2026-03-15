@@ -605,9 +605,16 @@ func (s *Store) SetLastMessage(id, content string) error {
 }
 
 // SetProduct sets the product for a session.
-// Valid products are: "" (none), "tasks", "tutor", "projects", "observe".
+// Valid products are: "" (none) plus the 19 named products.
 func (s *Store) SetProduct(sessionID, product string) error {
-	valid := map[string]bool{"": true, "tasks": true, "tutor": true, "projects": true, "observe": true}
+	valid := map[string]bool{
+		"": true, "tasks": true, "tutor": true, "projects": true, "observe": true,
+		"scout": true, "sentinel": true, "mesh": true, "bench": true,
+		"compliance": true, "qa": true, "analytics": true,
+		"devops": true, "dba": true, "migrate": true,
+		"dataeng": true, "costops": true, "viz": true,
+		"docs": true, "api": true,
+	}
 	if !valid[product] {
 		return fmt.Errorf("invalid product: %q", product)
 	}
