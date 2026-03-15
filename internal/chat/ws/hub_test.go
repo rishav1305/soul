@@ -41,7 +41,7 @@ func TestNewHub_WithOptions(t *testing.T) {
 
 func TestNewHub_WithMetrics(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := metrics.NewEventLogger(dir)
+	logger, err := metrics.NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("create event logger: %v", err)
 	}

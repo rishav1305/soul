@@ -23,7 +23,7 @@ func openTimedTestStore(t *testing.T, slowMs int64) (*TimedStore, string) {
 	}
 
 	metricsDir := t.TempDir()
-	logger, err := metrics.NewEventLogger(metricsDir)
+	logger, err := metrics.NewEventLogger(metricsDir, "")
 	if err != nil {
 		store.Close()
 		t.Fatalf("NewEventLogger: %v", err)

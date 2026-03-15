@@ -130,7 +130,7 @@ func setupErrorEnv(t *testing.T, mockSrv *httptest.Server) (*ws.Hub, *session.St
 
 	// Metrics logger with temp dir.
 	metricsDir := filepath.Join(t.TempDir(), "metrics")
-	mel, err := metrics.NewEventLogger(metricsDir)
+	mel, err := metrics.NewEventLogger(metricsDir, "")
 	if err != nil {
 		t.Fatalf("create metrics logger: %v", err)
 	}

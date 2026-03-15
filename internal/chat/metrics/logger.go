@@ -15,15 +15,25 @@ var _ events.Logger = (*EventLogger)(nil)
 
 const metricsFileName = "metrics.jsonl"
 
+// metricsFileNameForProduct returns the JSONL filename for a given product.
+// If product is empty, it returns the legacy "metrics.jsonl".
+func metricsFileNameForProduct(product string) string {
+	if product == "" {
+		return metricsFileName
+	}
+	return fmt.Sprintf("metrics-%s.jsonl", product)
+}
+
 // EventLogger writes events as JSON Lines to an append-only file.
 // All writes are goroutine-safe via sync.Mutex.
 // On each Log() call it checks if the UTC date has changed since the last
-// write and, if so, rotates the current metrics.jsonl to
-// metrics.YYYY-MM-DD.jsonl before writing the new event.
+// write and, if so, rotates the current metrics file to a dated variant
+// before writing the new event.
 type EventLogger struct {
 	file    *os.File
 	mu      sync.Mutex
 	dataDir string
+	product string // product tag (e.g. "chat"); empty = legacy mode
 
 	// lastDate tracks the UTC date (YYYY-MM-DD) of the most recent write.
 	// When this changes, checkRotate triggers a rotation.
@@ -37,14 +47,32 @@ type EventLogger struct {
 	alertChecker *AlertChecker
 }
 
-// NewEventLogger creates a new EventLogger that writes to dataDir/metrics.jsonl.
+// NewEventLogger creates a new EventLogger that writes to a product-specific
+// JSONL file in dataDir. If product is non-empty, writes go to
+// metrics-{product}.jsonl; otherwise the legacy metrics.jsonl is used.
 // It creates the data directory (0700) and file (0600) if they do not exist.
-func NewEventLogger(dataDir string) (*EventLogger, error) {
+// On first use with a product, if the legacy metrics.jsonl exists and the
+// product file does not, the legacy file is renamed (one-time migration).
+func NewEventLogger(dataDir string, product string) (*EventLogger, error) {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 
-	path := filepath.Join(dataDir, metricsFileName)
+	fileName := metricsFileNameForProduct(product)
+
+	// One-time migration: rename legacy metrics.jsonl → metrics-{product}.jsonl
+	// if product is set and the product file doesn't exist yet.
+	if product != "" {
+		legacyPath := filepath.Join(dataDir, metricsFileName)
+		productPath := filepath.Join(dataDir, fileName)
+		if _, err := os.Stat(productPath); os.IsNotExist(err) {
+			if _, err := os.Stat(legacyPath); err == nil {
+				_ = os.Rename(legacyPath, productPath)
+			}
+		}
+	}
+
+	path := filepath.Join(dataDir, fileName)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open metrics file: %w", err)
@@ -53,6 +81,7 @@ func NewEventLogger(dataDir string) (*EventLogger, error) {
 	return &EventLogger{
 		file:     f,
 		dataDir:  dataDir,
+		product:  product,
 		lastDate: time.Now().UTC().Format("2006-01-02"),
 		nowFunc:  time.Now,
 	}, nil
@@ -76,6 +105,15 @@ func (l *EventLogger) SetAlertChecker(ac *AlertChecker) {
 // are never re-checked to prevent infinite recursion.
 func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	now := l.nowFunc()
+
+	// Inject product tag into event data if set.
+	if l.product != "" {
+		if data == nil {
+			data = make(map[string]interface{})
+		}
+		data["product"] = l.product
+	}
+
 	ev := Event{
 		Timestamp: now,
 		EventType: eventType,
@@ -124,8 +162,10 @@ func (l *EventLogger) Log(eventType string, data map[string]interface{}) error {
 	return nil
 }
 
-// checkRotate rotates the current metrics.jsonl to metrics.YYYY-MM-DD.jsonl
+// checkRotate rotates the current metrics file to a dated variant
 // if the UTC date has changed since the last write. The caller must hold l.mu.
+// For product "chat": metrics-chat.jsonl → metrics-chat-2026-03-15.jsonl
+// For legacy (no product): metrics.jsonl → metrics.2026-03-15.jsonl
 func (l *EventLogger) checkRotate(now time.Time) error {
 	currentDate := now.UTC().Format("2006-01-02")
 	if currentDate == l.lastDate {
@@ -140,8 +180,15 @@ func (l *EventLogger) checkRotate(now time.Time) error {
 		return fmt.Errorf("flush before rotate: %w", err)
 	}
 
-	oldPath := filepath.Join(l.dataDir, metricsFileName)
-	newPath := filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", previousDate))
+	fileName := metricsFileNameForProduct(l.product)
+	oldPath := filepath.Join(l.dataDir, fileName)
+
+	var newPath string
+	if l.product != "" {
+		newPath = filepath.Join(l.dataDir, fmt.Sprintf("metrics-%s-%s.jsonl", l.product, previousDate))
+	} else {
+		newPath = filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", previousDate))
+	}
 
 	if err := l.file.Close(); err != nil {
 		return fmt.Errorf("close for rotate: %w", err)
@@ -177,8 +224,8 @@ func (l *EventLogger) Close() error {
 	return nil
 }
 
-// Rotate renames the current metrics file with a date suffix (metrics.YYYY-MM-DD.jsonl)
-// and opens a fresh metrics.jsonl for new writes.
+// Rotate renames the current metrics file with a date suffix and opens a
+// fresh file for new writes.
 func (l *EventLogger) Rotate() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -188,9 +235,16 @@ func (l *EventLogger) Rotate() error {
 		return fmt.Errorf("flush before rotate: %w", err)
 	}
 
-	oldPath := filepath.Join(l.dataDir, metricsFileName)
+	fileName := metricsFileNameForProduct(l.product)
+	oldPath := filepath.Join(l.dataDir, fileName)
 	dateSuffix := l.nowFunc().Format("2006-01-02")
-	newPath := filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", dateSuffix))
+
+	var newPath string
+	if l.product != "" {
+		newPath = filepath.Join(l.dataDir, fmt.Sprintf("metrics-%s-%s.jsonl", l.product, dateSuffix))
+	} else {
+		newPath = filepath.Join(l.dataDir, fmt.Sprintf("metrics.%s.jsonl", dateSuffix))
+	}
 
 	// Close current handle before rename.
 	if err := l.file.Close(); err != nil {

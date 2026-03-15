@@ -9,7 +9,7 @@ import (
 func makeTestLogger(t *testing.T) (*EventLogger, string) {
 	t.Helper()
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestAlertChecker_NoAlertBelowThreshold(t *testing.T) {
 func TestDefaultThresholds(t *testing.T) {
 	// We need a real logger — use /dev/null as data dir stand-in via TempDir.
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}

@@ -55,7 +55,7 @@ func runServe() {
 		dataDir = filepath.Join(home, ".soul-v2")
 	}
 
-	logger, err := metrics.NewEventLogger(dataDir)
+	logger, err := metrics.NewEventLogger(dataDir, "chat")
 	if err != nil {
 		log.Fatalf("create event logger: %v", err)
 	}

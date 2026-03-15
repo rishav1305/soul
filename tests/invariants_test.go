@@ -142,7 +142,7 @@ func TestInvariant_SessionStoreRoundTrip(t *testing.T) {
 func TestInvariant_MetricsLoggerRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
-	logger, err := metrics.NewEventLogger(dir)
+	logger, err := metrics.NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}

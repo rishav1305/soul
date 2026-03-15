@@ -514,7 +514,7 @@ func runLogQuality(args []string) {
 func logEvent(eventType string, data map[string]interface{}) {
 	dataDir := getDataDir()
 
-	logger, err := metrics.NewEventLogger(dataDir)
+	logger, err := metrics.NewEventLogger(dataDir, "chat")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating logger: %v\n", err)
 		os.Exit(1)

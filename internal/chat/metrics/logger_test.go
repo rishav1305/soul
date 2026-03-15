@@ -97,7 +97,7 @@ func TestEvent_MarshalJSON_OmitsEmptyData(t *testing.T) {
 
 func TestEventLogger_Log_WritesJSONLine(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestEventLogger_Log_WritesJSONLine(t *testing.T) {
 
 func TestEventLogger_Log_GoroutineSafe(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestEventLogger_Log_GoroutineSafe(t *testing.T) {
 
 func TestEventLogger_Close_FlushesAndCloses(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestEventLogger_CreatesFileIfNotExists(t *testing.T) {
 		t.Fatal("file should not exist before NewEventLogger")
 	}
 
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestEventLogger_CreatesDataDirIfNotExists(t *testing.T) {
 		t.Fatal("dir should not exist before NewEventLogger")
 	}
 
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestEventLogger_CreatesDataDirIfNotExists(t *testing.T) {
 
 func TestEventLogger_Rotate(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestEventLogger_Rotate(t *testing.T) {
 
 func TestLogger_Rotation_AutoRotatesOnDateChange(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestLogger_Rotation_AutoRotatesOnDateChange(t *testing.T) {
 
 func TestLogger_Rotation_NoRotateOnSameDate(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestLogger_Rotation_NoRotateOnSameDate(t *testing.T) {
 
 func TestLogger_Rotation_MultiDayRotation(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestLogger_Rotation_MultiDayRotation(t *testing.T) {
 
 func TestEventLogger_Log_RejectsEmptyType(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 
 func TestNewSampler_SetsInterval(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestNewSampler_SetsInterval(t *testing.T) {
 
 func TestSampler_Sample_CollectsMetrics(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestSampler_Sample_CollectsMetrics(t *testing.T) {
 
 func TestSampler_StartEmitsEvents(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestSampler_StartEmitsEvents(t *testing.T) {
 
 func TestSampler_StopHaltsAndWaits(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestSampler_StopHaltsAndWaits(t *testing.T) {
 
 func TestSampler_StopMultipleCalls(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestSampler_StopMultipleCalls(t *testing.T) {
 
 func TestSampler_RespectsInterval(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestSampler_RespectsInterval(t *testing.T) {
 
 func TestSampler_ConcurrentStartStop(t *testing.T) {
 	dir := t.TempDir()
-	logger, err := NewEventLogger(dir)
+	logger, err := NewEventLogger(dir, "")
 	if err != nil {
 		t.Fatalf("NewEventLogger: %v", err)
 	}
