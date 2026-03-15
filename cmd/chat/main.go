@@ -120,9 +120,13 @@ func runServe() {
 	}
 
 	// Enable bearer token auth if configured.
-	if authToken := os.Getenv("SOUL_V2_AUTH_TOKEN"); authToken != "" {
+	authToken := os.Getenv("SOUL_V2_AUTH_TOKEN")
+	host := os.Getenv("SOUL_V2_HOST")
+	if authToken != "" {
 		serverOpts = append(serverOpts, server.WithAuthToken(authToken))
 		log.Printf("API auth enabled (bearer token)")
+	} else if host != "" && host != "127.0.0.1" && host != "localhost" {
+		log.Fatalf("FATAL: SOUL_V2_AUTH_TOKEN required when binding to %s (non-loopback)", host)
 	}
 
 	// Enable TLS if cert and key are configured.

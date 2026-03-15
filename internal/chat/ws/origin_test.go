@@ -47,13 +47,24 @@ func TestIsOriginAllowed_EmptyOrigin_PrivateIP(t *testing.T) {
 	}
 }
 
-func TestIsOriginAllowed_EmptyOrigin_CloudflareJWT(t *testing.T) {
+func TestIsOriginAllowed_EmptyOrigin_CloudflareJWT_PublicIP(t *testing.T) {
 	hub := NewHub()
+	// CF JWT header from public IP should NOT be trusted (spoofable on direct access)
 	req := httptest.NewRequest("GET", "/ws", nil)
 	req.RemoteAddr = "203.0.113.50:12345"
 	req.Header.Set("Cf-Access-Jwt-Assertion", "eyJhbGciOi...")
+	if hub.isOriginAllowed(req) {
+		t.Error("expected CF JWT from public IP to be rejected (header spoofable)")
+	}
+}
+
+func TestIsOriginAllowed_EmptyOrigin_CloudflaredLocalhost(t *testing.T) {
+	hub := NewHub()
+	// cloudflared connects from localhost — allowed via private IP check
+	req := httptest.NewRequest("GET", "/ws", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	if !hub.isOriginAllowed(req) {
-		t.Error("expected empty-origin with CF JWT to be allowed")
+		t.Error("expected empty-origin from localhost (cloudflared) to be allowed")
 	}
 }
 

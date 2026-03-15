@@ -73,6 +73,9 @@ func TestCSPHeaders(t *testing.T) {
 	if strings.Contains(csp, "unsafe-inline") {
 		t.Errorf("CSP should not contain unsafe-inline: %s", csp)
 	}
+	if !strings.Contains(csp, "img-src 'self' data:") {
+		t.Errorf("CSP missing img-src: %s", csp)
+	}
 	if !strings.Contains(csp, "connect-src 'self' ws: wss:") {
 		t.Errorf("CSP missing connect-src: %s", csp)
 	}
@@ -428,16 +431,22 @@ func TestClientIPExtraction(t *testing.T) {
 			want:       "192.168.1.1",
 		},
 		{
-			name:       "from X-Forwarded-For single",
-			remoteAddr: "10.0.0.1:1234",
+			name:       "from X-Forwarded-For via loopback proxy",
+			remoteAddr: "127.0.0.1:1234",
 			xff:        "203.0.113.50",
 			want:       "203.0.113.50",
 		},
 		{
-			name:       "from X-Forwarded-For chain",
-			remoteAddr: "10.0.0.1:1234",
+			name:       "from X-Forwarded-For chain via loopback",
+			remoteAddr: "127.0.0.1:1234",
 			xff:        "203.0.113.50, 70.41.3.18, 150.172.238.178",
 			want:       "203.0.113.50",
+		},
+		{
+			name:       "XFF ignored from non-loopback (prevents spoofing)",
+			remoteAddr: "10.0.0.1:1234",
+			xff:        "203.0.113.50",
+			want:       "10.0.0.1",
 		},
 	}
 

@@ -1015,18 +1015,22 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// clientIP extracts the client IP from the request, checking X-Forwarded-For first.
+// clientIP extracts the client IP from the request.
+// Only trusts X-Forwarded-For from loopback (nginx/cloudflared on same host).
+// This prevents LAN/Tailscale nodes from spoofing source IP to bypass rate limits.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain.
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	// Only trust X-Forwarded-For from loopback proxies.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			if idx := strings.Index(xff, ","); idx != -1 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
+		}
 	}
 	return host
 }

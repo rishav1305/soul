@@ -334,11 +334,10 @@ func isPrivateOrTrustedIP(remoteAddr string) bool {
 func (h *Hub) isOriginAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		// Allow Cloudflare tunnel (has JWT header).
-		if r.Header.Get("Cf-Access-Jwt-Assertion") != "" {
-			return true
-		}
 		// Allow private/trusted network IPs (LAN, Tailscale, loopback).
+		// Cloudflare tunnel clients (cloudflared) connect from localhost,
+		// so they pass this check. No need to trust Cf-Access-Jwt-Assertion
+		// header which can be spoofed on direct access.
 		if isPrivateOrTrustedIP(r.RemoteAddr) {
 			return true
 		}

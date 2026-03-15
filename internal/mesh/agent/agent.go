@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -68,8 +69,11 @@ func (a *Agent) connectAndSend(ctx context.Context) error {
 		return fmt.Errorf("agent: create token: %w", err)
 	}
 
-	wsURL := a.hubURL + "?token=" + token
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, _, err := websocket.Dial(ctx, a.hubURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Authorization": []string{"Bearer " + token},
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("agent: dial hub: %w", err)
 	}

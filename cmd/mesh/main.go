@@ -23,7 +23,10 @@ func main() {
 	port := envInt("SOUL_MESH_PORT", 3024)
 	name := envOr("SOUL_MESH_NAME", "")
 	role := envOr("SOUL_MESH_ROLE", "hub")
-	secret := envOr("SOUL_MESH_SECRET", "soul-mesh-dev-secret")
+	secret := os.Getenv("SOUL_MESH_SECRET")
+	if secret == "" {
+		log.Fatalf("FATAL: SOUL_MESH_SECRET env var required")
+	}
 	hubURL := envOr("SOUL_MESH_HUB", "")
 	dataDir := envOr("SOUL_V2_DATA_DIR", defaultDataDir())
 
