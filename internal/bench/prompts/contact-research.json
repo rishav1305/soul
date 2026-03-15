@@ -1,0 +1,30 @@
+[
+  {
+    "id": "cr-001",
+    "task": "Extract contact information from text",
+    "prompt": "Extract the contact info from this text and return as JSON with keys: name, email, phone, company.\n\nReach out to Jane Smith at jane.smith@acme.co or call 555-0142. She's the VP of Engineering at Acme Corp.",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["name", "email", "phone", "company"]
+    }
+  },
+  {
+    "id": "cr-002",
+    "task": "Identify decision maker role",
+    "prompt": "From this org description, identify the key decision maker role for a SaaS purchase: CTO, CFO, VP Engineering, or Engineering Manager.\n\nThe company has a flat engineering org where the VP of Engineering owns all tooling budgets and vendor relationships.",
+    "expected_answer": "VP Engineering",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "cr-003",
+    "task": "Summarize company profile",
+    "prompt": "Summarize this company for a sales brief. Include: industry, size, and key technology stack.\n\nTechFlow is a 200-person fintech startup building real-time payment processing. They use Go, PostgreSQL, and Kubernetes on AWS.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["fintech", "200", "Go", "PostgreSQL", "Kubernetes", "AWS"]
+    }
+  }
+]

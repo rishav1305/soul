@@ -1,0 +1,30 @@
+[
+  {
+    "id": "ed-001",
+    "task": "Draft a professional follow-up email",
+    "prompt": "Draft a follow-up email to a client who hasn't responded in 2 weeks about a project proposal. Keep it professional and concise. Include: greeting, reminder, call to action, closing.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["proposal", "follow up", "looking forward", "please"]
+    }
+  },
+  {
+    "id": "ed-002",
+    "task": "Draft an incident notification email",
+    "prompt": "Write an incident notification email about a 30-minute database outage that affected the billing system. Include: what happened, impact, resolution, next steps.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["outage", "billing", "resolved", "steps"]
+    }
+  },
+  {
+    "id": "ed-003",
+    "task": "Classify email tone",
+    "prompt": "Classify the tone of this email as: formal, informal, urgent, neutral.\n\nHi team, just a quick heads up - the deploy is going out at 3pm today. Nothing major, just some bug fixes. Cheers!",
+    "expected_answer": "informal",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  }
+]

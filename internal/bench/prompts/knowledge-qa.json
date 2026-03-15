@@ -1,0 +1,30 @@
+[
+  {
+    "id": "kq-001",
+    "task": "Extract factual information about HTTP status codes",
+    "prompt": "What HTTP status code indicates that a resource has been permanently moved to a new URL? Respond with just the number.",
+    "expected_answer": "301",
+    "scoring": "exact_match_number",
+    "scoring_config": {}
+  },
+  {
+    "id": "kq-002",
+    "task": "Identify key concepts in distributed systems",
+    "prompt": "Explain the CAP theorem. Your answer must mention consistency, availability, and partition tolerance.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["consistency", "availability", "partition tolerance"]
+    }
+  },
+  {
+    "id": "kq-003",
+    "task": "Explain Go concurrency primitives",
+    "prompt": "Describe the main Go concurrency primitives used for safe communication between goroutines. Mention channels, mutexes, and WaitGroup.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["channel", "mutex", "WaitGroup"]
+    }
+  }
+]

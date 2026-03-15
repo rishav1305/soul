@@ -1,0 +1,26 @@
+[
+  {
+    "id": "rc-001",
+    "task": "Classify reply sentiment",
+    "prompt": "Classify this customer reply as: positive, negative, or neutral.\n\nReply: Thanks for getting back to me so quickly! The fix worked perfectly. Really appreciate the help.",
+    "expected_answer": "positive",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "rc-002",
+    "task": "Classify reply intent",
+    "prompt": "Classify this reply intent as one of: interested, not_interested, needs_info, auto_reply.\n\nReply: I am currently out of the office with limited access to email. I will return on Monday, March 20th.",
+    "expected_answer": "auto_reply",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "rc-003",
+    "task": "Detect objection type",
+    "prompt": "Classify the sales objection type as: price, timing, competitor, authority, need.\n\nReply: We actually just signed a 2-year contract with another vendor last month for this exact use case.",
+    "expected_answer": "competitor",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  }
+]

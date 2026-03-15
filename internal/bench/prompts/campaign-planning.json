@@ -1,0 +1,30 @@
+[
+  {
+    "id": "cp-001",
+    "task": "Order campaign launch steps",
+    "prompt": "Put these campaign steps in the correct order: launch campaign, define target audience, create content, set budget, analyze results, A/B test messaging.",
+    "expected_answer": "",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["define target audience", "set budget", "create content", "A/B test", "launch campaign", "analyze results"]
+    }
+  },
+  {
+    "id": "cp-002",
+    "task": "Generate campaign brief as JSON",
+    "prompt": "Create a JSON campaign brief with keys: objective, target_audience, channels, budget_range, timeline_weeks for a B2B SaaS product launch targeting engineering leaders.",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["objective", "target_audience", "channels", "budget_range", "timeline_weeks"]
+    }
+  },
+  {
+    "id": "cp-003",
+    "task": "Calculate campaign conversion rate",
+    "prompt": "A campaign sent 10000 emails, got 2500 opens, 500 clicks, and 50 conversions. What is the click-to-conversion rate as a percentage? Respond with just the number.",
+    "expected_answer": "10",
+    "scoring": "exact_match_number",
+    "scoring_config": {}
+  }
+]

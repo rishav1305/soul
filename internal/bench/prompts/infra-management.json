@@ -1,0 +1,33 @@
+[
+  {
+    "id": "im-001",
+    "task": "Generate Dockerfile for Go service",
+    "prompt": "Write a multi-stage Dockerfile for a Go web service. It should use golang:1.24-alpine for building and alpine:latest for the runtime. The binary should be named 'server'.",
+    "expected_answer": "",
+    "scoring": "contains_keywords",
+    "scoring_config": {
+      "keywords": ["FROM golang", "alpine", "COPY", "RUN go build", "ENTRYPOINT"]
+    }
+  },
+  {
+    "id": "im-002",
+    "task": "Calculate required replicas",
+    "prompt": "A service handles 100 requests/sec per pod. Expected peak traffic is 850 requests/sec with a 20% safety margin. How many pod replicas are needed? Respond with just the number.",
+    "expected_answer": "11",
+    "scoring": "exact_match_number",
+    "scoring_config": {}
+  },
+  {
+    "id": "im-003",
+    "task": "Diagnose infrastructure issue from metrics",
+    "prompt": "Return a JSON diagnosis for: {\"pod_restarts\":15,\"oom_kills\":12,\"memory_limit\":\"512Mi\",\"memory_usage\":\"498Mi\",\"cpu_throttle_pct\":5}. Include keys: root_cause, severity (critical/warning/ok), fix.",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["root_cause", "severity", "fix"],
+      "field_checks": {
+        "severity": ["critical", "warning", "ok"]
+      }
+    }
+  }
+]

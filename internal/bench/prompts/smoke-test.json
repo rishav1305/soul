@@ -1,0 +1,31 @@
+[
+  {
+    "id": "smoke-001",
+    "task": "Basic arithmetic",
+    "prompt": "What is 7 * 8? Respond with just the number.",
+    "expected_answer": "56",
+    "scoring": "exact_match_number",
+    "scoring_config": {}
+  },
+  {
+    "id": "smoke-002",
+    "task": "Simple classification",
+    "prompt": "Is a tomato a fruit or a vegetable? Respond with one word: fruit or vegetable.",
+    "expected_answer": "fruit",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "smoke-003",
+    "task": "Basic JSON generation",
+    "prompt": "Return a JSON object with keys: name set to \"test\" and status set to \"ok\".",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["name", "status"],
+      "field_checks": {
+        "status": ["ok"]
+      }
+    }
+  }
+]

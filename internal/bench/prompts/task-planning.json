@@ -1,0 +1,35 @@
+[
+  {
+    "id": "tp-001",
+    "task": "Plan deployment steps in correct order",
+    "prompt": "List the steps to deploy a Go web service: run tests, build binary, push to registry, deploy to staging, run smoke tests, deploy to production. Present them in order.",
+    "expected_answer": "",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["run tests", "build binary", "push to registry", "deploy to staging", "smoke tests", "deploy to production"]
+    }
+  },
+  {
+    "id": "tp-002",
+    "task": "Plan database migration steps",
+    "prompt": "Order these database migration steps correctly: backup database, apply migration, verify schema, notify team, update application config, test rollback procedure.",
+    "expected_answer": "",
+    "scoring": "ordered_steps",
+    "scoring_config": {
+      "required_order": ["backup database", "test rollback", "apply migration", "verify schema", "update application", "notify team"]
+    }
+  },
+  {
+    "id": "tp-003",
+    "task": "Assign task priority with JSON output",
+    "prompt": "Given these tasks, return a JSON object with keys task_name and priority (P0/P1/P2/P3) for the highest priority item: 1) Update README typo, 2) Fix production database connection leak, 3) Add dark mode toggle, 4) Refactor test helpers.",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["task_name", "priority"],
+      "field_checks": {
+        "priority": ["P0", "P1", "P2", "P3"]
+      }
+    }
+  }
+]

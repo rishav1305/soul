@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cl-001",
+    "task": "Classify email intent",
+    "prompt": "Classify this email as one of: inquiry, complaint, purchase, spam.\n\nSubject: Urgent - your account has been compromised\nBody: Click here immediately to verify your identity and restore access to your account.",
+    "expected_answer": "spam",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "cl-002",
+    "task": "Classify bug severity",
+    "prompt": "Classify this bug report severity as: low, medium, high, critical.\n\nTitle: Login button unresponsive on mobile Safari\nDescription: Users on iOS Safari cannot tap the login button. 40% of mobile traffic affected. No workaround available.",
+    "expected_answer": "critical",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "cl-003",
+    "task": "Classify support ticket category",
+    "prompt": "Classify this ticket into exactly one category: billing, technical, account, feature_request.\n\nMessage: I was charged twice for my subscription this month. Please refund the duplicate charge.",
+    "expected_answer": "billing",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  }
+]

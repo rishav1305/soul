@@ -1,0 +1,31 @@
+[
+  {
+    "id": "sh-001",
+    "task": "Diagnose API latency from JSON metrics",
+    "prompt": "Given this JSON metrics output: {\"service\":\"auth\",\"p99_ms\":1250,\"error_rate\":0.03,\"cpu_pct\":85,\"mem_pct\":72}. Respond with a JSON object containing keys: diagnosis, severity (critical/warning/ok), recommended_action.",
+    "expected_answer": "",
+    "scoring": "json_schema",
+    "scoring_config": {
+      "required_keys": ["diagnosis", "severity", "recommended_action"],
+      "field_checks": {
+        "severity": ["critical", "warning", "ok"]
+      }
+    }
+  },
+  {
+    "id": "sh-002",
+    "task": "Classify system health status",
+    "prompt": "A server shows: CPU 95%, memory 88%, disk 45%, network errors 12/min. Classify the overall health as: healthy, degraded, or critical.",
+    "expected_answer": "critical",
+    "scoring": "exact_match_label",
+    "scoring_config": {}
+  },
+  {
+    "id": "sh-003",
+    "task": "Extract error count from log summary",
+    "prompt": "Log summary: 2847 INFO, 156 WARN, 23 ERROR, 2 FATAL in the last hour. How many error-level or above messages occurred? Respond with just the number.",
+    "expected_answer": "25",
+    "scoring": "exact_match_number",
+    "scoring_config": {}
+  }
+]

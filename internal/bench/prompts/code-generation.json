@@ -1,0 +1,28 @@
+[
+  {
+    "id": "cg-001",
+    "task": "Generate a Go function to reverse a string",
+    "prompt": "Write a Go function called ReverseString that takes a string and returns the reversed string. Handle UTF-8 correctly using runes.",
+    "expected_answer": "ReverseString",
+    "scoring": "contains_function",
+    "scoring_config": {}
+  },
+  {
+    "id": "cg-002",
+    "task": "Generate valid Go code for FizzBuzz",
+    "prompt": "Write a Go function called FizzBuzz that takes an int n and returns a string slice of length n where multiples of 3 are \"Fizz\", multiples of 5 are \"Buzz\", multiples of both are \"FizzBuzz\", and others are the number as a string.",
+    "expected_answer": "FizzBuzz",
+    "scoring": "code_executes",
+    "scoring_config": {
+      "language": "go"
+    }
+  },
+  {
+    "id": "cg-003",
+    "task": "Generate Go HTTP handler",
+    "prompt": "Write a Go function called HealthHandler that implements http.HandlerFunc. It should return a 200 status with JSON body {\"status\":\"ok\"}.",
+    "expected_answer": "HealthHandler",
+    "scoring": "contains_function",
+    "scoring_config": {}
+  }
+]
