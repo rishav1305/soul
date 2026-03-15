@@ -34,6 +34,16 @@ type Task struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// Comment represents a task comment.
+type Comment struct {
+	ID        int64  `json:"id"`
+	TaskID    int64  `json:"taskId"`
+	Author    string `json:"author"`
+	Type      string `json:"type"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"createdAt"`
+}
+
 // Activity represents a task activity log entry.
 type Activity struct {
 	ID        int64     `json:"id"`
@@ -122,7 +132,81 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("tasks: migrate substep column: %w", err)
 	}
 
+	// Add task_comments table.
+	const commentsSchema = `
+	CREATE TABLE IF NOT EXISTS task_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		author TEXT NOT NULL,
+		type TEXT NOT NULL,
+		body TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
+	`
+	if _, err := s.db.Exec(commentsSchema); err != nil {
+		return fmt.Errorf("tasks: migrate comments: %w", err)
+	}
+
 	return nil
+}
+
+// InsertComment adds a comment to a task.
+func (s *Store) InsertComment(taskID int64, author, typ, body string) (int64, error) {
+	createdAt := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.Exec(
+		"INSERT INTO task_comments (task_id, author, type, body, created_at) VALUES (?, ?, ?, ?, ?)",
+		taskID, author, typ, body, createdAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("tasks: insert comment: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
+}
+
+// GetComments returns all comments for a task, ordered by created_at ASC.
+func (s *Store) GetComments(taskID int64) ([]Comment, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, author, type, body, created_at FROM task_comments WHERE task_id = ? ORDER BY created_at ASC",
+		taskID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: get comments: %w", err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan comment: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
+}
+
+// CommentsAfter returns user comments with id > lastID, ordered by id ASC.
+func (s *Store) CommentsAfter(lastID int64) ([]Comment, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, author, type, body, created_at FROM task_comments WHERE id > ? AND author = 'user' ORDER BY id ASC",
+		lastID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: comments after: %w", err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan comment: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
 }
 
 // Create inserts a new task with the given title, description, and product.

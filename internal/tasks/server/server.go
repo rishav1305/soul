@@ -65,6 +65,8 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/tasks/{id}/start", s.handleStartTask)
 	s.mux.HandleFunc("POST /api/tasks/{id}/stop", s.handleStopTask)
 	s.mux.HandleFunc("GET /api/tasks/{id}/activity", s.handleTaskActivity)
+	s.mux.HandleFunc("POST /api/tasks/{id}/comments", s.handleCreateComment)
+	s.mux.HandleFunc("GET /api/tasks/{id}/comments", s.handleListComments)
 	s.mux.HandleFunc("POST /api/tasks/{id}/dependencies", s.handleAddDependency)
 	s.mux.HandleFunc("DELETE /api/tasks/{id}/dependencies/{depId}", s.handleRemoveDependency)
 	s.mux.HandleFunc("GET /api/stream", s.handleStream)
@@ -350,6 +352,54 @@ func (s *Server) handleRemoveDependency(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Author string `json:"author"`
+		Type   string `json:"type"`
+		Body   string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	if body.Author == "" || body.Body == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "author and body are required"})
+		return
+	}
+	if body.Type == "" {
+		body.Type = "feedback"
+	}
+
+	commentID, err := s.store.InsertComment(id, body.Author, body.Type, body.Body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": commentID})
+}
+
+func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	comments, err := s.store.GetComments(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if comments == nil {
+		comments = []store.Comment{}
+	}
+	writeJSON(w, http.StatusOK, comments)
 }
 
 // handleStream handles the GET /api/stream SSE endpoint.

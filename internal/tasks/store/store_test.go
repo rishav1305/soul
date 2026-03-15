@@ -300,6 +300,62 @@ func TestUpdateTask_Substep(t *testing.T) {
 	}
 }
 
+func TestInsertComment(t *testing.T) {
+	s := newTestStore(t)
+	task := createTask(t, s, "Comment task")
+
+	id, err := s.InsertComment(task.ID, "user", "feedback", "Looks good")
+	if err != nil {
+		t.Fatalf("InsertComment: %v", err)
+	}
+	if id == 0 {
+		t.Error("expected non-zero comment ID")
+	}
+}
+
+func TestGetComments(t *testing.T) {
+	s := newTestStore(t)
+	task := createTask(t, s, "Comment task")
+
+	s.InsertComment(task.ID, "user", "feedback", "First")
+	s.InsertComment(task.ID, "soul", "reply", "Second")
+
+	comments, err := s.GetComments(task.ID)
+	if err != nil {
+		t.Fatalf("GetComments: %v", err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("GetComments = %d, want 2", len(comments))
+	}
+	if comments[0].Body != "First" {
+		t.Errorf("comments[0].Body = %q, want %q", comments[0].Body, "First")
+	}
+	if comments[1].Body != "Second" {
+		t.Errorf("comments[1].Body = %q, want %q", comments[1].Body, "Second")
+	}
+}
+
+func TestCommentsAfter(t *testing.T) {
+	s := newTestStore(t)
+	task := createTask(t, s, "Comment task")
+
+	id1, _ := s.InsertComment(task.ID, "user", "feedback", "User comment")
+	s.InsertComment(task.ID, "soul", "reply", "Soul comment")
+	s.InsertComment(task.ID, "user", "feedback", "Another user comment")
+
+	comments, err := s.CommentsAfter(id1)
+	if err != nil {
+		t.Fatalf("CommentsAfter: %v", err)
+	}
+	// Should only return user comments after id1, excluding soul comments.
+	if len(comments) != 1 {
+		t.Fatalf("CommentsAfter = %d, want 1", len(comments))
+	}
+	if comments[0].Body != "Another user comment" {
+		t.Errorf("Body = %q, want %q", comments[0].Body, "Another user comment")
+	}
+}
+
 func TestCountByStage(t *testing.T) {
 	s := newTestStore(t)
 	s.Create("A", "", "")
