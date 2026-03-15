@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { KeyboardEvent, ChangeEvent, ClipboardEvent, DragEvent } from 'react';
-import type { ChatInputProps, ChatAttachment, ChatProduct } from '../lib/types';
+import type { ChatInputProps, ChatAttachment, ChatProduct, ChatMode } from '../lib/types';
 import { CommandPalette } from './CommandPalette';
 import type { SlashCommand } from './CommandPalette';
 
@@ -32,6 +32,13 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'brainstorm', description: 'Brainstorm ideas' },
   { name: 'review', description: 'Code review mode' },
   { name: 'debug', description: 'Debug an issue' },
+];
+
+const CHAT_MODES: { id: ChatMode; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'code', label: 'Code' },
+  { id: 'architect', label: 'Architect' },
+  { id: 'brainstorm', label: 'Brainstorm' },
 ];
 
 const PRODUCTS: { id: ChatProduct; name: string; icon: string }[] = [
@@ -108,6 +115,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('chat');
   const [showProductMenu, setShowProductMenu] = useState(false);
   const productMenuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -275,7 +283,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
     if (selectedModel) opts.model = selectedModel;
     if (isOpus && thinkingEnabled) opts.thinking = true;
     if (attachments.length > 0) opts.attachments = attachments;
-    onSend(trimmed || '(attached image)', Object.keys(opts).length > 0 ? opts : undefined);
+    const content = chatMode !== 'chat' ? `/${chatMode} ${trimmed || '(attached image)'}` : (trimmed || '(attached image)');
+    onSend(content, Object.keys(opts).length > 0 ? opts : undefined);
     setValue('');
     setAttachments([]);
     // Reset textarea height after clearing.
@@ -332,7 +341,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
           </div>
         )}
         {/* Elevated input card */}
-        <div className="bg-elevated border border-border-default rounded-2xl overflow-hidden shadow-lg shadow-black/20" onPaste={handlePaste}>
+        <div className="bg-elevated border border-border-default rounded-2xl shadow-lg shadow-black/20" onPaste={handlePaste}>
           {/* Attachment chips inside card */}
           {attachments.length > 0 && (
             <div data-testid="attachment-chips" className="flex gap-2 flex-wrap px-4 pt-3">
@@ -362,7 +371,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
             ref={textareaRef}
             data-testid="chat-input"
             className="w-full bg-transparent px-4 pt-3 pb-2 text-fg placeholder:text-fg-muted resize-none overflow-y-hidden focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder="Message Soul..."
+            placeholder={chatMode === 'brainstorm' ? 'Describe what you want to build...' : chatMode === 'architect' ? 'Describe the architecture...' : chatMode === 'code' ? 'Describe what to code...' : 'Message Soul...'}
             rows={1}
             value={value}
             onChange={handleChange}
@@ -454,6 +463,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Chat mode selector */}
+            <div data-testid="chat-mode-selector" className="relative flex items-center bg-surface rounded-lg p-0.5">
+              {CHAT_MODES.map((mode, idx) => (
+                <button
+                  key={mode.id}
+                  data-testid={`chat-mode-${mode.id}`}
+                  type="button"
+                  onClick={() => setChatMode(mode.id)}
+                  className={`relative z-10 px-2 py-0.5 text-[10px] font-mono rounded-md transition-colors cursor-pointer ${
+                    chatMode === mode.id
+                      ? 'text-fg font-semibold'
+                      : 'text-fg-muted hover:text-fg'
+                  }`}
+                >
+                  {chatMode === mode.id && (
+                    <span className="absolute inset-0 bg-elevated shadow-sm rounded-md -z-10" />
+                  )}
+                  {mode.label}
+                </button>
+              ))}
             </div>
 
             {/* Model selector */}

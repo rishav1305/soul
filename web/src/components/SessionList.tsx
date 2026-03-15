@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { SessionListProps, Session, SessionStatus } from '../lib/types';
-import { formatRelativeTime, getTimeGroup, type TimeGroup } from '../lib/utils';
+import { formatRelativeTime, getTimeGroup, type TimeGroup, formatDuration } from '../lib/utils';
 import { usePerformance } from '../hooks/usePerformance';
 
 function StatusDot({ status, hasUnread }: { status: SessionStatus; hasUnread?: boolean }) {
@@ -141,6 +141,17 @@ const SessionItem = React.memo(function SessionItem({
                 {previewText}
               </div>
             )}
+            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-fg-muted">
+              {session.messageCount > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M2 8h8M2 12h10"/></svg>
+                  {session.messageCount}
+                </span>
+              )}
+              {session.createdAt && session.updatedAt && session.updatedAt !== session.createdAt && (
+                <span>{formatDuration(session.createdAt, session.updatedAt)}</span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">

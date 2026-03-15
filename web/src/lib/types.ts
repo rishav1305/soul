@@ -687,3 +687,6 @@ export type ObserveProduct = '' | 'chat' | 'tasks' | 'tutor' | 'projects';
 
 // ── Chat Product ──────────────────────────────────────
 export type ChatProduct = '' | 'tasks' | 'tutor' | 'projects' | 'observe';
+
+// ── Chat Mode ─────────────────────────────────────────
+export type ChatMode = 'chat' | 'code' | 'architect' | 'brainstorm';

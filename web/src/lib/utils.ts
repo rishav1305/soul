@@ -17,6 +17,16 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
+export function formatDuration(startStr: string, endStr: string): string {
+  const diffMs = new Date(endStr).getTime() - new Date(startStr).getTime();
+  if (diffMs < 60000) return '<1m';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h${rem}m` : `${hrs}h`;
+}
+
 export type TimeGroup = 'Today' | 'Yesterday' | 'Older';
 
 export function getTimeGroup(dateStr: string): TimeGroup {

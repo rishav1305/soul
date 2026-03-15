@@ -27,8 +27,8 @@ export function useObserve(): UseObserveReturn {
 
   const fetchPillars = useCallback(async (prod: ObserveProduct) => {
     const query = prod ? `?product=${prod}` : '';
-    const data = await api.get<ObservePillar[]>(`/api/observe/pillars${query}`);
-    setPillars(data ?? []);
+    const resp = await api.get<{ pillars: ObservePillar[] }>(`/api/observe/pillars${query}`);
+    setPillars(resp?.pillars ?? []);
   }, []);
 
   const fetchTab = useCallback(async (tab: ObserveTab, prod: ObserveProduct) => {

@@ -36,19 +36,26 @@ export function MessageList({ messages, isStreaming, onSend, onEdit, onRetry, se
     return (
       <div
         data-testid="message-list"
-        className="flex-1 flex flex-col items-center justify-center gap-6 px-4"
+        className="flex-1 flex flex-col items-center justify-center gap-8 px-4"
       >
-        <span className="text-5xl animate-float-glow text-soul">
-          &#9670;
-        </span>
-        <div className="grid grid-cols-2 gap-2 max-w-md w-full">
+        <div className="flex flex-col items-center gap-3">
+          <span className="text-5xl animate-float-glow text-soul">
+            &#9670;
+          </span>
+          <h1 className="text-lg font-semibold text-fg tracking-tight">What can I help you with?</h1>
+          <p className="text-sm text-fg-muted text-center max-w-sm">
+            Ask me anything about your codebase, or pick a suggestion below.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 max-w-md w-full">
           {SUGGESTIONS.map((prompt) => (
             <button
               key={prompt}
               onClick={() => onSend?.(prompt)}
-              className="px-3 py-2.5 text-sm text-fg-muted hover:text-fg bg-surface hover:bg-elevated rounded-lg border border-border-subtle hover:border-border-default transition-colors text-left"
+              data-testid="suggestion-button"
+              className="group px-4 py-3 text-sm text-fg-muted bg-surface hover:bg-elevated rounded-xl border border-border-subtle hover:border-soul/30 hover:text-fg transition-all text-left"
             >
-              {prompt}
+              <span className="opacity-70 group-hover:opacity-100 transition-opacity">{prompt}</span>
             </button>
           ))}
         </div>
@@ -82,6 +89,7 @@ export function MessageList({ messages, isStreaming, onSend, onEdit, onRetry, se
           })}
         </div>
       </div>
+      {isStreaming && <div className="stream-bar shrink-0" />}
       {showScrollBtn && (
         <button
           onClick={scrollToBottom}

@@ -12,7 +12,7 @@ const components: Components = {
     const match = /language-(\w+)/.exec(className || '');
     const isInline = !match && !String(children).includes('\n');
     if (isInline) {
-      return <code className="px-1.5 py-0.5 bg-elevated rounded text-sm font-mono" {...props}>{children}</code>;
+      return <code className="px-1.5 py-0.5 bg-elevated rounded text-[0.85em] font-mono text-soul/90" {...props}>{children}</code>;
     }
     return <CodeBlock language={match?.[1] ?? ''} code={String(children).replace(/\n$/, '')} />;
   },
@@ -38,7 +38,7 @@ const components: Components = {
 
   ul({ children, node, ...rest }) {
     return (
-      <ul className="list-disc list-inside ml-2 my-1 space-y-0.5" {...rest}>
+      <ul className="list-disc ml-5 my-2 space-y-1 text-[0.935rem] leading-[1.7]" {...rest}>
         {children}
       </ul>
     );
@@ -46,9 +46,17 @@ const components: Components = {
 
   ol({ children, node, ...rest }) {
     return (
-      <ol className="list-decimal list-inside ml-2 my-1 space-y-0.5" {...rest}>
+      <ol className="list-decimal ml-5 my-2 space-y-1 text-[0.935rem] leading-[1.7]" {...rest}>
         {children}
       </ol>
+    );
+  },
+
+  li({ children, node, ...rest }) {
+    return (
+      <li className="pl-1" {...rest}>
+        {children}
+      </li>
     );
   },
 
@@ -99,26 +107,46 @@ const components: Components = {
 
   p({ children, node, ...rest }) {
     return (
-      <p className="my-1.5 leading-relaxed" {...rest}>
+      <p className="my-2 leading-[1.7] text-[0.935rem]" {...rest}>
         {children}
       </p>
     );
   },
 
   h1({ children, node, ...rest }) {
-    return <h1 className="text-xl font-bold mt-4 mb-2" {...rest}>{children}</h1>;
+    return <h1 className="text-xl font-bold mt-6 mb-2 text-fg tracking-tight" {...rest}>{children}</h1>;
   },
 
   h2({ children, node, ...rest }) {
-    return <h2 className="text-lg font-bold mt-3 mb-1.5" {...rest}>{children}</h2>;
+    return <h2 className="text-lg font-bold mt-5 mb-2 text-fg tracking-tight" {...rest}>{children}</h2>;
   },
 
   h3({ children, node, ...rest }) {
-    return <h3 className="text-base font-semibold mt-2 mb-1" {...rest}>{children}</h3>;
+    return <h3 className="text-base font-semibold mt-4 mb-1.5 text-fg" {...rest}>{children}</h3>;
+  },
+
+  strong({ children, node, ...rest }) {
+    return <strong className="font-semibold text-fg" {...rest}>{children}</strong>;
+  },
+
+  em({ children, node, ...rest }) {
+    return <em className="italic text-fg-secondary" {...rest}>{children}</em>;
   },
 
   hr() {
-    return <hr className="border-border-default my-3" />;
+    return <hr className="border-border-default my-4" />;
+  },
+
+  img({ src, alt, node, ...rest }) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className="rounded-lg border border-border-subtle my-3 max-w-full"
+        loading="lazy"
+        {...rest}
+      />
+    );
   },
 };
 

@@ -287,9 +287,20 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
             )
           )}
 
-          {/* Streaming cursor */}
+          {/* Streaming indicator */}
           {isStreaming && !isUser && (
-            <span className="animate-pulse inline text-soul">{'\u2588'}</span>
+            message.content ? (
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-soul animate-pulse" />
+                <span className="text-[10px] font-mono text-fg-muted">
+                  {message.content.split(/\s+/).filter(Boolean).length} word{message.content.split(/\s+/).filter(Boolean).length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            ) : !message.thinking ? (
+              <div className="flex items-center gap-2 py-1">
+                <span className="text-sm text-fg-muted animate-pulse">Soul is thinking...</span>
+              </div>
+            ) : null
           )}
 
           {/* Tool calls below text */}
