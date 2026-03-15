@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/rishav1305/soul-v2/internal/tasks/hooks"
+	"github.com/rishav1305/soul-v2/internal/tasks/phases"
 	"github.com/rishav1305/soul-v2/internal/tasks/store"
 )
 
@@ -15,17 +17,19 @@ type Config struct {
 	Store       *store.Store
 	MaxParallel int
 	RepoDir     string
-	Client      Sender // Claude API client (nil = skip agent loop)
+	Client          Sender // Claude API client (nil = skip agent loop)
+	HooksConfigPath string // Path to hooks JSON config file (optional)
 }
 
 // Executor manages the lifecycle of running tasks.
 type Executor struct {
-	store       *store.Store
-	maxParallel int
-	repoDir     string
-	client      Sender
-	mu          sync.Mutex
-	running     map[int64]context.CancelFunc
+	store           *store.Store
+	maxParallel     int
+	repoDir         string
+	client          Sender
+	hooksConfigPath string
+	mu              sync.Mutex
+	running         map[int64]context.CancelFunc
 }
 
 // New creates a new Executor. MaxParallel defaults to 3 if not set.
@@ -34,11 +38,12 @@ func New(cfg Config) *Executor {
 		cfg.MaxParallel = 3
 	}
 	return &Executor{
-		store:       cfg.Store,
-		maxParallel: cfg.MaxParallel,
-		repoDir:     cfg.RepoDir,
-		client:      cfg.Client,
-		running:     make(map[int64]context.CancelFunc),
+		store:           cfg.Store,
+		maxParallel:     cfg.MaxParallel,
+		repoDir:         cfg.RepoDir,
+		client:          cfg.Client,
+		hooksConfigPath: cfg.HooksConfigPath,
+		running:         make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -59,6 +64,10 @@ func (e *Executor) Start(ctx context.Context, taskID int64) error {
 	task, err := e.store.Get(taskID)
 	if err != nil {
 		return err
+	}
+
+	if task.Stage == "brainstorm" {
+		return fmt.Errorf("task %d is in brainstorm stage — user-driven only", taskID)
 	}
 
 	if task.Stage != "backlog" && task.Stage != "blocked" {
@@ -135,13 +144,20 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 	}
 
 	workflow := ClassifyWorkflow(task.Title, task.Description)
-	iterLimit := IterationLimit(workflow)
+	iterLimit := phases.MaxIterations(workflow)
 	log.Printf("[executor] task %d: workflow=%s limit=%d title=%q", taskID, workflow, iterLimit, task.Title)
 
 	_ = e.store.AddActivity(taskID, "executor.classify", map[string]interface{}{
 		"workflow":        workflow,
 		"iteration_limit": iterLimit,
 	})
+
+	// Create hook runner if configured.
+	var hookRunner *hooks.HookRunner
+	if e.hooksConfigPath != "" {
+		hookRunner = hooks.NewHookRunner(e.hooksConfigPath)
+		_ = hookRunner // Will be wired into per-tool-call dispatch later.
+	}
 
 	if ctx.Err() != nil {
 		return
