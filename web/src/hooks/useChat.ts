@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct } from '../lib/types';
+import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct, ThinkingConfig } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 import { reportError, reportWSLatency, reportUsage } from '../lib/telemetry';
 
@@ -9,7 +9,7 @@ interface UseChatReturn {
   status: ConnectionState;
   authError: boolean;
   reconnectAttempt: number;
-  sendMessage: (content: string, options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] }) => void;
+  sendMessage: (content: string, options?: { model?: string; thinking?: ThinkingConfig; attachments?: { name: string; mediaType: string; data: string }[] }) => void;
   stopGeneration: () => void;
   editAndResend: (messageId: string, newContent: string) => void;
   retryMessage: (messageId: string) => void;
@@ -141,6 +141,14 @@ export function useChat(): UseChatReturn {
           if (payload?.sessions) {
             sessionsRef.current = payload.sessions;
             setSessions(payload.sessions);
+            // Auto-select the most recent session if none is active (e.g. new device).
+            if (!sessionIDRef.current && payload.sessions.length > 0) {
+              const first = payload.sessions[0]!;
+              sessionIDRef.current = first.id;
+              setCurrentSessionID(first.id);
+              localStorage.setItem(STORAGE_KEY, first.id);
+              sendRef.current('session.switch', { sessionId: first.id });
+            }
           }
           break;
         }
@@ -417,7 +425,7 @@ export function useChat(): UseChatReturn {
   sendRef.current = send;
 
   const sendMessage = useCallback(
-    (content: string, options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] }) => {
+    (content: string, options?: { model?: string; thinking?: ThinkingConfig; attachments?: { name: string; mediaType: string; data: string }[] }) => {
       const trimmed = content.trim();
       if (!trimmed) return;
 
@@ -446,7 +454,7 @@ export function useChat(): UseChatReturn {
 
       const payload: Record<string, unknown> = { sessionId: sessionIDRef.current, content: trimmed };
       if (options?.model) payload.model = options.model;
-      if (options?.thinking) payload.thinking = true;
+      if (options?.thinking) payload.thinking = options.thinking;
       if (options?.attachments?.length) payload.attachments = options.attachments;
       sendTimeRef.current = performance.now();
       firstTokenTimeRef.current = 0;
@@ -457,7 +465,7 @@ export function useChat(): UseChatReturn {
   );
 
   // Pending message for deferred session creation.
-  const pendingMessageRef = useRef<{ content: string; options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] } } | null>(null);
+  const pendingMessageRef = useRef<{ content: string; options?: { model?: string; thinking?: ThinkingConfig; attachments?: { name: string; mediaType: string; data: string }[] } } | null>(null);
 
   // After session.created, send any pending message.
   useEffect(() => {

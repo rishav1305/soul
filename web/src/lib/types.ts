@@ -46,7 +46,7 @@ export interface ChatInputProps {
   disabled: boolean;
   /** whether a response is currently streaming */
   isStreaming: boolean;
-  onSend: (content: string, options?: { model?: string; thinking?: boolean; attachments?: ChatAttachment[] }) => void;
+  onSend: (content: string, options?: { model?: string; thinking?: ThinkingConfig; attachments?: ChatAttachment[] }) => void;
   /** stop the current generation */
   onStop: () => void;
 }
@@ -695,3 +695,18 @@ export type ChatProduct = '' | 'tasks' | 'tutor' | 'projects' | 'observe'
 
 // ── Chat Mode ─────────────────────────────────────────
 export type ChatMode = 'chat' | 'code' | 'architect' | 'brainstorm';
+
+// ── Thinking ─────────────────────────────────────────
+export type ThinkingType = 'disabled' | 'adaptive' | 'enabled';
+
+export interface ThinkingConfig {
+  type: ThinkingType;
+  budget_tokens?: number;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  created_at: string;
+  max_tokens: number;
+}

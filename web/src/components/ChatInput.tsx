@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { KeyboardEvent, ChangeEvent, ClipboardEvent, DragEvent } from 'react';
-import type { ChatInputProps, ChatAttachment, ChatProduct, ChatMode } from '../lib/types';
+import type { ChatInputProps, ChatAttachment, ChatProduct, ChatMode, ThinkingType, ThinkingConfig } from '../lib/types';
 import { CommandPalette } from './CommandPalette';
 import type { SlashCommand } from './CommandPalette';
+import { ThinkingToggle } from './ThinkingToggle';
+import { useModels } from '../hooks/useModels';
 
 function fileToAttachment(file: File): Promise<ChatAttachment> {
   return new Promise((resolve, reject) => {
@@ -26,7 +28,6 @@ const MAX_ATTACHMENTS = 5;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const SLASH_COMMANDS: SlashCommand[] = [
-  { name: 'think', description: 'Toggle extended thinking' },
   { name: 'code', description: 'Code generation mode' },
   { name: 'architect', description: 'Architecture discussion' },
   { name: 'brainstorm', description: 'Brainstorm ideas' },
@@ -76,13 +77,6 @@ interface ChatInputExtendedProps extends ChatInputProps {
   onSetProduct?: (product: ChatProduct) => void;
 }
 
-const MODELS = [
-  { id: '', name: 'Default' },
-  { id: 'claude-sonnet-4-20250514', name: 'Sonnet' },
-  { id: 'claude-opus-4-20250514', name: 'Opus' },
-  { id: 'claude-haiku-3-5-20241022', name: 'Haiku' },
-];
-
 const SpeechRecognition = (typeof window !== 'undefined')
   ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) as (new () => SpeechRecognitionInstance) | undefined
   : undefined;
@@ -126,11 +120,9 @@ interface SpeechRecognitionInstance {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(function ChatInput({ onSend, onStop, disabled, isStreaming, activeProduct, onSetProduct }, ref) {
   const [value, setValue] = useState('');
+  const { models } = useModels();
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-opus-4-20250514');
-  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
-    const stored = localStorage.getItem('soul-thinking');
-    return stored === null ? true : stored === 'true';
-  });
+  const [thinkingType, setThinkingType] = useState<ThinkingType>('disabled');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -141,7 +133,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const isOpus = selectedModel.includes('opus');
   const hasSpeech = !!SpeechRecognition;
 
   useImperativeHandle(ref, () => ({
@@ -213,16 +204,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   const paletteFilter = value.slice(1);
 
   const handleSlashSelect = useCallback((cmd: SlashCommand) => {
-    if (cmd.name === 'think') {
-      setThinkingEnabled(prev => {
-        const next = !prev;
-        localStorage.setItem('soul-thinking', String(next));
-        return next;
-      });
-      setValue('');
-    } else {
-      setValue(`/${cmd.name} `);
-    }
+    setValue(`/${cmd.name} `);
     textareaRef.current?.focus();
   }, []);
 
@@ -242,14 +224,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   const handleModelChange = useCallback((e: ChangeEvent<HTMLSelectElement>) => {
     setSelectedModel(e.target.value);
     localStorage.setItem('soul-model', e.target.value);
-  }, []);
-
-  const handleThinkingToggle = useCallback(() => {
-    setThinkingEnabled(prev => {
-      const next = !prev;
-      localStorage.setItem('soul-thinking', String(next));
-      return next;
-    });
   }, []);
 
   const toggleListening = useCallback(() => {
@@ -298,9 +272,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
     const trimmed = value.trim();
     if (!trimmed && attachments.length === 0) return;
     if (disabled) return;
-    const opts: { model?: string; thinking?: boolean; attachments?: ChatAttachment[] } = {};
+    const opts: { model?: string; thinking?: ThinkingConfig; attachments?: ChatAttachment[] } = {};
     if (selectedModel) opts.model = selectedModel;
-    if (isOpus && thinkingEnabled) opts.thinking = true;
+    if (thinkingType !== 'disabled') {
+      const model = models.find(m => m.id === selectedModel);
+      const maxTok = model?.max_tokens ?? 64000;
+      opts.thinking = {
+        type: thinkingType,
+        ...(thinkingType === 'enabled' ? { budget_tokens: maxTok - 1024 } : {}),
+      };
+    }
     if (attachments.length > 0) opts.attachments = attachments;
     const content = chatMode !== 'chat' ? `/${chatMode} ${trimmed || '(attached image)'}` : (trimmed || '(attached image)');
     onSend(content, Object.keys(opts).length > 0 ? opts : undefined);
@@ -313,7 +294,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
         ta.style.height = 'auto';
       }
     });
-  }, [value, disabled, onSend, selectedModel, isOpus, thinkingEnabled, attachments]);
+  }, [value, disabled, onSend, selectedModel, thinkingType, models, attachments]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -513,29 +494,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               onChange={handleModelChange}
               className="soul-select"
             >
-              {MODELS.map(m => (
+              {models.map(m => (
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
 
             {/* Thinking toggle */}
-            {isOpus && (
-              <button
-                data-testid="thinking-toggle"
-                type="button"
-                onClick={handleThinkingToggle}
-                className={`h-8 flex items-center gap-1.5 px-2 rounded-lg transition-colors cursor-pointer ${
-                  thinkingEnabled ? 'bg-soul/20 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
-                }`}
-                title={thinkingEnabled ? 'Extended thinking ON' : 'Extended thinking OFF'}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8 2a5 5 0 0 1 3 9v1.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 5 12.5V11a5 5 0 0 1 3-9z" />
-                  <path d="M6 14.5h4" />
-                </svg>
-                <span className="text-xs font-mono">Think</span>
-              </button>
-            )}
+            <ThinkingToggle value={thinkingType} onChange={setThinkingType} />
 
             {/* Attach button */}
             <button
