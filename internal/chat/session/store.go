@@ -590,9 +590,10 @@ func (s *Store) SetProduct(sessionID, product string) error {
 	if !valid[product] {
 		return fmt.Errorf("invalid product: %q", product)
 	}
+	now := time.Now().UTC()
 	result, err := s.db.Exec(
 		`UPDATE sessions SET product = ?, updated_at = ? WHERE id = ?`,
-		product, time.Now().UTC(), sessionID,
+		product, now.Format(time.RFC3339Nano), sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("set product: %w", err)
