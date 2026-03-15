@@ -143,8 +143,3 @@ func executeSubagent(ctx context.Context, sender Sender, inputJSON []byte, proje
 	return resultText, nil
 }
 
-// executeReadOnlyTool is a stub for read-only tool execution.
-// Task 15 will implement the real tools.
-func executeReadOnlyTool(projectRoot, name, input string) string {
-	return fmt.Sprintf("Tool %s not yet implemented", name)
-}
