@@ -3,11 +3,13 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -69,7 +71,7 @@ func WithAllowedOrigins(origins []string) HubOption {
 }
 
 // defaultAllowedOrigins returns the default origin patterns that allow
-// localhost connections on any port.
+// localhost and private network connections on any port.
 func defaultAllowedOrigins() []string {
 	return []string{
 		"localhost",
@@ -77,6 +79,17 @@ func defaultAllowedOrigins() []string {
 		"127.0.0.1",
 		"127.0.0.1:*",
 	}
+}
+
+// privateNetworkPrefixes lists RFC 1918 private address prefixes.
+// Used by isOriginAllowed to allow connections from LAN devices.
+var privateNetworkPrefixes = []string{
+	"192.168.",
+	"10.",
+	"172.16.", "172.17.", "172.18.", "172.19.",
+	"172.20.", "172.21.", "172.22.", "172.23.",
+	"172.24.", "172.25.", "172.26.", "172.27.",
+	"172.28.", "172.29.", "172.30.", "172.31.",
 }
 
 // NewHub creates a new Hub with the given options.
@@ -205,12 +218,14 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 		client.Send(data)
 	}
 
-	// Send session.list (excluding empty sessions) if a session store is configured.
+	// Send session.list asynchronously to avoid blocking the HTTP handler.
 	if h.sessionStore != nil {
-		allSessions, err := h.sessionStore.ListSessions()
-		if err != nil {
-			log.Printf("ws: failed to list sessions for new client %s: %v", clientID, err)
-		} else {
+		go func() {
+			allSessions, err := h.sessionStore.ListSessions()
+			if err != nil {
+				log.Printf("ws: failed to list sessions for new client %s: %v", clientID, err)
+				return
+			}
 			nonEmpty := make([]*session.Session, 0, len(allSessions))
 			for _, s := range allSessions {
 				if s.MessageCount > 0 {
@@ -221,7 +236,7 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 			if data, err := MarshalOutbound(listMsg); err == nil {
 				client.Send(data)
 			}
-		}
+		}()
 	}
 }
 
@@ -283,13 +298,52 @@ func (h *Hub) SetHandler(mh *MessageHandler) {
 	h.handler = mh
 }
 
+// isPrivateOrTrustedIP checks if a remote address is RFC 1918, loopback, or Tailscale CGNAT.
+func isPrivateOrTrustedIP(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	privateRanges := []struct{ start, end net.IP }{
+		{net.ParseIP("10.0.0.0"), net.ParseIP("10.255.255.255")},
+		{net.ParseIP("172.16.0.0"), net.ParseIP("172.31.255.255")},
+		{net.ParseIP("192.168.0.0"), net.ParseIP("192.168.255.255")},
+		{net.ParseIP("100.64.0.0"), net.ParseIP("100.127.255.255")}, // Tailscale CGNAT
+	}
+	for _, r := range privateRanges {
+		if bytes.Compare(ip4, r.start.To4()) >= 0 && bytes.Compare(ip4, r.end.To4()) <= 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // isOriginAllowed checks whether the request origin is in the allowed list.
 // If no Origin header is present (non-browser clients), the request is allowed.
 func (h *Hub) isOriginAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		// No origin header — non-browser client, allow by default.
-		return true
+		// Allow Cloudflare tunnel (has JWT header).
+		if r.Header.Get("Cf-Access-Jwt-Assertion") != "" {
+			return true
+		}
+		// Allow private/trusted network IPs (LAN, Tailscale, loopback).
+		if isPrivateOrTrustedIP(r.RemoteAddr) {
+			return true
+		}
+		// Reject all other empty-origin requests.
+		return false
 	}
 
 	u, err := url.Parse(origin)
@@ -310,6 +364,17 @@ func (h *Hub) isOriginAllowed(r *http.Request) bool {
 	// Check against allowed origins.
 	for _, pattern := range h.allowedOrigins {
 		if matchOrigin(pattern, host) {
+			return true
+		}
+	}
+
+	// Allow private network (RFC 1918) origins — LAN access.
+	hostOnly := host
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		hostOnly = host[:idx]
+	}
+	for _, prefix := range privateNetworkPrefixes {
+		if strings.HasPrefix(hostOnly, prefix) {
 			return true
 		}
 	}
