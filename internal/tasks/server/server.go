@@ -65,6 +65,8 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/tasks/{id}/start", s.handleStartTask)
 	s.mux.HandleFunc("POST /api/tasks/{id}/stop", s.handleStopTask)
 	s.mux.HandleFunc("GET /api/tasks/{id}/activity", s.handleTaskActivity)
+	s.mux.HandleFunc("POST /api/tasks/{id}/dependencies", s.handleAddDependency)
+	s.mux.HandleFunc("DELETE /api/tasks/{id}/dependencies/{depId}", s.handleRemoveDependency)
 	s.mux.HandleFunc("GET /api/stream", s.handleStream)
 
 	// Build middleware chain.
@@ -306,6 +308,48 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		activities = []store.Activity{}
 	}
 	writeJSON(w, http.StatusOK, activities)
+}
+
+func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		DependsOn int64 `json:"depends_on"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	if body.DependsOn == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "depends_on is required"})
+		return
+	}
+	if err := s.store.AddDependency(id, body.DependsOn); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRemoveDependency(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	depID, err := strconv.ParseInt(r.PathValue("depId"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid dependency id"})
+		return
+	}
+	if err := s.store.RemoveDependency(id, depID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleStream handles the GET /api/stream SSE endpoint.

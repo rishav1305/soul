@@ -13,6 +13,7 @@ import (
 // Valid task stages.
 var validStages = map[string]bool{
 	"backlog":    true,
+	"brainstorm": true,
 	"active":     true,
 	"validation": true,
 	"done":       true,
@@ -27,6 +28,7 @@ type Task struct {
 	Stage       string    `json:"stage"`
 	Workflow    string    `json:"workflow,omitempty"`
 	Product     string    `json:"product,omitempty"`
+	Substep     string    `json:"substep,omitempty"`
 	Metadata    string    `json:"metadata,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -101,6 +103,11 @@ func (s *Store) migrate() error {
 		data TEXT NOT NULL DEFAULT '{}',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS task_dependencies (
+		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		depends_on INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		PRIMARY KEY (task_id, depends_on)
+	);
 	CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage);
 	CREATE INDEX IF NOT EXISTS idx_tasks_product ON tasks(product);
 	CREATE INDEX IF NOT EXISTS idx_task_activity_task_id ON task_activity(task_id);
@@ -108,6 +115,13 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("tasks: migrate: %w", err)
 	}
+
+	// Add substep column if it doesn't exist (ignore duplicate column error).
+	_, err := s.db.Exec("ALTER TABLE tasks ADD COLUMN substep TEXT NOT NULL DEFAULT ''")
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("tasks: migrate substep column: %w", err)
+	}
+
 	return nil
 }
 
@@ -128,9 +142,9 @@ func (s *Store) Create(title, description, product string) (*Task, error) {
 func (s *Store) Get(id int64) (*Task, error) {
 	var t Task
 	err := s.db.QueryRow(
-		"SELECT id, title, description, stage, workflow, product, metadata, created_at, updated_at FROM tasks WHERE id = ?",
+		"SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at FROM tasks WHERE id = ?",
 		id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Metadata, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("tasks: not found: %d", id)
 	}
@@ -142,7 +156,7 @@ func (s *Store) Get(id int64) (*Task, error) {
 
 // List returns tasks, optionally filtered by stage and/or product.
 func (s *Store) List(stage, product string) ([]Task, error) {
-	query := "SELECT id, title, description, stage, workflow, product, metadata, created_at, updated_at FROM tasks"
+	query := "SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at FROM tasks"
 	var conditions []string
 	var args []interface{}
 
@@ -168,7 +182,7 @@ func (s *Store) List(stage, product string) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Metadata, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("tasks: scan: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -176,7 +190,7 @@ func (s *Store) List(stage, product string) ([]Task, error) {
 	return tasks, rows.Err()
 }
 
-// Update modifies task fields. Allowed keys: title, description, stage, workflow, product, metadata.
+// Update modifies task fields. Allowed keys: title, description, stage, workflow, product, substep, metadata.
 func (s *Store) Update(id int64, fields map[string]interface{}) (*Task, error) {
 	if stage, ok := fields["stage"]; ok {
 		if sv, ok := stage.(string); ok && !validStages[sv] {
@@ -186,7 +200,7 @@ func (s *Store) Update(id int64, fields map[string]interface{}) (*Task, error) {
 
 	var setClauses []string
 	var args []interface{}
-	allowed := map[string]bool{"title": true, "description": true, "stage": true, "workflow": true, "product": true, "metadata": true}
+	allowed := map[string]bool{"title": true, "description": true, "stage": true, "workflow": true, "product": true, "substep": true, "metadata": true}
 
 	for k, v := range fields {
 		if !allowed[k] {
@@ -289,4 +303,52 @@ func (s *Store) CountByStage() (map[string]int, error) {
 		counts[stage] = count
 	}
 	return counts, rows.Err()
+}
+
+// AddDependency records that taskID depends on dependsOn. Idempotent.
+func (s *Store) AddDependency(taskID, dependsOn int64) error {
+	_, err := s.db.Exec(
+		"INSERT OR IGNORE INTO task_dependencies (task_id, depends_on) VALUES (?, ?)",
+		taskID, dependsOn,
+	)
+	if err != nil {
+		return fmt.Errorf("tasks: add dependency: %w", err)
+	}
+	return nil
+}
+
+// RemoveDependency removes a dependency between two tasks.
+func (s *Store) RemoveDependency(taskID, dependsOn int64) error {
+	_, err := s.db.Exec(
+		"DELETE FROM task_dependencies WHERE task_id = ? AND depends_on = ?",
+		taskID, dependsOn,
+	)
+	if err != nil {
+		return fmt.Errorf("tasks: remove dependency: %w", err)
+	}
+	return nil
+}
+
+// NextReady returns the oldest backlog task whose dependencies are all done.
+func (s *Store) NextReady() (*Task, error) {
+	var t Task
+	err := s.db.QueryRow(`
+		SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at
+		FROM tasks t
+		WHERE t.stage = 'backlog'
+		AND NOT EXISTS (
+			SELECT 1 FROM task_dependencies td
+			JOIN tasks dep ON dep.id = td.depends_on
+			WHERE td.task_id = t.id AND dep.stage != 'done'
+		)
+		ORDER BY t.created_at ASC
+		LIMIT 1
+	`).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("tasks: no ready task found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tasks: next ready: %w", err)
+	}
+	return &t, nil
 }

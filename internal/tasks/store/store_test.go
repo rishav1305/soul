@@ -171,6 +171,86 @@ func TestDelete_RemovesTaskAndActivity(t *testing.T) {
 	}
 }
 
+func createTask(t *testing.T, s *Store, title string) *Task {
+	t.Helper()
+	task, err := s.Create(title, "", "")
+	if err != nil {
+		t.Fatalf("Create(%q): %v", title, err)
+	}
+	return task
+}
+
+func TestAddDependency(t *testing.T) {
+	s := newTestStore(t)
+	a := createTask(t, s, "Task A")
+	b := createTask(t, s, "Task B")
+
+	if err := s.AddDependency(b.ID, a.ID); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+	// Idempotent — no error on duplicate.
+	if err := s.AddDependency(b.ID, a.ID); err != nil {
+		t.Fatalf("AddDependency duplicate: %v", err)
+	}
+}
+
+func TestRemoveDependency(t *testing.T) {
+	s := newTestStore(t)
+	a := createTask(t, s, "Task A")
+	b := createTask(t, s, "Task B")
+
+	s.AddDependency(b.ID, a.ID)
+	if err := s.RemoveDependency(b.ID, a.ID); err != nil {
+		t.Fatalf("RemoveDependency: %v", err)
+	}
+}
+
+func TestNextReady_NoDeps(t *testing.T) {
+	s := newTestStore(t)
+	a := createTask(t, s, "Task A")
+
+	ready, err := s.NextReady()
+	if err != nil {
+		t.Fatalf("NextReady: %v", err)
+	}
+	if ready.ID != a.ID {
+		t.Errorf("NextReady ID = %d, want %d", ready.ID, a.ID)
+	}
+}
+
+func TestNextReady_BlockedByDep(t *testing.T) {
+	s := newTestStore(t)
+	blocker := createTask(t, s, "Blocker")
+	blocked := createTask(t, s, "Blocked")
+
+	s.AddDependency(blocked.ID, blocker.ID)
+
+	ready, err := s.NextReady()
+	if err != nil {
+		t.Fatalf("NextReady: %v", err)
+	}
+	if ready.ID != blocker.ID {
+		t.Errorf("NextReady ID = %d, want %d (blocker)", ready.ID, blocker.ID)
+	}
+}
+
+func TestNextReady_DepDone(t *testing.T) {
+	s := newTestStore(t)
+	blocker := createTask(t, s, "Blocker")
+	blocked := createTask(t, s, "Blocked")
+
+	s.AddDependency(blocked.ID, blocker.ID)
+	s.Update(blocker.ID, map[string]interface{}{"stage": "done"})
+
+	ready, err := s.NextReady()
+	if err != nil {
+		t.Fatalf("NextReady: %v", err)
+	}
+	if ready.ID != blocked.ID {
+		t.Errorf("NextReady ID = %d, want %d (blocked)", ready.ID, blocked.ID)
+	}
+}
+
 func TestCountByStage(t *testing.T) {
 	s := newTestStore(t)
 	s.Create("A", "", "")
