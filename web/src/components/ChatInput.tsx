@@ -122,7 +122,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   const [value, setValue] = useState('');
   const { models } = useModels();
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-opus-4-20250514');
-  const [thinkingType, setThinkingType] = useState<ThinkingType>('disabled');
+  const [thinkingType, setThinkingType] = useState<ThinkingType>('adaptive');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
