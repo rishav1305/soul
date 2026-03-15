@@ -158,14 +158,11 @@ func (s *Server) handleHeartbeats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// JWT auth on upgrade.
-	tokenStr := r.URL.Query().Get("token")
-	if tokenStr == "" {
-		// Also check Authorization header.
-		auth := r.Header.Get("Authorization")
-		if strings.HasPrefix(auth, "Bearer ") {
-			tokenStr = strings.TrimPrefix(auth, "Bearer ")
-		}
+	// JWT auth on upgrade — Authorization header only.
+	// Query-string tokens are not accepted (leak-prone in logs/referrers).
+	var tokenStr string
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		tokenStr = strings.TrimPrefix(auth, "Bearer ")
 	}
 
 	if tokenStr == "" {

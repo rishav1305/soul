@@ -119,14 +119,17 @@ func runServe() {
 		server.WithStaticDir("web/dist"),
 	}
 
-	// Enable bearer token auth if configured.
+	// Require bearer token auth. Even on loopback, reverse proxies
+	// (nginx, cloudflared) can expose the service publicly.
+	// Set SOUL_V2_AUTH_TOKEN=disable to explicitly opt out (dev only).
 	authToken := os.Getenv("SOUL_V2_AUTH_TOKEN")
-	host := os.Getenv("SOUL_V2_HOST")
-	if authToken != "" {
+	if authToken == "disable" {
+		log.Printf("WARNING: API auth explicitly disabled (SOUL_V2_AUTH_TOKEN=disable)")
+	} else if authToken != "" {
 		serverOpts = append(serverOpts, server.WithAuthToken(authToken))
 		log.Printf("API auth enabled (bearer token)")
-	} else if host != "" && host != "127.0.0.1" && host != "localhost" {
-		log.Fatalf("FATAL: SOUL_V2_AUTH_TOKEN required when binding to %s (non-loopback)", host)
+	} else {
+		log.Fatalf("FATAL: SOUL_V2_AUTH_TOKEN required. Set to 'disable' to explicitly skip (dev only).")
 	}
 
 	// Enable TLS if cert and key are configured.
