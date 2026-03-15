@@ -173,6 +173,17 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
+
+CREATE TABLE IF NOT EXISTS custom_tools (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    input_schema TEXT NOT NULL,
+    command_template TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_custom_tools_name ON custom_tools(name);
 `
 	_, err := s.db.Exec(schema)
 	if err != nil {
