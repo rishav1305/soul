@@ -34,21 +34,21 @@ func TestForProduct_UnknownReturnsDefault(t *testing.T) {
 	if ctx.System != def.System {
 		t.Error("unknown product should return default context")
 	}
-	if len(ctx.Tools) != 0 {
-		t.Error("default context should have no tools")
+	if len(ctx.Tools) != len(builtinTools()) {
+		t.Errorf("default context should have %d built-in tools, got %d", len(builtinTools()), len(ctx.Tools))
 	}
 }
 
 func TestForProduct_EmptyReturnsDefault(t *testing.T) {
 	ctx := ForProduct("")
-	if len(ctx.Tools) != 0 {
-		t.Error("empty product should return default context with no tools")
+	if len(ctx.Tools) != len(builtinTools()) {
+		t.Errorf("empty product should return default context with %d built-in tools, got %d", len(builtinTools()), len(ctx.Tools))
 	}
 }
 
 func TestToolCounts(t *testing.T) {
 	expected := map[string]int{
-		"tasks": 6, "tutor": 7, "projects": 6, "observe": 4,
+		"tasks": 14, "tutor": 15, "projects": 14, "observe": 12,
 	}
 	for product, count := range expected {
 		ctx := ForProduct(product)
@@ -68,10 +68,18 @@ func TestDispatcher_UnknownTool(t *testing.T) {
 
 func TestDispatcher_RoutesExist(t *testing.T) {
 	d := NewDispatcher()
-	// Every tool defined in any product context should have a matching dispatcher route.
+	// Build set of built-in tool names to skip.
+	builtinSet := make(map[string]bool)
+	for _, tool := range builtinTools() {
+		builtinSet[tool.Name] = true
+	}
+	// Every product-specific tool should have a matching dispatcher route.
 	for _, product := range []string{"tasks", "tutor", "projects", "observe"} {
 		ctx := ForProduct(product)
 		for _, tool := range ctx.Tools {
+			if builtinSet[tool.Name] {
+				continue // built-in tools are dispatched separately
+			}
 			if _, ok := d.routes[tool.Name]; !ok {
 				t.Errorf("tool %q (product %s) has no dispatcher route", tool.Name, product)
 			}
