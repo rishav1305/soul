@@ -173,14 +173,14 @@ func WithSentinelProxy() Option {
 // WithMeshProxy enables the reverse proxy to the mesh server.
 func WithMeshProxy() Option {
 	return func(s *Server) {
-		s.meshProxy = newSimpleProxy("SOUL_MESH_URL", "http://127.0.0.1:3024", "/api/mesh", "mesh")
+		s.meshProxy = newSimpleProxy("SOUL_MESH_URL", "http://127.0.0.1:3024", "", "mesh")
 	}
 }
 
 // WithBenchProxy enables the reverse proxy to the bench server.
 func WithBenchProxy() Option {
 	return func(s *Server) {
-		s.benchProxy = newSimpleProxy("SOUL_BENCH_URL", "http://127.0.0.1:3026", "/api/bench", "bench")
+		s.benchProxy = newSimpleProxy("SOUL_BENCH_URL", "http://127.0.0.1:3026", "", "bench")
 	}
 }
 

@@ -332,10 +332,13 @@ func newSimpleProxy(envKey, defaultURL, pathPrefix, productName string) *simpleP
 }
 
 // ServeHTTP forwards requests, rewriting the path prefix to /api.
+// If pathPrefix is empty, the path passes through unchanged.
 func (sp *simpleProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r.URL.Path = strings.Replace(r.URL.Path, sp.pathPrefix, "/api", 1)
-	if r.URL.Path == "" {
-		r.URL.Path = "/"
+	if sp.pathPrefix != "" {
+		r.URL.Path = strings.Replace(r.URL.Path, sp.pathPrefix, "/api", 1)
+		if r.URL.Path == "" {
+			r.URL.Path = "/"
+		}
 	}
 	sp.reverseProxy.ServeHTTP(w, r)
 }
