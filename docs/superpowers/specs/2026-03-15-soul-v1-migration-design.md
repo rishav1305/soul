@@ -54,7 +54,7 @@ Each server follows v2's existing pattern: `server/server.go` (HTTP router + mid
 
 ### Product Registration Updates
 
-**Session store (`internal/chat/session/store.go`):** The `SetProduct()` method's `valid` map must be expanded from the current 5 entries (empty, tasks, tutor, projects, observe) to include all 21 products: scout, sentinel, mesh, bench, compliance, qa, analytics, devops, dba, migrate, dataeng, costops, viz, docs, api, plus the existing 4.
+**Session store (`internal/chat/session/store.go`):** The `SetProduct()` method's `valid` map must be expanded from the current 5 entries (empty, tasks, tutor, projects, observe) to include all 19 non-chat products (20 total entries including empty string): existing 4 + scout, sentinel, mesh, bench, compliance, qa, analytics, devops, dba, migrate, dataeng, costops, viz, docs, api.
 
 **Dispatcher (`internal/chat/context/dispatch.go`):** Replace the current hardcoded 4-product constructor with a registration-based approach. `NewDispatcher()` accepts a `map[string]ProductConfig` where each entry has `baseURL string` and `tools []ToolDef`. Products register via env-var-sourced URLs:
 - Grouped products share a base URL but route to different `/api/{product}/tools/{name}/execute` paths within their server.
@@ -187,7 +187,7 @@ Modify `internal/chat/ws/`.
 
 **Concurrency model:**
 - `agents map[string]agentEntry` is protected by `chatSession.mu sync.Mutex`.
-- Each agent goroutine gets its own `context.WithCancel(context.Background())` — NOT derived from `client.Context()`. This allows per-session cancellation without killing the connection.
+- Each agent goroutine gets its own `context.WithCancel(context.Background())` — NOT derived from `client.Context()`. This allows per-session cancellation without killing the connection. The current `runStream` call using `context.WithTimeout(client.Context(), ...)` must be replaced — the new goroutine spawning in the `chatSession` becomes the sole owner of agent context lifecycle.
 - `client.Subscribe(sessionID)` becomes a no-op for routing purposes — message routing uses the sessionID in each WS message frame instead of connection-level state.
 - `client.Send()` is already goroutine-safe (serialized by the hub's write pump), so concurrent agents can send to the same connection.
 
@@ -478,7 +478,7 @@ ChatInput product selector gains all 21 products (existing 4 + 17 new).
 ### Chat Tool Counts
 
 - Existing: tasks (6) + tutor (7) + projects (6) + observe (4) = 23
-- Smart agents: scout (23) + sentinel (7) + mesh (4: cluster_status, list_nodes, node_info, link_node) + bench (4) = 38
+- Smart agents: scout (23) + sentinel (7: challenge_list, challenge_start, challenge_submit, attack, sandbox_config, defend, scan) + mesh (4: cluster_status, list_nodes, node_info, link_node) + bench (4) = 38
 - Data products: compliance (4) + 10 scaffolded x 2 = 24
 - Built-in: memories (4) + custom tools (3) + subagent (1) = 8
 - **Total: 93 tools**
