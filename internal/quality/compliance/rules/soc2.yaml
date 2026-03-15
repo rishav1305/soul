@@ -1,0 +1,100 @@
+rules:
+  - id: SECRET-001
+    title: Hardcoded credentials
+    severity: critical
+    analyzer: secret-scanner
+    pattern: hardcoded-credential
+    controls: ["CC6.1", "CC6.6"]
+    framework: ["soc2"]
+    description: Detects hardcoded passwords, secrets, or credentials in source code.
+    fixable: true
+
+  - id: SECRET-002
+    title: API token in source
+    severity: critical
+    analyzer: secret-scanner
+    pattern: api-token
+    controls: ["CC6.1", "CC6.7"]
+    framework: ["soc2"]
+    description: Detects API tokens or bearer tokens committed to source code.
+    fixable: true
+
+  - id: SECRET-003
+    title: Private key in repo
+    severity: critical
+    analyzer: secret-scanner
+    pattern: private-key
+    controls: ["CC6.1"]
+    framework: ["soc2"]
+    description: Detects private keys (RSA, DSA, EC) committed to the repository.
+    fixable: true
+
+  - id: SECRET-004
+    title: High-entropy string
+    severity: high
+    analyzer: secret-scanner
+    pattern: high-entropy
+    controls: ["CC6.1"]
+    framework: ["soc2"]
+    description: Detects high-entropy strings that may be secrets or tokens.
+    fixable: false
+
+  - id: CRYPTO-001
+    title: Weak hash algorithm
+    severity: high
+    analyzer: ast-analyzer
+    pattern: weak-hash
+    controls: ["CC6.1", "CC6.8"]
+    framework: ["soc2"]
+    description: Detects usage of weak hash algorithms such as MD5 or SHA1.
+    fixable: true
+
+  - id: CONFIG-001
+    title: Wildcard CORS
+    severity: high
+    analyzer: config-checker
+    pattern: wildcard-cors
+    controls: ["CC6.6"]
+    framework: ["soc2"]
+    description: Detects wildcard CORS origin configurations that allow any origin.
+    fixable: true
+
+  - id: CONFIG-002
+    title: No CI/CD configuration
+    severity: medium
+    analyzer: config-checker
+    pattern: no-ci-config
+    controls: ["CC8.1"]
+    framework: ["soc2"]
+    description: Checks for the presence of CI/CD configuration files.
+    fixable: false
+
+  - id: AST-001
+    title: Dangerous code execution
+    severity: high
+    analyzer: ast-analyzer
+    pattern: eval-usage
+    controls: ["CC6.1", "CC7.1"]
+    framework: ["soc2"]
+    description: Detects usage of dynamic code execution functions.
+    fixable: true
+
+  - id: INJ-001
+    title: SQL injection
+    severity: critical
+    analyzer: ast-analyzer
+    pattern: sql-injection
+    controls: ["CC6.1", "CC7.1"]
+    framework: ["soc2"]
+    description: Detects string concatenation in SQL queries that may lead to injection.
+    fixable: true
+
+  - id: DEP-001
+    title: Unpinned dependencies
+    severity: medium
+    analyzer: dep-auditor
+    pattern: unpinned-deps
+    controls: ["CC8.1"]
+    framework: ["soc2"]
+    description: Detects dependencies without pinned versions that may introduce supply chain risk.
+    fixable: true

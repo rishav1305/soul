@@ -1,0 +1,50 @@
+rules:
+  - id: GDPR-001
+    title: Hardcoded credentials
+    severity: critical
+    analyzer: secret-scanner
+    pattern: hardcoded-credential
+    controls: ["Art.32(1)(a)", "Art.32(1)(b)"]
+    framework: ["gdpr"]
+    description: Detects hardcoded credentials that compromise data protection by design.
+    fixable: true
+
+  - id: GDPR-002
+    title: Weak hash
+    severity: high
+    analyzer: ast-analyzer
+    pattern: weak-hash
+    controls: ["Art.32(1)(a)"]
+    framework: ["gdpr"]
+    description: Detects weak hashing algorithms insufficient for pseudonymisation or encryption.
+    fixable: true
+
+  - id: GDPR-003
+    title: XSS risk
+    severity: high
+    analyzer: ast-analyzer
+    pattern: xss-risk
+    controls: ["Art.32(1)(b)", "Art.32(1)(d)"]
+    framework: ["gdpr"]
+    description: Detects cross-site scripting vulnerabilities that may lead to personal data exposure.
+    fixable: true
+
+  - id: GDPR-004
+    title: SQL injection
+    severity: critical
+    analyzer: ast-analyzer
+    pattern: sql-injection
+    controls: ["Art.32(1)(a)", "Art.32(1)(b)"]
+    framework: ["gdpr"]
+    description: Detects SQL injection risks that may lead to unauthorized access to personal data.
+    fixable: true
+
+  - id: GDPR-005
+    title: Insecure random
+    severity: medium
+    analyzer: ast-analyzer
+    pattern: insecure-random
+    controls: ["Art.32(1)(a)"]
+    framework: ["gdpr"]
+    description: Detects usage of non-cryptographic random number generators for security-sensitive operations.
+    fixable: true

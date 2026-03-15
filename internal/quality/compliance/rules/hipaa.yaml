@@ -1,0 +1,50 @@
+rules:
+  - id: HIPAA-001
+    title: Hardcoded credentials
+    severity: critical
+    analyzer: secret-scanner
+    pattern: hardcoded-credential
+    controls: ["164.312(a)(1)", "164.312(d)"]
+    framework: ["hipaa"]
+    description: Detects hardcoded passwords or credentials that violate access control requirements.
+    fixable: true
+
+  - id: HIPAA-002
+    title: Weak encryption
+    severity: high
+    analyzer: ast-analyzer
+    pattern: weak-hash
+    controls: ["164.312(a)(2)(iv)", "164.312(e)(2)(ii)"]
+    framework: ["hipaa"]
+    description: Detects usage of weak encryption or hashing algorithms insufficient for ePHI protection.
+    fixable: true
+
+  - id: HIPAA-003
+    title: Missing audit logging
+    severity: medium
+    analyzer: config-checker
+    pattern: no-ci-config
+    controls: ["164.312(b)"]
+    framework: ["hipaa"]
+    description: Checks for audit logging configuration required for tracking access to ePHI.
+    fixable: false
+
+  - id: HIPAA-004
+    title: SSL disabled
+    severity: high
+    analyzer: ast-analyzer
+    pattern: ssl-disabled
+    controls: ["164.312(e)(1)", "164.312(e)(2)(i)"]
+    framework: ["hipaa"]
+    description: Detects disabled SSL/TLS verification that may expose ePHI in transit.
+    fixable: true
+
+  - id: HIPAA-005
+    title: Env file exposed
+    severity: high
+    analyzer: config-checker
+    pattern: env-not-gitignored
+    controls: ["164.312(a)(1)"]
+    framework: ["hipaa"]
+    description: Detects .env files not excluded by .gitignore that may contain credentials.
+    fixable: true
