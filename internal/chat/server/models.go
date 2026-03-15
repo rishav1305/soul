@@ -39,6 +39,13 @@ var currentGenPrefixes = []string{"claude-opus-4", "claude-sonnet-4", "claude-ha
 
 var defaultThinkingTypes = []string{"disabled", "adaptive", "enabled"}
 
+// fallbackModels is returned when the Claude API is unreachable (e.g., OAuth doesn't support /v1/models).
+var fallbackModels = []ModelInfo{
+	{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", MaxTokens: 64000},
+	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxTokens: 64000},
+	{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", MaxTokens: 64000},
+}
+
 func maxTokensForModel(modelID string) int {
 	for prefix, tokens := range knownMaxTokens {
 		if strings.HasPrefix(modelID, prefix) {
@@ -133,7 +140,8 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, modelsResponse{Models: cached, ThinkingTypes: defaultThinkingTypes})
 			return
 		}
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "unable to fetch models"})
+		// API unreachable (OAuth doesn't support /v1/models) — use fallback
+		writeJSON(w, http.StatusOK, modelsResponse{Models: fallbackModels, ThinkingTypes: defaultThinkingTypes})
 		return
 	}
 
