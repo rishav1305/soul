@@ -308,10 +308,6 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
             <ToolCallGroup toolCalls={message.toolCalls} />
           )}
 
-          {/* Inline edit for user messages */}
-          {isUser && onEdit && (
-            <EditBtn content={message.content} onEdit={(newText) => onEdit(message.id, newText)} />
-          )}
         </div>
       </div>
 
@@ -327,6 +323,9 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
           </span>
         )}
         {message.content && <CopyBtn content={message.content} />}
+        {isUser && onEdit && (
+          <EditBtn content={message.content} onEdit={(newText) => onEdit(message.id, newText)} />
+        )}
         {isUser && onRetry && !isStreaming && (
           <RetryBtn onClick={() => onRetry(message.id)} />
         )}

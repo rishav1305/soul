@@ -121,7 +121,16 @@ interface SpeechRecognitionInstance {
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(function ChatInput({ onSend, onStop, disabled, isStreaming, activeProduct, onSetProduct }, ref) {
   const [value, setValue] = useState('');
   const { models } = useModels();
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-opus-4-20250514');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-sonnet-4-6');
+
+  // If stored model isn't in the available list, switch to first available
+  useEffect(() => {
+    if (models.length > 0 && !models.some(m => m.id === selectedModel)) {
+      const fallback = models[0].id;
+      setSelectedModel(fallback);
+      localStorage.setItem('soul-model', fallback);
+    }
+  }, [models, selectedModel]);
   const [thinkingType, setThinkingType] = useState<ThinkingType>('adaptive');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
