@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
+	"github.com/rishav1305/soul-v2/internal/chat/ws"
 )
 
 // newTestServer creates a Server suitable for testing (no metrics, no auth).
@@ -465,7 +467,7 @@ func TestClientIPExtraction(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_QueryTokenOnlyForWS(t *testing.T) {
+func TestAuthMiddleware_QueryTokenRejectedOnAPI(t *testing.T) {
 	srv := New(WithAuthToken("secret123"))
 	ts := httptest.NewServer(srv.httpServer.Handler)
 	defer ts.Close()
@@ -479,19 +481,42 @@ func TestAuthMiddleware_QueryTokenOnlyForWS(t *testing.T) {
 		t.Errorf("expected 401 for query token on /api/*, got %d", resp.StatusCode)
 	}
 
-	// Query token on /ws should be accepted (browsers can't set WS headers)
+	// Header token on same route should work
+	req, _ := http.NewRequest("GET", ts.URL+"/api/sessions?token=secret123", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp2.StatusCode == 401 {
+		t.Error("expected non-401 when Authorization header is valid")
+	}
+}
+
+func TestAuthMiddleware_QueryTokenAcceptedOnWS(t *testing.T) {
+	// Create a hub so /ws is registered as a real route
+	hub := ws.NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	srv := New(WithAuthToken("secret123"), WithHub(hub))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	// Query token on /ws should pass auth middleware (101 or other, not 401)
 	req, _ := http.NewRequest("GET", ts.URL+"/ws?token=secret123", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Origin", ts.URL)
-	resp2, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp2.StatusCode == 401 {
-		t.Error("expected non-401 for query token on /ws")
+	if resp.StatusCode == 401 {
+		t.Error("expected non-401 for query token on /ws with hub registered")
 	}
 }
 

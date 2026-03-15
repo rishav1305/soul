@@ -123,6 +123,9 @@ func runServe() {
 	// (nginx, cloudflared) can expose the service publicly.
 	authToken := os.Getenv("SOUL_V2_AUTH_TOKEN")
 	insecureNoAuth := len(os.Args) > 2 && os.Args[2] == "--insecure-no-auth"
+	if authToken == "CHANGE_ME" {
+		log.Fatalf("FATAL: SOUL_V2_AUTH_TOKEN is still the placeholder value. Generate a real token: openssl rand -hex 16")
+	}
 	if authToken != "" {
 		serverOpts = append(serverOpts, server.WithAuthToken(authToken))
 		log.Printf("API auth enabled (bearer token)")
