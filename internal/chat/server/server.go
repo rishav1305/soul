@@ -36,6 +36,7 @@ type Server struct {
 	sessionStore session.StoreInterface
 	hub          *ws.Hub
 	staticDir    string
+	authToken    string // bearer token for API auth (empty = disabled)
 	httpServer   *http.Server
 	startTime    time.Time
 	tlsCert      string // path to TLS certificate
@@ -65,6 +66,12 @@ func WithPort(port int) Option {
 // WithHost sets the bind address.
 func WithHost(host string) Option {
 	return func(s *Server) { s.host = host }
+}
+
+// WithAuthToken sets the bearer token for API authentication.
+// If empty, auth middleware is disabled (local dev mode).
+func WithAuthToken(token string) Option {
+	return func(s *Server) { s.authToken = token }
 }
 
 // WithAuth sets the OAuth token source for the auth status endpoint.
@@ -307,10 +314,13 @@ func New(opts ...Option) *Server {
 	s.mux.Handle("/", s.spaHandler())
 
 	// Build middleware chain: outermost runs first.
-	// Recovery → RequestID → CSP → BodyLimit → RateLimit(API only) → RequestLogger → mux
+	// Recovery → RequestID → CSP → BodyLimit → RateLimit → Auth → RequestLogger → mux
 	handler := http.Handler(s.mux)
 	if s.metrics != nil {
 		handler = requestLoggerMiddleware(s.metrics)(handler)
+	}
+	if s.authToken != "" {
+		handler = authMiddleware(s.authToken)(handler)
 	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
@@ -787,6 +797,44 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// authMiddleware rejects requests to /api/* and /ws without a valid bearer token.
+// Static assets (/, /assets/*, /manifest.json, /favicon.ico, /sw.js) are exempt.
+func authMiddleware(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			path := r.URL.Path
+
+			// Exempt: SPA, static assets, service worker
+			if path == "/" || path == "/favicon.ico" || path == "/manifest.json" || path == "/sw.js" ||
+				strings.HasPrefix(path, "/assets/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Check Authorization header
+			if r.Header.Get("Authorization") == "Bearer "+token {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Check query param (for WebSocket upgrade — browsers can't set headers)
+			if r.URL.Query().Get("token") == token {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+		})
+	}
 }
 
 // cspMiddleware sets security headers on every response.

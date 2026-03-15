@@ -119,6 +119,12 @@ func runServe() {
 		server.WithStaticDir("web/dist"),
 	}
 
+	// Enable bearer token auth if configured.
+	if authToken := os.Getenv("SOUL_V2_AUTH_TOKEN"); authToken != "" {
+		serverOpts = append(serverOpts, server.WithAuthToken(authToken))
+		log.Printf("API auth enabled (bearer token)")
+	}
+
 	// Enable TLS if cert and key are configured.
 	tlsCert := os.Getenv("SOUL_V2_TLS_CERT")
 	tlsKey := os.Getenv("SOUL_V2_TLS_KEY")
