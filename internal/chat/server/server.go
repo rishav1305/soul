@@ -53,6 +53,7 @@ type Server struct {
 	sentinelProxy *simpleProxy
 	meshProxy     *simpleProxy
 	benchProxy    *simpleProxy
+	modelCache    modelCache
 }
 
 // Option configures a Server.
@@ -216,6 +217,8 @@ func New(opts ...Option) *Server {
 		opt(s)
 	}
 
+	s.modelCache = modelCache{ttl: time.Hour}
+
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
@@ -230,6 +233,9 @@ func New(opts ...Option) *Server {
 
 	// Telemetry route.
 	s.mux.HandleFunc("POST /api/telemetry", s.handleTelemetry)
+
+	// Models route.
+	s.mux.HandleFunc("GET /api/models", s.handleModels)
 
 	// Tasks server proxy — forward /api/tasks/* and /api/products/* to tasks server.
 	if s.tasksProxy != nil {
