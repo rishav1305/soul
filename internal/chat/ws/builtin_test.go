@@ -255,7 +255,7 @@ func TestBuiltinExecutor_Subagent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for subagent")
 	}
-	if err.Error() != "subagent not yet implemented" {
-		t.Errorf("error = %q, want %q", err.Error(), "subagent not yet implemented")
+	if err.Error() != "subagent not available: no sender configured" {
+		t.Errorf("error = %q, want %q", err.Error(), "subagent not available: no sender configured")
 	}
 }

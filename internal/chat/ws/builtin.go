@@ -14,12 +14,35 @@ import (
 // BuiltinExecutor handles built-in tools (memories, custom tools, subagent)
 // in-process without HTTP dispatch to product servers.
 type BuiltinExecutor struct {
-	store *session.Store
+	store       *session.Store
+	sender      Sender
+	projectRoot string
 }
 
 // NewBuiltinExecutor creates a BuiltinExecutor backed by the given session store.
-func NewBuiltinExecutor(store *session.Store) *BuiltinExecutor {
-	return &BuiltinExecutor{store: store}
+func NewBuiltinExecutor(store *session.Store, opts ...BuiltinOption) *BuiltinExecutor {
+	be := &BuiltinExecutor{store: store}
+	for _, opt := range opts {
+		opt(be)
+	}
+	return be
+}
+
+// BuiltinOption configures a BuiltinExecutor.
+type BuiltinOption func(*BuiltinExecutor)
+
+// WithSender sets the Sender (stream.Client) for subagent tool calls.
+func WithSender(s Sender) BuiltinOption {
+	return func(be *BuiltinExecutor) {
+		be.sender = s
+	}
+}
+
+// WithProjectRoot sets the project root directory for subagent file tools.
+func WithProjectRoot(root string) BuiltinOption {
+	return func(be *BuiltinExecutor) {
+		be.projectRoot = root
+	}
 }
 
 // CanHandle returns true if the tool name is a built-in tool that this executor
@@ -44,7 +67,10 @@ func (be *BuiltinExecutor) Execute(ctx context.Context, toolName string, inputJS
 	case strings.HasPrefix(toolName, "custom_"):
 		return be.executeCustom(ctx, toolName, inputJSON)
 	case toolName == "subagent":
-		return "", fmt.Errorf("subagent not yet implemented")
+		if be.sender == nil {
+			return "", fmt.Errorf("subagent not available: no sender configured")
+		}
+		return executeSubagent(ctx, be.sender, inputJSON, be.projectRoot)
 	default:
 		return "", fmt.Errorf("unknown built-in tool: %s", toolName)
 	}
