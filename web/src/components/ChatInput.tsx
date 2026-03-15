@@ -41,11 +41,30 @@ const CHAT_MODES: { id: ChatMode; label: string }[] = [
   { id: 'brainstorm', label: 'Brainstorm' },
 ];
 
-const PRODUCTS: { id: ChatProduct; name: string; icon: string }[] = [
-  { id: 'tasks', name: 'Tasks', icon: '☑' },
-  { id: 'tutor', name: 'Tutor', icon: '🎓' },
-  { id: 'projects', name: 'Projects', icon: '📋' },
-  { id: 'observe', name: 'Observe', icon: '👁' },
+const PRODUCTS: { id: ChatProduct; name: string; icon: string; group?: string }[] = [
+  // Core
+  { id: 'tasks', name: 'Tasks', icon: '☑', group: 'Core' },
+  { id: 'tutor', name: 'Tutor', icon: '🎓', group: 'Core' },
+  { id: 'projects', name: 'Projects', icon: '📋', group: 'Core' },
+  { id: 'observe', name: 'Observe', icon: '👁', group: 'Core' },
+  // Smart Agents
+  { id: 'scout', name: 'Scout', icon: '🎯', group: 'Agents' },
+  { id: 'sentinel', name: 'Sentinel', icon: '🛡', group: 'Agents' },
+  { id: 'mesh', name: 'Mesh', icon: '🔗', group: 'Agents' },
+  { id: 'bench', name: 'Bench', icon: '📊', group: 'Agents' },
+  // Quality & Infrastructure
+  { id: 'compliance', name: 'Compliance', icon: '✅', group: 'Quality' },
+  { id: 'qa', name: 'QA', icon: '🔍', group: 'Quality' },
+  { id: 'analytics', name: 'Analytics', icon: '📈', group: 'Quality' },
+  { id: 'devops', name: 'DevOps', icon: '⚙', group: 'Infra' },
+  { id: 'dba', name: 'DBA', icon: '🗄', group: 'Infra' },
+  { id: 'migrate', name: 'Migrate', icon: '🔄', group: 'Infra' },
+  // Data & Docs
+  { id: 'dataeng', name: 'DataEng', icon: '🔧', group: 'Data' },
+  { id: 'costops', name: 'CostOps', icon: '💰', group: 'Data' },
+  { id: 'viz', name: 'Viz', icon: '📉', group: 'Data' },
+  { id: 'docs', name: 'Docs', icon: '📄', group: 'Docs' },
+  { id: 'api', name: 'API', icon: '🔌', group: 'Docs' },
 ];
 
 export interface ChatInputHandle {
@@ -406,20 +425,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
           />
 
           {/* Toolbar */}
-          <div className="flex items-center gap-1.5 px-3 py-2 border-t border-border-subtle">
+          <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border-subtle">
             {/* Product selector */}
             <div ref={productMenuRef} className="relative">
               <button
                 data-testid="product-selector-button"
                 type="button"
                 onClick={() => setShowProductMenu(prev => !prev)}
-                className={`h-7 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${
+                className={`h-8 flex items-center gap-1.5 px-2 rounded-lg transition-colors cursor-pointer ${
                   activeProduct ? 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/25' : 'text-fg-muted hover:text-fg hover:bg-elevated'
                 }`}
                 title="Select product context"
                 aria-label="Select product context"
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M2 4h12M4 8h8M6 12h4" />
                   <circle cx="13" cy="4" r="1.5" fill="currentColor" stroke="none" />
                   <circle cx="11" cy="8" r="1.5" fill="currentColor" stroke="none" />
@@ -428,7 +447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                 {activeProduct && (
                   <span
                     data-testid="product-badge"
-                    className="text-[10px] font-mono text-blue-400"
+                    className="text-xs font-mono text-blue-400"
                   >
                     {PRODUCTS.find(p => p.id === activeProduct)?.name ?? activeProduct}
                   </span>
@@ -466,14 +485,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
             </div>
 
             {/* Chat mode selector */}
-            <div data-testid="chat-mode-selector" className="relative flex items-center bg-surface rounded-lg p-0.5">
+            <div data-testid="chat-mode-selector" className="relative flex items-center h-8 bg-surface rounded-lg px-0.5">
               {CHAT_MODES.map((mode, idx) => (
                 <button
                   key={mode.id}
                   data-testid={`chat-mode-${mode.id}`}
                   type="button"
                   onClick={() => setChatMode(mode.id)}
-                  className={`relative z-10 px-2 py-0.5 text-[10px] font-mono rounded-md transition-colors cursor-pointer ${
+                  className={`relative z-10 h-7 px-2.5 text-xs font-mono rounded-md transition-colors cursor-pointer ${
                     chatMode === mode.id
                       ? 'text-fg font-semibold'
                       : 'text-fg-muted hover:text-fg'
@@ -505,16 +524,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                 data-testid="thinking-toggle"
                 type="button"
                 onClick={handleThinkingToggle}
-                className={`h-7 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${
+                className={`h-8 flex items-center gap-1.5 px-2 rounded-lg transition-colors cursor-pointer ${
                   thinkingEnabled ? 'bg-soul/20 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
                 }`}
                 title={thinkingEnabled ? 'Extended thinking ON' : 'Extended thinking OFF'}
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8 2a5 5 0 0 1 3 9v1.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 5 12.5V11a5 5 0 0 1 3-9z" />
                   <path d="M6 14.5h4" />
                 </svg>
-                <span className="text-[10px] font-mono">Think</span>
+                <span className="text-xs font-mono">Think</span>
               </button>
             )}
 
@@ -523,11 +542,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               data-testid="attach-button"
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="h-7 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
+              className="h-8 flex items-center gap-1.5 px-2 rounded-lg text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
               aria-label="Attach image"
               title="Attach image"
             >
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                 <path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
@@ -537,11 +556,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               data-testid="camera-button"
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="h-7 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
+              className="h-8 flex items-center gap-1.5 px-2 rounded-lg text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
               aria-label="Take photo"
               title="Take photo"
             >
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                 <path d="M7 3l-1.5 2H3a1 1 0 00-1 1v9a1 1 0 001 1h14a1 1 0 001-1V6a1 1 0 00-1-1h-2.5L13 3H7z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="10" cy="10.5" r="3" stroke="currentColor" strokeWidth="1.5" />
               </svg>
@@ -562,7 +581,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                   <rect x="3" y="3" width="10" height="10" rx="1.5" />
                 </svg>
-                <span className="text-[10px] font-mono">Stop</span>
+                <span className="text-xs font-mono">Stop</span>
               </button>
             ) : !value.trim() && attachments.length === 0 && !disabled && hasSpeech ? (
               <button
@@ -582,7 +601,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                   <path d="M3 7v1a5 5 0 0 0 10 0V7" />
                   <path d="M8 13v2" />
                 </svg>
-                {isListening && <span className="text-[10px] font-mono">Stop</span>}
+                {isListening && <span className="text-xs font-mono">Stop</span>}
               </button>
             ) : (
               <button

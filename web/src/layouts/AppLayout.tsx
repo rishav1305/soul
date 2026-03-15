@@ -29,6 +29,10 @@ const navItems = [
   { to: '/tutor', label: 'Tutor', icon: '📖' },
   { to: '/projects', label: 'Projects', icon: '🔨' },
   { to: '/observe', label: 'Observe', icon: '👁' },
+  { to: '/scout', label: 'Scout', icon: '🎯' },
+  { to: '/sentinel', label: 'Sentinel', icon: '🛡' },
+  { to: '/mesh', label: 'Mesh', icon: '🔗' },
+  { to: '/bench', label: 'Bench', icon: '📊' },
 ] as const;
 
 export function AppLayout() {
@@ -48,6 +52,10 @@ export function AppLayout() {
             <NavLink to="/tutor" className={navLinkClass}>Tutor</NavLink>
             <NavLink to="/projects" className={navLinkClass}>Projects</NavLink>
             <NavLink to="/observe" className={navLinkClass}>Observe</NavLink>
+            <NavLink to="/scout" className={navLinkClass}>Scout</NavLink>
+            <NavLink to="/sentinel" className={navLinkClass}>Sentinel</NavLink>
+            <NavLink to="/mesh" className={navLinkClass}>Mesh</NavLink>
+            <NavLink to="/bench" className={navLinkClass}>Bench</NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-2" data-testid="connection-status">

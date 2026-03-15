@@ -686,7 +686,12 @@ export type ObserveTab = 'overview' | 'performant' | 'robust' | 'resilient' | 's
 export type ObserveProduct = '' | 'chat' | 'tasks' | 'tutor' | 'projects';
 
 // ── Chat Product ──────────────────────────────────────
-export type ChatProduct = '' | 'tasks' | 'tutor' | 'projects' | 'observe';
+export type ChatProduct = '' | 'tasks' | 'tutor' | 'projects' | 'observe'
+  | 'scout' | 'sentinel' | 'mesh' | 'bench'
+  | 'compliance' | 'qa' | 'analytics'
+  | 'devops' | 'dba' | 'migrate'
+  | 'dataeng' | 'costops' | 'viz'
+  | 'docs' | 'api';
 
 // ── Chat Mode ─────────────────────────────────────────
 export type ChatMode = 'chat' | 'code' | 'architect' | 'brainstorm';

@@ -82,6 +82,21 @@ export const router = createBrowserRouter([
         errorElement: <RouteErrorFallback />,
         lazy: () => import('./pages/ScoutPage').then(m => ({ Component: m.ScoutPage })),
       },
+      {
+        path: 'sentinel',
+        errorElement: <RouteErrorFallback />,
+        lazy: () => import('./pages/SentinelPage').then(m => ({ Component: m.SentinelPage })),
+      },
+      {
+        path: 'mesh',
+        errorElement: <RouteErrorFallback />,
+        lazy: () => import('./pages/MeshPage').then(m => ({ Component: m.MeshPage })),
+      },
+      {
+        path: 'bench',
+        errorElement: <RouteErrorFallback />,
+        lazy: () => import('./pages/BenchPage').then(m => ({ Component: m.BenchPage })),
+      },
     ],
   },
 ]);
