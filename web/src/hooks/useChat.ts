@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData } from '../lib/types';
+import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 import { reportError, reportWSLatency, reportUsage } from '../lib/telemetry';
 
@@ -20,6 +20,8 @@ interface UseChatReturn {
   switchSession: (id: string) => void;
   deleteSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
+  activeProduct: ChatProduct;
+  setProduct: (product: ChatProduct) => void;
 }
 
 const STREAMING_MESSAGE_ID = '__streaming__';
@@ -49,6 +51,7 @@ export function useChat(): UseChatReturn {
   const [authError, setAuthError] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionID, setCurrentSessionID] = useState<string | null>(null);
+  const [activeProduct, setActiveProduct] = useState<ChatProduct>('');
 
   // Track session ID in a ref so the onMessage callback always sees the latest value
   // without needing to re-create (which would cause useWebSocket to reconnect).
@@ -173,7 +176,7 @@ export function useChat(): UseChatReturn {
         case 'session.history': {
           // Server sends message history when switching sessions.
           if (isStreamingRef.current) break; // Don't overwrite during streaming.
-          const payload = data as { messages: Message[] } | undefined;
+          const payload = data as { messages: Message[]; session?: { product?: string } } | undefined;
           if (payload?.messages && sessionID === sessionIDRef.current) {
             const hydrated = payload.messages.map((m: RawHistoryMessage) => ({
               id: m.id,
@@ -188,6 +191,15 @@ export function useChat(): UseChatReturn {
             }));
             setMessages(hydrated);
           }
+          if (payload?.session?.product !== undefined) {
+            setActiveProduct(payload.session.product as ChatProduct);
+          }
+          break;
+        }
+
+        case 'session.productSet': {
+          const { product } = data as { product: string };
+          setActiveProduct(product as ChatProduct);
           break;
         }
 
@@ -499,6 +511,15 @@ export function useChat(): UseChatReturn {
     [send],
   );
 
+  const setProduct = useCallback((product: ChatProduct) => {
+    if (!sessionIDRef.current) return;
+    send('session.setProduct', {
+      sessionId: sessionIDRef.current,
+      product,
+    });
+    setActiveProduct(product);
+  }, [send]);
+
   const reauth = useCallback(async () => {
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -555,5 +576,7 @@ export function useChat(): UseChatReturn {
     switchSession,
     deleteSession,
     renameSession,
+    activeProduct,
+    setProduct,
   };
 }

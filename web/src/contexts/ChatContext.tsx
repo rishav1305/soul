@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useChat } from '../hooks/useChat';
-import type { Message, Session, ConnectionState } from '../lib/types';
+import type { Message, Session, ConnectionState, ChatProduct } from '../lib/types';
 
 interface ChatContextValue {
   messages: Message[];
@@ -20,6 +20,8 @@ interface ChatContextValue {
   switchSession: (id: string) => void;
   deleteSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
+  activeProduct: ChatProduct;
+  setProduct: (product: ChatProduct) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);

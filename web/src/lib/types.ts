@@ -243,6 +243,8 @@ export interface Session {
   updatedAt: string;
   lastMessage: string;
   unreadCount: number;
+  /** active product context for this session */
+  product: string;
 }
 
 /** ui-sessions */
@@ -387,7 +389,8 @@ export type InboundMessageType =
   | 'session.switch'
   | 'session.create'
   | 'session.delete'
-  | 'session.rename';
+  | 'session.rename'
+  | 'session.setProduct';
 
 export type OutboundMessageType =
   | 'chat.thinking'
@@ -403,6 +406,7 @@ export type OutboundMessageType =
   | 'session.list'
   | 'session.updated'
   | 'session.history'
+  | 'session.productSet'
   | 'connection.ready';
 
 // --- Manual types (not auto-generated) ---
@@ -680,3 +684,6 @@ export interface ObserveTailResponse {
 
 export type ObserveTab = 'overview' | 'performant' | 'robust' | 'resilient' | 'secure' | 'sovereign' | 'transparent' | 'tail';
 export type ObserveProduct = '' | 'chat' | 'tasks' | 'tutor' | 'projects';
+
+// ── Chat Product ──────────────────────────────────────
+export type ChatProduct = '' | 'tasks' | 'tutor' | 'projects' | 'observe';
