@@ -42,12 +42,41 @@ func ReadLastNFiltered(dataDir string, typePrefix string, n int) ([]Event, error
 	return lastN(events, n), nil
 }
 
+// ReadAllProducts reads events from all product metric files in dataDir.
+// If product is non-empty, only that product's files are read.
+// If product is empty, all metrics-*.jsonl files plus the legacy metrics.jsonl
+// are read. Events are merged and sorted by timestamp.
+func ReadAllProducts(dataDir string, product string) ([]Event, error) {
+	files, err := metricsFiles(dataDir, product)
+	if err != nil {
+		return nil, err
+	}
+
+	var events []Event
+	for _, path := range files {
+		fileEvents, err := readEventsFromFile(path, "")
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, fileEvents...)
+	}
+
+	// Sort by timestamp to merge events from multiple product files.
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Timestamp.Before(events[j].Timestamp)
+	})
+
+	if events == nil {
+		events = []Event{}
+	}
+	return events, nil
+}
+
 // readEvents reads events from all metrics JSONL files in dataDir, optionally
-// filtering by type prefix. It reads rotated files (metrics.YYYY-MM-DD.jsonl)
-// in chronological order first, then the current metrics.jsonl, so that events
-// are returned in temporal order.
+// filtering by type prefix. It reads rotated files in chronological order
+// first, then the current file, so that events are returned in temporal order.
 func readEvents(dataDir string, typePrefix string) ([]Event, error) {
-	files, err := metricsFiles(dataDir)
+	files, err := metricsFiles(dataDir, "")
 	if err != nil {
 		return nil, err
 	}
@@ -68,9 +97,17 @@ func readEvents(dataDir string, typePrefix string) ([]Event, error) {
 }
 
 // metricsFiles returns all metrics JSONL file paths in dataDir, sorted so that
-// rotated files (metrics.YYYY-MM-DD.jsonl) come first in chronological order,
-// followed by the current metrics.jsonl.
-func metricsFiles(dataDir string) ([]string, error) {
+// rotated files come first in chronological order, followed by the current file.
+// If product is non-empty, only files for that product are returned:
+//   - current: metrics-{product}.jsonl
+//   - rotated: metrics-{product}-YYYY-MM-DD.jsonl
+//
+// If product is empty, all metrics files are returned:
+//   - legacy current: metrics.jsonl
+//   - legacy rotated: metrics.YYYY-MM-DD.jsonl
+//   - product current: metrics-{name}.jsonl
+//   - product rotated: metrics-{name}-YYYY-MM-DD.jsonl
+func metricsFiles(dataDir string, product string) ([]string, error) {
 	entries, err := os.ReadDir(dataDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -80,32 +117,67 @@ func metricsFiles(dataDir string) ([]string, error) {
 	}
 
 	var rotated []string
-	hasCurrentFile := false
+	var currentFiles []string
 
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if name == metricsFileName {
-			hasCurrentFile = true
+		if !strings.HasSuffix(name, ".jsonl") || !strings.HasPrefix(name, "metrics") {
 			continue
 		}
-		// Match rotated files: metrics.YYYY-MM-DD.jsonl
-		if strings.HasPrefix(name, "metrics.") && strings.HasSuffix(name, ".jsonl") {
-			rotated = append(rotated, filepath.Join(dataDir, name))
+
+		if product != "" {
+			// Product-specific mode: only match metrics-{product}.jsonl
+			// and metrics-{product}-YYYY-MM-DD.jsonl
+			currentName := metricsFileNameForProduct(product)
+			rotatedPrefix := fmt.Sprintf("metrics-%s-", product)
+			if name == currentName {
+				currentFiles = append(currentFiles, filepath.Join(dataDir, name))
+			} else if strings.HasPrefix(name, rotatedPrefix) {
+				rotated = append(rotated, filepath.Join(dataDir, name))
+			}
+		} else {
+			// All-products mode: match everything.
+			// Current files: metrics.jsonl, metrics-{name}.jsonl (no date segment)
+			// Rotated files: metrics.YYYY-MM-DD.jsonl, metrics-{name}-YYYY-MM-DD.jsonl
+			if name == metricsFileName {
+				currentFiles = append(currentFiles, filepath.Join(dataDir, name))
+			} else if isCurrentProductFile(name) {
+				currentFiles = append(currentFiles, filepath.Join(dataDir, name))
+			} else {
+				rotated = append(rotated, filepath.Join(dataDir, name))
+			}
 		}
 	}
 
 	// Sort rotated files chronologically (the date is embedded in the filename).
 	sort.Strings(rotated)
+	sort.Strings(currentFiles)
 
-	// Append current file last (it contains the most recent events).
-	if hasCurrentFile {
-		rotated = append(rotated, filepath.Join(dataDir, metricsFileName))
+	// Rotated files first, then current files (most recent events).
+	return append(rotated, currentFiles...), nil
+}
+
+// isCurrentProductFile checks if a filename is a current (non-rotated) product
+// metrics file, e.g. "metrics-chat.jsonl" but NOT "metrics-chat-2026-03-15.jsonl".
+func isCurrentProductFile(name string) bool {
+	if !strings.HasPrefix(name, "metrics-") || !strings.HasSuffix(name, ".jsonl") {
+		return false
 	}
-
-	return rotated, nil
+	// Strip prefix and suffix to get the middle part.
+	middle := strings.TrimPrefix(name, "metrics-")
+	middle = strings.TrimSuffix(middle, ".jsonl")
+	// A current file has no date: "chat" not "chat-2026-03-15".
+	// Rotated files have a date suffix matching YYYY-MM-DD (10 chars at end).
+	if len(middle) > 10 {
+		possibleDate := middle[len(middle)-10:]
+		if len(possibleDate) == 10 && possibleDate[4] == '-' && possibleDate[7] == '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // readEventsFromFile reads events from a single JSONL file, optionally filtering
