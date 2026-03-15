@@ -7,15 +7,22 @@ import (
 	"time"
 )
 
+// ThinkingParam configures Claude's extended thinking.
+type ThinkingParam struct {
+	Type         string `json:"type"`                    // "enabled", "adaptive"
+	BudgetTokens int    `json:"budget_tokens,omitempty"` // required for type="enabled"
+}
+
 // Request represents a Claude API request.
 type Request struct {
-	Model          string    `json:"model,omitempty"`
-	MaxTokens      int       `json:"max_tokens"`
-	System         string    `json:"system,omitempty"`
-	Messages       []Message `json:"messages"`
-	Tools          []Tool    `json:"tools,omitempty"`
-	Stream         bool      `json:"stream"`
-	SkipValidation bool      `json:"-"` // internal: skip role alternation check for tool loops
+	Model          string         `json:"model,omitempty"`
+	MaxTokens      int            `json:"max_tokens"`
+	System         string         `json:"system,omitempty"`
+	Messages       []Message      `json:"messages"`
+	Tools          []Tool         `json:"tools,omitempty"`
+	Thinking       *ThinkingParam `json:"thinking,omitempty"`
+	Stream         bool           `json:"stream"`
+	SkipValidation bool           `json:"-"` // internal: skip role alternation check for tool loops
 }
 
 // Validate checks required fields and message alternation.
