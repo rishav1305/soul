@@ -29,6 +29,7 @@ type MessageHandler struct {
 	streamClient *stream.Client
 	metrics      *metrics.EventLogger
 	dispatcher   *prodctx.Dispatcher
+	builtin      *BuiltinExecutor
 }
 
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
@@ -60,6 +61,13 @@ func WithStreamClient(sc *stream.Client) MessageHandlerOption {
 func WithDispatcher(d *prodctx.Dispatcher) MessageHandlerOption {
 	return func(h *MessageHandler) {
 		h.dispatcher = d
+	}
+}
+
+// WithBuiltinExecutor sets the built-in tool executor on the handler.
+func WithBuiltinExecutor(be *BuiltinExecutor) MessageHandlerOption {
+	return func(h *MessageHandler) {
+		h.builtin = be
 	}
 }
 
@@ -468,7 +476,7 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 		}
 
 		// If stop reason is tool_use, handle tool dispatch loop.
-		if stopReason == "tool_use" && len(toolCalls) > 0 && h.dispatcher != nil {
+		if stopReason == "tool_use" && len(toolCalls) > 0 && (h.dispatcher != nil || h.builtin != nil) {
 			// Build and store the assistant tool_use message.
 			toolBlocks := make([]stream.ContentBlock, 0, len(toolCalls))
 
@@ -514,7 +522,15 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 					inputJSON = json.RawMessage("{}")
 				}
 
-				result, execErr := h.dispatcher.Execute(ctx, tc.Name, inputJSON)
+				var result string
+				var execErr error
+				if h.builtin != nil && h.builtin.CanHandle(tc.Name) {
+					result, execErr = h.builtin.Execute(ctx, tc.Name, inputJSON)
+				} else if h.dispatcher != nil {
+					result, execErr = h.dispatcher.Execute(ctx, tc.Name, inputJSON)
+				} else {
+					execErr = fmt.Errorf("no handler for tool: %s", tc.Name)
+				}
 				if execErr != nil {
 					result = fmt.Sprintf("Error: %v", execErr)
 				}

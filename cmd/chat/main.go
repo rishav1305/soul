@@ -102,7 +102,8 @@ func runServe() {
 	streamClient := stream.NewClient(authSource,
 		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
 	)
-	handler := ws.NewMessageHandler(hub, store, logger, ws.WithStreamClient(streamClient))
+	builtin := ws.NewBuiltinExecutor(rawStore)
+	handler := ws.NewMessageHandler(hub, store, logger, ws.WithStreamClient(streamClient), ws.WithBuiltinExecutor(builtin))
 	hub.SetHandler(handler)
 
 	hubCtx, hubCancel := context.WithCancel(context.Background())
