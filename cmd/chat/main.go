@@ -143,6 +143,13 @@ func runServe() {
 	// Enable projects server proxy.
 	serverOpts = append(serverOpts, server.WithProjectsProxy())
 
+	// Enable observe server proxy.
+	observeURL := os.Getenv("SOUL_OBSERVE_URL")
+	if observeURL == "" {
+		observeURL = "http://127.0.0.1:3010"
+	}
+	serverOpts = append(serverOpts, server.WithObserveProxy(observeURL))
+
 	srv := server.New(serverOpts...)
 
 	// Start tasks server SSE relay.

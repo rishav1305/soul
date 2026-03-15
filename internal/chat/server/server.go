@@ -43,6 +43,7 @@ type Server struct {
 	tasksProxy    *tasksProxy
 	tutorProxy    *tutorProxy
 	projectsProxy *projectsProxy
+	observeProxy  *observeProxy
 }
 
 // Option configures a Server.
@@ -112,6 +113,13 @@ func WithProjectsProxy() Option {
 	}
 }
 
+// WithObserveProxy enables the reverse proxy to the observe server.
+func WithObserveProxy(target string) Option {
+	return func(s *Server) {
+		s.observeProxy = newObserveProxy(target)
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -170,6 +178,12 @@ func New(opts ...Option) *Server {
 	if s.projectsProxy != nil {
 		s.mux.Handle("/api/projects/", s.projectsProxy)
 		s.mux.Handle("/api/projects", s.projectsProxy)
+	}
+
+	// Observe server proxy — forward /api/observe/* to observe server.
+	if s.observeProxy != nil {
+		s.mux.Handle("/api/observe/", s.observeProxy)
+		s.mux.Handle("/api/observe", s.observeProxy)
 	}
 
 	// WebSocket route — must be registered before SPA fallback.

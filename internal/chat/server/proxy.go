@@ -254,3 +254,42 @@ func newProjectsProxy() *projectsProxy {
 func (pp *projectsProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pp.reverseProxy.ServeHTTP(w, r)
 }
+
+// observeProxy manages the reverse proxy to the observe server.
+type observeProxy struct {
+	reverseProxy *httputil.ReverseProxy
+}
+
+func newObserveProxy(target string) *observeProxy {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		log.Printf("warn: invalid observe URL %q: %v", target, err)
+		return nil
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(parsed)
+
+	rp.Transport = &http.Transport{
+		ResponseHeaderTimeout: 5 * time.Second,
+	}
+
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("observe proxy error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"observe server unavailable"}`)
+	}
+
+	return &observeProxy{
+		reverseProxy: rp,
+	}
+}
+
+// ServeHTTP forwards requests to the observe server, stripping the /api/observe prefix.
+func (op *observeProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/observe")
+	if r.URL.Path == "" {
+		r.URL.Path = "/"
+	}
+	op.reverseProxy.ServeHTTP(w, r)
+}
