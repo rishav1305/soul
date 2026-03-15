@@ -638,6 +638,7 @@ func TestBroadcastToSession(t *testing.T) {
 	// Drain session.switch response messages from conn1.
 	_ = readMessage(t, ctx, conn1) // session.updated
 	_ = readMessage(t, ctx, conn1) // session.list
+	_ = readMessage(t, ctx, conn1) // session.history
 
 	// Broadcast to session — only client 1 should receive.
 	testMsg := `{"type":"test.session","data":"session only"}`

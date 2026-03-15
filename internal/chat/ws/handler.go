@@ -2,27 +2,33 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
+	prodctx "github.com/rishav1305/soul-v2/internal/chat/context"
 	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
 
+// maxToolRounds is the maximum number of tool-use/result round-trips per message.
+const maxToolRounds = 5
+
 // MessageHandler processes inbound WebSocket messages and dispatches them
 // to the appropriate session and hub operations. It is safe for concurrent
 // use from multiple ReadPump goroutines because it only reads its own fields
-// (hub, sessionStore, streamClient, metrics) and delegates state mutations
-// to the hub event loop or the thread-safe session store.
+// (hub, sessionStore, streamClient, metrics, dispatcher) and delegates state
+// mutations to the hub event loop or the thread-safe session store.
 type MessageHandler struct {
 	hub          *Hub
 	sessionStore session.StoreInterface
 	streamClient *stream.Client
 	metrics      *metrics.EventLogger
+	dispatcher   *prodctx.Dispatcher
 }
 
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
@@ -50,6 +56,13 @@ func WithStreamClient(sc *stream.Client) MessageHandlerOption {
 	}
 }
 
+// WithDispatcher sets the product tool call dispatcher on the handler.
+func WithDispatcher(d *prodctx.Dispatcher) MessageHandlerOption {
+	return func(h *MessageHandler) {
+		h.dispatcher = d
+	}
+}
+
 // HandleMessage parses a raw inbound message and routes it to the correct
 // handler method. Invalid JSON or unknown types are handled gracefully
 // without crashing.
@@ -71,8 +84,39 @@ func (h *MessageHandler) HandleMessage(client *Client, raw []byte) {
 		h.handleSessionDelete(client, msg)
 	case TypeSessionRename:
 		h.handleSessionRename(client, msg)
+	case TypeSessionSetProduct:
+		h.handleSessionSetProduct(client, msg)
 	default:
 		log.Printf("ws: unknown message type %q from client %s", msg.Type, client.ID())
+	}
+}
+
+// handleSessionSetProduct processes a session.setProduct message. It persists
+// the product on the session and broadcasts the update to all clients.
+func (h *MessageHandler) handleSessionSetProduct(client *Client, msg *InboundMessage) {
+	if msg.SessionID == "" {
+		h.sendError(client, "", "session ID required")
+		return
+	}
+	if !IsValidUUID(msg.SessionID) {
+		h.sendError(client, "", "invalid session ID")
+		return
+	}
+
+	if err := h.sessionStore.SetProduct(msg.SessionID, msg.Product); err != nil {
+		log.Printf("ws: failed to set product for session %s: %v", msg.SessionID, err)
+		h.sendError(client, msg.SessionID, "failed to set product")
+		return
+	}
+
+	h.broadcast(NewSessionProductSet(msg.SessionID, msg.Product))
+
+	if h.metrics != nil {
+		_ = h.metrics.Log("session.setProduct", map[string]interface{}{
+			"session_id": msg.SessionID,
+			"product":    msg.Product,
+			"client_id":  client.ID(),
+		})
 	}
 }
 
@@ -157,18 +201,7 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		return
 	}
 
-	apiMessages := make([]stream.Message, 0, len(sessionMsgs))
-	for _, sm := range sessionMsgs {
-		if sm.Role != "user" && sm.Role != "assistant" {
-			continue
-		}
-		apiMessages = append(apiMessages, stream.Message{
-			Role: sm.Role,
-			Content: []stream.ContentBlock{
-				{Type: "text", Text: sm.Content},
-			},
-		})
-	}
+	apiMessages := buildAPIMessages(sessionMsgs)
 
 	// Append image attachments to the last user message (current message).
 	if len(msg.Attachments) > 0 && len(apiMessages) > 0 {
@@ -195,6 +228,15 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		Model:     msg.Model,
 	}
 
+	// Inject product context if session has a product set.
+	if sess != nil && sess.Product != "" {
+		pctx := prodctx.ForProduct(sess.Product)
+		req.System = pctx.System
+		if len(pctx.Tools) > 0 {
+			req.Tools = pctx.Tools
+		}
+	}
+
 	// Generate a message ID for the assistant response ahead of time.
 	// We'll use the stored user message ID as a reference, and create
 	// the assistant message after streaming completes.
@@ -204,7 +246,72 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 	go h.runStream(client, sessionID, req)
 }
 
+// buildAPIMessages converts stored session messages into Claude API messages,
+// handling text, tool_use, and tool_result roles correctly.
+func buildAPIMessages(sessionMsgs []*session.Message) []stream.Message {
+	apiMessages := make([]stream.Message, 0, len(sessionMsgs))
+	for _, sm := range sessionMsgs {
+		switch sm.Role {
+		case "user":
+			apiMessages = append(apiMessages, stream.Message{
+				Role: "user",
+				Content: []stream.ContentBlock{
+					{Type: "text", Text: sm.Content},
+				},
+			})
+		case "assistant":
+			apiMessages = append(apiMessages, stream.Message{
+				Role: "assistant",
+				Content: []stream.ContentBlock{
+					{Type: "text", Text: sm.Content},
+				},
+			})
+		case "tool_use":
+			// Content is a JSON array of ContentBlock structs (tool_use blocks).
+			var blocks []stream.ContentBlock
+			if err := json.Unmarshal([]byte(sm.Content), &blocks); err != nil {
+				log.Printf("ws: failed to unmarshal tool_use content: %v", err)
+				continue
+			}
+			apiMessages = append(apiMessages, stream.Message{
+				Role:    "assistant",
+				Content: blocks,
+			})
+		case "tool_result":
+			// Content is a JSON object: {"tool_use_id":"...","content":"..."}
+			var tr struct {
+				ToolUseID string `json:"tool_use_id"`
+				Content   string `json:"content"`
+			}
+			if err := json.Unmarshal([]byte(sm.Content), &tr); err != nil {
+				log.Printf("ws: failed to unmarshal tool_result content: %v", err)
+				continue
+			}
+			apiMessages = append(apiMessages, stream.Message{
+				Role: "user",
+				Content: []stream.ContentBlock{
+					{
+						Type:      "tool_result",
+						ToolUseID: tr.ToolUseID,
+						Content:   tr.Content,
+					},
+				},
+			})
+		}
+	}
+	return apiMessages
+}
+
+// toolCall holds accumulated data for a single tool_use block during streaming.
+type toolCall struct {
+	ID    string
+	Name  string
+	Input strings.Builder
+}
+
 // runStream executes the Claude API streaming call and forwards events to the client.
+// It handles tool-use loops: if Claude responds with tool_use blocks, it dispatches
+// them to product servers and sends the results back for up to maxToolRounds.
 func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request) {
 	startTime := time.Now()
 
@@ -212,19 +319,6 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 	// If the Claude API hangs, the stream times out instead of blocking forever.
 	ctx, cancel := context.WithTimeout(client.Context(), 5*time.Minute)
 	defer cancel()
-
-	ch, err := h.streamClient.Stream(ctx, req)
-	if err != nil {
-		var authErr *stream.AuthError
-		if errors.As(err, &authErr) {
-			log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
-		} else {
-			log.Printf("ws: stream error for session %s: %v", sessionID, err)
-		}
-		h.logAPIError(sessionID, err)
-		h.sendClassifiedError(client, sessionID, err)
-		return
-	}
 
 	// Log stream start.
 	if h.metrics != nil {
@@ -234,138 +328,302 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 		})
 	}
 
-	var fullText strings.Builder
 	var messageID string
 	var model string
 	var totalInputTokens int
 	var totalOutputTokens int
 	var firstTokenLogged bool
-	var gotMessageStop bool
 
-	for evt := range ch {
-		switch evt.Type {
-		case "message_start":
-			if evt.Message != nil {
-				messageID = evt.Message.ID
-				model = evt.Message.Model
-				if evt.Message.Usage != nil {
-					totalInputTokens = evt.Message.Usage.InputTokens
-				}
+	// Tool loop: stream, check for tool_use, dispatch, repeat.
+	for round := 0; round <= maxToolRounds; round++ {
+		ch, err := h.streamClient.Stream(ctx, req)
+		if err != nil {
+			var authErr *stream.AuthError
+			if errors.As(err, &authErr) {
+				log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
+			} else {
+				log.Printf("ws: stream error for session %s: %v", sessionID, err)
 			}
+			h.logAPIError(sessionID, err)
+			h.sendClassifiedError(client, sessionID, err)
+			return
+		}
 
-		case "content_block_delta":
-			if evt.Delta != nil && evt.Delta.Text != "" {
-				token := evt.Delta.Text
-				fullText.WriteString(token)
-				tokenMsg := NewChatToken(sessionID, token, messageID)
-				h.sendToClient(client, tokenMsg)
+		var fullText strings.Builder
+		var toolCalls []toolCall
+		var currentToolIdx int = -1
+		var stopReason string
+		var gotMessageStop bool
 
-				// Log first token only (per spec: ws.stream.token).
-				if !firstTokenLogged && h.metrics != nil {
-					firstTokenLogged = true
-					_ = h.metrics.Log(metrics.EventWSStreamToken, map[string]interface{}{
-						"session_id":     sessionID,
-						"client_id":      client.ID(),
-						"message_id":     messageID,
-						"first_token_ms": time.Since(startTime).Milliseconds(),
+		for evt := range ch {
+			switch evt.Type {
+			case "message_start":
+				if evt.Message != nil {
+					messageID = evt.Message.ID
+					model = evt.Message.Model
+					if evt.Message.Usage != nil {
+						totalInputTokens += evt.Message.Usage.InputTokens
+					}
+				}
+
+			case "content_block_start":
+				if evt.ContentBlock != nil && evt.ContentBlock.Type == "tool_use" {
+					tc := toolCall{
+						ID:   evt.ContentBlock.ID,
+						Name: evt.ContentBlock.Name,
+					}
+					toolCalls = append(toolCalls, tc)
+					currentToolIdx = len(toolCalls) - 1
+
+					// Send tool.call WS event to client.
+					h.sendToClient(client, NewToolCall(sessionID, tc.ID, tc.Name, nil))
+				}
+
+			case "content_block_delta":
+				if evt.Delta != nil {
+					if evt.Delta.Text != "" {
+						token := evt.Delta.Text
+						fullText.WriteString(token)
+						tokenMsg := NewChatToken(sessionID, token, messageID)
+						h.sendToClient(client, tokenMsg)
+
+						// Log first token only (per spec: ws.stream.token).
+						if !firstTokenLogged && h.metrics != nil {
+							firstTokenLogged = true
+							_ = h.metrics.Log(metrics.EventWSStreamToken, map[string]interface{}{
+								"session_id":     sessionID,
+								"client_id":      client.ID(),
+								"message_id":     messageID,
+								"first_token_ms": time.Since(startTime).Milliseconds(),
+							})
+						}
+					}
+					if evt.Delta.PartialJSON != "" && currentToolIdx >= 0 {
+						toolCalls[currentToolIdx].Input.WriteString(evt.Delta.PartialJSON)
+					}
+				}
+
+			case "content_block_stop":
+				// Nothing special needed; currentToolIdx stays valid for the
+				// next content_block_start to overwrite it.
+
+			case "message_delta":
+				if evt.Usage != nil {
+					totalOutputTokens += evt.Usage.OutputTokens
+				}
+				if evt.StopReason != "" {
+					stopReason = evt.StopReason
+				}
+
+			case "error":
+				errMsg := "stream error"
+				statusCode := 0
+				if evt.Error != nil {
+					errMsg = evt.Error.Message
+					statusCode = evt.Error.StatusCode
+				}
+				log.Printf("ws: stream error event for session %s: %s", sessionID, errMsg)
+				if h.metrics != nil {
+					_ = h.metrics.Log(metrics.EventAPIError, map[string]interface{}{
+						"session_id":    sessionID,
+						"error_type":    "stream",
+						"status_code":   statusCode,
+						"error_message": errMsg,
 					})
 				}
-			}
+				h.sendError(client, sessionID, "stream interrupted — please try again")
+				return
 
-		case "message_delta":
-			if evt.Usage != nil {
-				totalOutputTokens = evt.Usage.OutputTokens
+			case "message_stop":
+				gotMessageStop = true
 			}
+		}
 
-		case "error":
-			errMsg := "stream error"
-			statusCode := 0
-			if evt.Error != nil {
-				errMsg = evt.Error.Message
-				statusCode = evt.Error.StatusCode
-			}
-			log.Printf("ws: stream error event for session %s: %s", sessionID, errMsg)
+		// If stream ended without message_stop, it was truncated.
+		if !gotMessageStop {
+			log.Printf("ws: stream ended without message_stop for session %s", sessionID)
 			if h.metrics != nil {
 				_ = h.metrics.Log(metrics.EventAPIError, map[string]interface{}{
 					"session_id":    sessionID,
-					"error_type":    "stream",
-					"status_code":   statusCode,
-					"error_message": errMsg,
+					"error_type":    "incomplete_stream",
+					"status_code":   0,
+					"error_message": "stream ended without message_stop",
 				})
 			}
-			h.sendError(client, sessionID, "stream interrupted — please try again")
+
+			// Persist partial response so the user keeps what they received.
+			if fullText.Len() > 0 {
+				partial := fullText.String() + "\n\n[incomplete — stream ended unexpectedly]"
+				if stored, err := h.sessionStore.AddMessage(sessionID, "assistant", partial); err != nil {
+					log.Printf("ws: failed to store partial message for session %s: %v", sessionID, err)
+				} else if messageID == "" {
+					messageID = stored.ID
+				}
+			}
+
+			h.completeSession(client, sessionID)
+			doneMsg := NewChatDone(sessionID, messageID)
+			h.sendToClient(client, doneMsg)
 			return
-
-		case "message_stop":
-			gotMessageStop = true
 		}
-	}
 
-	// If stream ended without message_stop, it was truncated.
-	if !gotMessageStop {
-		log.Printf("ws: stream ended without message_stop for session %s", sessionID)
-		if h.metrics != nil {
-			_ = h.metrics.Log(metrics.EventAPIError, map[string]interface{}{
-				"session_id":    sessionID,
-				"error_type":    "incomplete_stream",
-				"status_code":   0,
-				"error_message": "stream ended without message_stop",
+		// If stop reason is tool_use, handle tool dispatch loop.
+		if stopReason == "tool_use" && len(toolCalls) > 0 && h.dispatcher != nil {
+			// Build and store the assistant tool_use message.
+			toolBlocks := make([]stream.ContentBlock, 0, len(toolCalls))
+
+			// Include any text that preceded the tool calls.
+			if fullText.Len() > 0 {
+				toolBlocks = append(toolBlocks, stream.ContentBlock{
+					Type: "text",
+					Text: fullText.String(),
+				})
+			}
+
+			for i := range toolCalls {
+				tc := &toolCalls[i]
+				inputJSON := json.RawMessage(tc.Input.String())
+				if len(inputJSON) == 0 {
+					inputJSON = json.RawMessage("{}")
+				}
+				toolBlocks = append(toolBlocks, stream.ContentBlock{
+					Type:  "tool_use",
+					ID:    tc.ID,
+					Name:  tc.Name,
+					Input: inputJSON,
+				})
+			}
+
+			// Store as tool_use message (JSON array of content blocks).
+			toolUseJSON, err := json.Marshal(toolBlocks)
+			if err != nil {
+				log.Printf("ws: failed to marshal tool_use blocks: %v", err)
+				h.sendError(client, sessionID, "internal error during tool processing")
+				return
+			}
+			if _, err := h.sessionStore.AddMessage(sessionID, "tool_use", string(toolUseJSON)); err != nil {
+				log.Printf("ws: failed to store tool_use message: %v", err)
+			}
+
+			// Dispatch each tool call and collect results.
+			toolResultMessages := make([]stream.Message, 0, len(toolCalls))
+			for i := range toolCalls {
+				tc := &toolCalls[i]
+				inputJSON := json.RawMessage(tc.Input.String())
+				if len(inputJSON) == 0 {
+					inputJSON = json.RawMessage("{}")
+				}
+
+				result, execErr := h.dispatcher.Execute(ctx, tc.Name, inputJSON)
+				if execErr != nil {
+					result = fmt.Sprintf("Error: %v", execErr)
+				}
+
+				// Store tool_result message.
+				trJSON, _ := json.Marshal(struct {
+					ToolUseID string `json:"tool_use_id"`
+					Content   string `json:"content"`
+				}{
+					ToolUseID: tc.ID,
+					Content:   result,
+				})
+				if _, err := h.sessionStore.AddMessage(sessionID, "tool_result", string(trJSON)); err != nil {
+					log.Printf("ws: failed to store tool_result message: %v", err)
+				}
+
+				// Send tool.complete WS event.
+				h.sendToClient(client, NewToolComplete(sessionID, tc.ID, tc.Name, result))
+
+				// Build the user message with tool_result for the next API call.
+				toolResultMessages = append(toolResultMessages, stream.Message{
+					Role: "user",
+					Content: []stream.ContentBlock{
+						{
+							Type:      "tool_result",
+							ToolUseID: tc.ID,
+							Content:   result,
+						},
+					},
+				})
+			}
+
+			// Build the follow-up request: original messages + assistant tool_use + tool results.
+			followUpMessages := make([]stream.Message, len(req.Messages))
+			copy(followUpMessages, req.Messages)
+
+			// Append the assistant message with tool blocks.
+			followUpMessages = append(followUpMessages, stream.Message{
+				Role:    "assistant",
+				Content: toolBlocks,
 			})
+
+			// Append each tool result as a user message.
+			// Claude API expects all tool_results in a single user message.
+			var allToolResultBlocks []stream.ContentBlock
+			for _, trMsg := range toolResultMessages {
+				allToolResultBlocks = append(allToolResultBlocks, trMsg.Content...)
+			}
+			followUpMessages = append(followUpMessages, stream.Message{
+				Role:    "user",
+				Content: allToolResultBlocks,
+			})
+
+			// Update request for next round.
+			req = &stream.Request{
+				MaxTokens:      req.MaxTokens,
+				Messages:       followUpMessages,
+				Model:          req.Model,
+				System:         req.System,
+				Tools:          req.Tools,
+				SkipValidation: true,
+			}
+
+			continue // next round of the tool loop
 		}
 
-		// Persist partial response so the user keeps what they received.
+		// Normal text response — store and finish.
 		if fullText.Len() > 0 {
-			partial := fullText.String() + "\n\n[incomplete — stream ended unexpectedly]"
-			if stored, err := h.sessionStore.AddMessage(sessionID, "assistant", partial); err != nil {
-				log.Printf("ws: failed to store partial message for session %s: %v", sessionID, err)
+			assistantMsg, err := h.sessionStore.AddMessage(sessionID, "assistant", fullText.String())
+			if err != nil {
+				log.Printf("ws: failed to store assistant message: %v", err)
 			} else if messageID == "" {
-				messageID = stored.ID
+				messageID = assistantMsg.ID
 			}
 		}
 
+		// Transition session to completed.
 		h.completeSession(client, sessionID)
 
-		// Send chat.done so the client finalizes the streaming message.
+		// Send chat.done.
 		doneMsg := NewChatDone(sessionID, messageID)
 		h.sendToClient(client, doneMsg)
+
+		// Log stream end + API request metrics.
+		if h.metrics != nil {
+			duration := time.Since(startTime).Milliseconds()
+			_ = h.metrics.Log(metrics.EventWSStreamEnd, map[string]interface{}{
+				"session_id":   sessionID,
+				"client_id":    client.ID(),
+				"message_id":   messageID,
+				"total_tokens": totalOutputTokens,
+				"duration_ms":  duration,
+			})
+			_ = h.metrics.Log(metrics.EventAPIRequest, map[string]interface{}{
+				"session_id":    sessionID,
+				"model":         model,
+				"input_tokens":  totalInputTokens,
+				"output_tokens": totalOutputTokens,
+				"duration_ms":   duration,
+			})
+		}
 		return
 	}
 
-	// Store the assistant response.
-	if fullText.Len() > 0 {
-		assistantMsg, err := h.sessionStore.AddMessage(sessionID, "assistant", fullText.String())
-		if err != nil {
-			log.Printf("ws: failed to store assistant message: %v", err)
-		} else if messageID == "" {
-			messageID = assistantMsg.ID
-		}
-	}
-
-	// Transition session to completed.
+	// Exceeded maxToolRounds — store what we have and finish.
+	log.Printf("ws: exceeded max tool rounds (%d) for session %s", maxToolRounds, sessionID)
 	h.completeSession(client, sessionID)
-
-	// Send chat.done.
 	doneMsg := NewChatDone(sessionID, messageID)
 	h.sendToClient(client, doneMsg)
-
-	// Log stream end + API request metrics.
-	if h.metrics != nil {
-		duration := time.Since(startTime).Milliseconds()
-		_ = h.metrics.Log(metrics.EventWSStreamEnd, map[string]interface{}{
-			"session_id":   sessionID,
-			"client_id":    client.ID(),
-			"message_id":   messageID,
-			"total_tokens": totalOutputTokens,
-			"duration_ms":  duration,
-		})
-		_ = h.metrics.Log(metrics.EventAPIRequest, map[string]interface{}{
-			"session_id":    sessionID,
-			"model":         model,
-			"input_tokens":  totalInputTokens,
-			"output_tokens": totalOutputTokens,
-			"duration_ms":   duration,
-		})
-	}
 }
 
 // handleSessionSwitch processes a session.switch message. It validates the

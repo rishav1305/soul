@@ -31,16 +31,18 @@ const (
 
 // Outbound message types sent to WebSocket clients.
 const (
-	TypeChatToken       = "chat.token"
-	TypeChatDone        = "chat.done"
-	TypeChatError       = "chat.error"
-	TypeSessionCreated  = "session.created"
-	TypeSessionDeleted  = "session.deleted"
-	TypeSessionList     = "session.list"
-	TypeSessionUpdated  = "session.updated"
-	TypeSessionHistory  = "session.history"
+	TypeChatToken         = "chat.token"
+	TypeChatDone          = "chat.done"
+	TypeChatError         = "chat.error"
+	TypeSessionCreated    = "session.created"
+	TypeSessionDeleted    = "session.deleted"
+	TypeSessionList       = "session.list"
+	TypeSessionUpdated    = "session.updated"
+	TypeSessionHistory    = "session.history"
 	TypeConnectionReady   = "connection.ready"
 	TypeSessionProductSet = "session.productSet"
+	TypeToolCall          = "tool.call"
+	TypeToolComplete      = "tool.complete"
 )
 
 // Attachment represents a file attached to a chat message.
@@ -238,6 +240,43 @@ func NewConnectionReady(clientID string) *OutboundMessage {
 		Type: TypeConnectionReady,
 		Data: map[string]string{
 			"clientId": clientID,
+		},
+	}
+}
+
+// NewSessionProductSet creates a session.productSet outbound message.
+func NewSessionProductSet(sessionID, product string) *OutboundMessage {
+	return &OutboundMessage{
+		Type:      TypeSessionProductSet,
+		SessionID: sessionID,
+		Data: map[string]string{
+			"product": product,
+		},
+	}
+}
+
+// NewToolCall creates a tool.call outbound message.
+func NewToolCall(sessionID, toolID, toolName string, input json.RawMessage) *OutboundMessage {
+	return &OutboundMessage{
+		Type:      TypeToolCall,
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolId":   toolID,
+			"toolName": toolName,
+			"input":    input,
+		},
+	}
+}
+
+// NewToolComplete creates a tool.complete outbound message.
+func NewToolComplete(sessionID, toolID, toolName, result string) *OutboundMessage {
+	return &OutboundMessage{
+		Type:      TypeToolComplete,
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolId":   toolID,
+			"toolName": toolName,
+			"result":   result,
 		},
 	}
 }
