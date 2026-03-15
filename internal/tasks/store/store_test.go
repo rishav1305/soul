@@ -251,6 +251,55 @@ func TestNextReady_DepDone(t *testing.T) {
 	}
 }
 
+func TestUpdateTask_BrainstormStage(t *testing.T) {
+	s := newTestStore(t)
+	task := createTask(t, s, "Brainstorm task")
+
+	updated, err := s.Update(task.ID, map[string]interface{}{"stage": "brainstorm"})
+	if err != nil {
+		t.Fatalf("Update to brainstorm: %v", err)
+	}
+	if updated.Stage != "brainstorm" {
+		t.Errorf("Stage = %q, want %q", updated.Stage, "brainstorm")
+	}
+
+	got, err := s.Get(task.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Stage != "brainstorm" {
+		t.Errorf("Get Stage = %q, want %q", got.Stage, "brainstorm")
+	}
+}
+
+func TestUpdateTask_Substep(t *testing.T) {
+	s := newTestStore(t)
+	task := createTask(t, s, "Substep task")
+
+	// Set to active first.
+	_, err := s.Update(task.ID, map[string]interface{}{"stage": "active"})
+	if err != nil {
+		t.Fatalf("Update to active: %v", err)
+	}
+
+	// Set substep to tdd.
+	updated, err := s.Update(task.ID, map[string]interface{}{"substep": "tdd"})
+	if err != nil {
+		t.Fatalf("Update substep: %v", err)
+	}
+	if updated.Substep != "tdd" {
+		t.Errorf("Substep = %q, want %q", updated.Substep, "tdd")
+	}
+
+	got, err := s.Get(task.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Substep != "tdd" {
+		t.Errorf("Get Substep = %q, want %q", got.Substep, "tdd")
+	}
+}
+
 func TestCountByStage(t *testing.T) {
 	s := newTestStore(t)
 	s.Create("A", "", "")
