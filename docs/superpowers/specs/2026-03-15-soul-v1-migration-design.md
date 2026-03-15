@@ -8,7 +8,7 @@
 
 Port the entire Soul v1 product ecosystem into Soul v2's microservice architecture. This includes 12 data products (grouped into 4 servers), 4 smart agent products (individual servers), and 10 cross-cutting capabilities added to existing packages.
 
-**Final state:** 13 servers, 21 products, 89 chat tools, 4 new frontend pages.
+**Final state:** 13 servers, 21 products, 93 chat tools, 4 new frontend pages.
 
 ## Architecture: Server Layout
 
@@ -52,6 +52,17 @@ internal/bench/
 
 Each server follows v2's existing pattern: `server/server.go` (HTTP router + middleware), `store/store.go` (SQLite CRUD where applicable), product-specific packages for business logic.
 
+### Product Registration Updates
+
+**Session store (`internal/chat/session/store.go`):** The `SetProduct()` method's `valid` map must be expanded from the current 5 entries (empty, tasks, tutor, projects, observe) to include all 21 products: scout, sentinel, mesh, bench, compliance, qa, analytics, devops, dba, migrate, dataeng, costops, viz, docs, api, plus the existing 4.
+
+**Dispatcher (`internal/chat/context/dispatch.go`):** Replace the current hardcoded 4-product constructor with a registration-based approach. `NewDispatcher()` accepts a `map[string]ProductConfig` where each entry has `baseURL string` and `tools []ToolDef`. Products register via env-var-sourced URLs:
+- Grouped products share a base URL but route to different `/api/{product}/tools/{name}/execute` paths within their server.
+- Smart agent products get their own base URL.
+- This avoids 17 individual case blocks — the dispatcher does a map lookup on product name, constructs the URL, and POSTs to `/api/tools/{name}/execute`.
+
+**Context provider (`internal/chat/context/context.go`):** `ForProduct()` gains entries for all 17 new products with their system prompts and tool definitions.
+
 ### Environment Variables (new)
 
 ```
@@ -92,7 +103,9 @@ CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
 
 **Store methods:** UpsertMemory (ON CONFLICT DO UPDATE), GetMemory, SearchMemories (LIKE on key/content/tags), ListMemories (limit, ordered by updated_at DESC), DeleteMemory.
 
-**Chat integration:** 4 built-in tools (memory_store, memory_search, memory_list, memory_delete) routed in `ws/handler.go` via `memory_` prefix before product dispatch. System prompt: "You have persistent memory across conversations." On session start: load recent 20 memories into context.
+**Chat integration:** 4 built-in tools (memory_store, memory_search, memory_list, memory_delete). System prompt: "You have persistent memory across conversations." On session start: load recent 20 memories into context.
+
+**Built-in tool dispatch:** A new `BuiltinExecutor` is composed before the product `Dispatcher` in the tool call loop inside `ws/handler.go`. The tool loop in `runStream` checks `BuiltinExecutor.CanHandle(toolName)` first (prefix match: `memory_`, `tool_`, `custom_`, `subagent`). If handled, execution stays in-process and the result is returned directly. Only unhandled tools fall through to `Dispatcher.Execute()` for product REST routing. This avoids modifying the Dispatcher interface and keeps built-in tools zero-latency.
 
 ### 2. Custom Tools
 
@@ -114,9 +127,9 @@ CREATE INDEX IF NOT EXISTS idx_custom_tools_name ON custom_tools(name);
 
 **Store methods:** CreateCustomTool, ListCustomTools, GetCustomTool, DeleteCustomTool.
 
-**Execution:** Tools with `custom_` prefix → extract name → load from DB → parse input JSON → substitute `{{param}}` in command_template (shell-escaped) → execute via `bash -c` with 60s timeout → truncate output to 5000 chars.
+**Execution:** Tools with `custom_` prefix → extract name → load from DB → parse input JSON → parameters passed as environment variables (`PARAM_<name>`) to `bash -c "$command_template"` — NOT string-interpolated into the command string. This prevents shell injection. 60s timeout, truncate output to 5000 chars.
 
-**Built-in tools:** tool_create, tool_list, tool_delete — routed via `tool_` prefix in `ws/handler.go`.
+**Built-in tools:** tool_create, tool_list, tool_delete — routed via `tool_` prefix through `BuiltinExecutor` (see §1 above).
 
 ### 3. Subagent
 
@@ -153,11 +166,15 @@ Added to `internal/tasks/store/`.
 
 **Substep enum:** tdd → implementing → reviewing → qa_test → e2e_test → security_review. Canonical ordering with Next() method. Tracked during active stage. Updated via task PATCH endpoint and executor.
 
+**Store updates required:** Add `"substep"` to the `allowed` fields map in `store.Update()` so PATCH requests can set it. Add `substep` to SELECT columns in `Get()`, `List()`.
+
 ### 6. Brainstorm Stage
 
 Added to `internal/tasks/`.
 
 Stage enum gains `brainstorm` between backlog and active: backlog → {brainstorm, active}, brainstorm → {active}.
+
+**Store updates required:** Add `"brainstorm"` to `validStages` map in `store.go` so stage transitions to brainstorm are accepted by `Update()`.
 
 System prompt override: "You are in brainstorming mode. Ask clarifying questions, propose approaches. No code generation." Executor skips brainstorm tasks (user-driven only).
 
@@ -165,12 +182,20 @@ System prompt override: "You are in brainstorming mode. Ask clarifying questions
 
 Modify `internal/chat/ws/`.
 
-**Current:** One agent per WS connection.
-**New:** `chatSession` struct with `agents map[string]agentEntry`.
+**Current:** One agent per WS connection. `Client` holds a single `sessionID` via `Subscribe()/SessionID()`.
+**New:** `chatSession` struct with `agents map[string]agentEntry` and `sync.Mutex`, owned by `MessageHandler` (one per WS connection).
 
-Per `chat.send`: extract sessionID → cancel previous agent for THAT session only → spawn new agent goroutine keyed by sessionID. Multiple sessions run concurrently on same connection.
+**Concurrency model:**
+- `agents map[string]agentEntry` is protected by `chatSession.mu sync.Mutex`.
+- Each agent goroutine gets its own `context.WithCancel(context.Background())` — NOT derived from `client.Context()`. This allows per-session cancellation without killing the connection.
+- `client.Subscribe(sessionID)` becomes a no-op for routing purposes — message routing uses the sessionID in each WS message frame instead of connection-level state.
+- `client.Send()` is already goroutine-safe (serialized by the hub's write pump), so concurrent agents can send to the same connection.
 
-Per `chat.stop`: cancel specific session's agent by sessionID, remove from map.
+Per `chat.send`: lock mu → extract sessionID → cancel previous agent for THAT session only → unlock → spawn new agent goroutine keyed by sessionID.
+
+Per `chat.stop`: lock mu → cancel specific session's agent by sessionID → remove from map → unlock.
+
+**New WS inbound message:** `chat.stop` gains a `sessionId` field to target a specific session's agent.
 
 Session resumption: load last 50 messages from DB on reconnect. Session summary: after agent completes, call haiku for title+summary generation.
 
@@ -338,6 +363,8 @@ internal/scout/
 
 **Dependencies:** pgx/v5 (PostgreSQL), go-rod/rod (CDP).
 
+**Note on conventions:** pgx/v5 deviates from v2's "standard library preferred" convention. This is a necessary product requirement — scout's profile data lives in PostgreSQL on titan-pc. Tests that depend on `SOUL_SCOUT_PG_URL` must be skipped when the env var is unset (use `t.Skip("SOUL_SCOUT_PG_URL not set")`). Similarly, CDP/browser tests skip when `SOUL_SCOUT_CDP_URL` is unset.
+
 ### soul-sentinel (port 3022)
 
 ```
@@ -371,6 +398,8 @@ internal/mesh/
 ```
 
 **6 HTTP + 1 WS endpoint:** identity, nodes, status, link, heartbeats, WS /ws/mesh.
+
+**Chat tools (4):** cluster_status, list_nodes, node_info, link_node.
 
 **Dependencies:** golang-jwt/jwt/v5, nhooyr.io/websocket, golang.org/x/net (mDNS).
 
@@ -449,10 +478,10 @@ ChatInput product selector gains all 21 products (existing 4 + 17 new).
 ### Chat Tool Counts
 
 - Existing: tasks (6) + tutor (7) + projects (6) + observe (4) = 23
-- Smart agents: scout (23) + sentinel (7) + bench (4) = 34
+- Smart agents: scout (23) + sentinel (7) + mesh (4: cluster_status, list_nodes, node_info, link_node) + bench (4) = 38
 - Data products: compliance (4) + 10 scaffolded x 2 = 24
 - Built-in: memories (4) + custom tools (3) + subagent (1) = 8
-- **Total: 89 tools**
+- **Total: 93 tools**
 
 ---
 
