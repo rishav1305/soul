@@ -1,0 +1,25 @@
+[Unit]
+Description=Soul v2 — Mesh Server
+After=network.target
+
+[Service]
+Type=simple
+User=rishav
+Group=rishav
+WorkingDirectory=/home/rishav/soul-v2
+ExecStart=/home/rishav/soul-v2/soul-mesh serve
+Restart=on-failure
+RestartSec=5
+Environment=SOUL_MESH_HOST=127.0.0.1
+Environment=SOUL_MESH_PORT=3024
+Environment=SOUL_MESH_ROLE=hub
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rishav/.soul-v2
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
