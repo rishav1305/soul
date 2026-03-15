@@ -817,9 +817,9 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 
 			path := r.URL.Path
 
-			// Exempt: SPA, static assets, service worker
-			if path == "/" || path == "/favicon.ico" || path == "/manifest.json" || path == "/sw.js" ||
-				strings.HasPrefix(path, "/assets/") {
+			// Only require auth for /api/* and /ws — everything else is SPA
+			// (static assets, SPA routes like /chat, /tasks, /tutor, etc.)
+			if !strings.HasPrefix(path, "/api/") && path != "/ws" {
 				next.ServeHTTP(w, r)
 				return
 			}
