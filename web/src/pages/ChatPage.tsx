@@ -30,6 +30,8 @@ export function ChatPage() {
     switchSession,
     deleteSession,
     renameSession,
+    activeProduct,
+    setProduct,
   } = useChatContext();
 
   const { isOpen, close, toggle, handlers } = useSwipeDrawer();
@@ -136,7 +138,7 @@ export function ChatPage() {
           <SearchBar query={searchQuery} onChange={setSearchQuery} onClose={closeSearch} matchCount={matchCount} />
         )}
         <MessageList messages={messages} isStreaming={isStreaming} onSend={sendMessage} onEdit={editAndResend} onRetry={retryMessage} searchQuery={searchQuery} />
-        <ChatInput ref={inputRef} onSend={sendMessage} onStop={stopGeneration} disabled={isDisabled} isStreaming={isStreaming} />
+        <ChatInput ref={inputRef} onSend={sendMessage} onStop={stopGeneration} disabled={isDisabled} isStreaming={isStreaming} activeProduct={activeProduct} onSetProduct={setProduct} />
       </div>
     </div>
   );

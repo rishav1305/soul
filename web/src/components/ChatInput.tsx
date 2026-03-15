@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { KeyboardEvent, ChangeEvent, ClipboardEvent, DragEvent } from 'react';
-import type { ChatInputProps, ChatAttachment } from '../lib/types';
+import type { ChatInputProps, ChatAttachment, ChatProduct } from '../lib/types';
 import { CommandPalette } from './CommandPalette';
 import type { SlashCommand } from './CommandPalette';
 
@@ -34,8 +34,20 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'debug', description: 'Debug an issue' },
 ];
 
+const PRODUCTS: { id: ChatProduct; name: string; icon: string }[] = [
+  { id: 'tasks', name: 'Tasks', icon: '☑' },
+  { id: 'tutor', name: 'Tutor', icon: '🎓' },
+  { id: 'projects', name: 'Projects', icon: '📋' },
+  { id: 'observe', name: 'Observe', icon: '👁' },
+];
+
 export interface ChatInputHandle {
   focus: () => void;
+}
+
+interface ChatInputExtendedProps extends ChatInputProps {
+  activeProduct?: ChatProduct;
+  onSetProduct?: (product: ChatProduct) => void;
 }
 
 const MODELS = [
@@ -86,7 +98,7 @@ interface SpeechRecognitionInstance {
   onend: (() => void) | null;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, disabled, isStreaming }, ref) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(function ChatInput({ onSend, onStop, disabled, isStreaming, activeProduct, onSetProduct }, ref) {
   const [value, setValue] = useState('');
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-opus-4-20250514');
   const [thinkingEnabled, setThinkingEnabled] = useState(() => {
@@ -96,6 +108,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [showProductMenu, setShowProductMenu] = useState(false);
+  const productMenuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +120,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
   }), []);
+
+  // Close product menu on outside click.
+  useEffect(() => {
+    if (!showProductMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (productMenuRef.current && !productMenuRef.current.contains(e.target as Node)) {
+        setShowProductMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showProductMenu]);
 
   // Focus textarea on mount.
   useEffect(() => {
@@ -372,6 +398,64 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
           {/* Toolbar */}
           <div className="flex items-center gap-1.5 px-3 py-2 border-t border-border-subtle">
+            {/* Product selector */}
+            <div ref={productMenuRef} className="relative">
+              <button
+                data-testid="product-selector-button"
+                type="button"
+                onClick={() => setShowProductMenu(prev => !prev)}
+                className={`h-7 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${
+                  activeProduct ? 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/25' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                }`}
+                title="Select product context"
+                aria-label="Select product context"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 4h12M4 8h8M6 12h4" />
+                  <circle cx="13" cy="4" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="11" cy="8" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                </svg>
+                {activeProduct && (
+                  <span
+                    data-testid="product-badge"
+                    className="text-[10px] font-mono text-blue-400"
+                  >
+                    {PRODUCTS.find(p => p.id === activeProduct)?.name ?? activeProduct}
+                  </span>
+                )}
+              </button>
+              {showProductMenu && (
+                <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-elevated border border-border-default rounded-xl shadow-xl shadow-black/30 py-1 min-w-[140px]">
+                  <button
+                    data-testid="product-option-none"
+                    type="button"
+                    onClick={() => { onSetProduct?.(''); setShowProductMenu(false); }}
+                    className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                      !activeProduct ? 'text-blue-400 bg-blue-500/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                    }`}
+                  >
+                    <span className="w-4 text-center">—</span>
+                    <span>None (general)</span>
+                  </button>
+                  {PRODUCTS.map(p => (
+                    <button
+                      key={p.id}
+                      data-testid={`product-option-${p.id}`}
+                      type="button"
+                      onClick={() => { onSetProduct?.(p.id); setShowProductMenu(false); }}
+                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                        activeProduct === p.id ? 'text-blue-400 bg-blue-500/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      }`}
+                    >
+                      <span className="w-4 text-center">{p.icon}</span>
+                      <span>{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Model selector */}
             <select
               data-testid="model-selector"
