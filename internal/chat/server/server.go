@@ -324,7 +324,7 @@ func New(opts ...Option) *Server {
 	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
-	handler = cspMiddleware(handler)
+	handler = securityHeadersMiddleware(handler)
 	handler = requestIDMiddleware(handler)
 	handler = recoveryMiddleware(handler)
 
@@ -837,16 +837,24 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 	}
 }
 
-// cspMiddleware sets security headers on every response.
+// securityHeadersMiddleware sets all security headers on every response.
 // connect-src allows ws:/wss: broadly because the frontend derives the WS URL
 // from window.location.host (supports localhost, LAN IP, etc.). Origin validation
 // at WebSocket upgrade provides the actual access control.
-func cspMiddleware(next http.Handler) http.Handler {
+func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+
+		// HSTS only when behind TLS (Cloudflare tunnel or direct TLS)
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
