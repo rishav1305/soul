@@ -1946,7 +1946,7 @@ func MaxIterations(workflow string) int {
 }
 ```
 
-Note: The full PhaseRunner (3-phase pipeline: impl → opus diff review → opus fix) depends on the executor's AgentLoop and stream.Client for non-streaming completion. This requires a `PhaseRunner.RunTask()` method that orchestrates 3 sequential agent runs with model switching. **This is deferred to Phase 1b** — a follow-up plan document covering PhaseRunner orchestration, subagent read-only tool execution, and comment watcher mini-agent spawning. This task establishes the config and iteration limits that PhaseRunner will use.
+Note: This task establishes the config and iteration limits. The full `PhaseRunner` with 3-phase pipeline is implemented in Task 16 below.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -2401,7 +2401,7 @@ func executeSubagent(ctx context.Context, sender Sender, inputJSON []byte, proje
 
 func executeReadOnlyTool(projectRoot, name, input string) string {
 	// TODO: implement file_read, file_search, file_grep, file_glob
-	// using projectRoot as base directory. Deferred to Phase 1b plan.
+	// using projectRoot as base directory. Implemented in Task 15 (subagent_tools.go).
 	return fmt.Sprintf("Tool %s not yet implemented", name)
 }
 ```
@@ -2548,7 +2548,921 @@ git commit -m "feat: add multi-session WebSocket with per-session agent contexts
 
 ---
 
-## Task 15: Static Verification + Final Commit
+## Task 15: Subagent Read-Only Tools
+
+**Files:**
+- Modify: `internal/chat/ws/subagent.go` (implement `executeReadOnlyTool`)
+- Create: `internal/chat/ws/subagent_tools.go` (shared read-only tool implementations)
+- Create: `internal/chat/ws/subagent_tools_test.go`
+
+**Ref:** Spec §3 (Subagent — read-only tools). Port from `internal/tasks/executor/tools.go` (file_read, list_files) with path traversal protection.
+
+- [ ] **Step 1: Write failing tests for read-only tools**
+
+Create `internal/chat/ws/subagent_tools_test.go`:
+
+```go
+package ws
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestReadOnlyTool_FileRead(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello world"), 0644)
+
+	result := executeReadOnlyTool(dir, "file_read", `{"path":"test.txt"}`)
+	if result != "hello world" {
+		t.Errorf("expected 'hello world', got: %s", result)
+	}
+}
+
+func TestReadOnlyTool_FileRead_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	result := executeReadOnlyTool(dir, "file_read", `{"path":"nope.txt"}`)
+	if result == "" {
+		t.Error("expected error message for missing file")
+	}
+}
+
+func TestReadOnlyTool_FileRead_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	result := executeReadOnlyTool(dir, "file_read", `{"path":"../../etc/passwd"}`)
+	if result == "" || result == "hello" {
+		t.Error("expected path traversal to be blocked")
+	}
+}
+
+func TestReadOnlyTool_FileRead_SizeLimit(t *testing.T) {
+	dir := t.TempDir()
+	// Write 200KB file
+	big := make([]byte, 200*1024)
+	for i := range big {
+		big[i] = 'x'
+	}
+	os.WriteFile(filepath.Join(dir, "big.txt"), big, 0644)
+
+	result := executeReadOnlyTool(dir, "file_read", `{"path":"big.txt"}`)
+	if len(result) > 105*1024 { // 100KB + some overhead for truncation message
+		t.Errorf("expected truncated result, got %d bytes", len(result))
+	}
+}
+
+func TestReadOnlyTool_FileSearch(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "src"), 0755)
+	os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte("package main"), 0644)
+	os.WriteFile(filepath.Join(dir, "src", "util.go"), []byte("package main"), 0644)
+
+	result := executeReadOnlyTool(dir, "file_search", `{"pattern":"*.go"}`)
+	if result == "" {
+		t.Error("expected file search results")
+	}
+}
+
+func TestReadOnlyTool_FileGrep(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.go"), []byte("func main() {\n\tfmt.Println(\"hello\")\n}"), 0644)
+
+	result := executeReadOnlyTool(dir, "file_grep", `{"pattern":"func main","path":"."}`)
+	if result == "" {
+		t.Error("expected grep results")
+	}
+}
+
+func TestReadOnlyTool_FileGlob(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644)
+	os.WriteFile(filepath.Join(dir, "c.go"), []byte("c"), 0644)
+
+	result := executeReadOnlyTool(dir, "file_glob", `{"pattern":"*.txt"}`)
+	if result == "" {
+		t.Error("expected glob results")
+	}
+}
+
+func TestReadOnlyTool_Unknown(t *testing.T) {
+	result := executeReadOnlyTool(t.TempDir(), "file_write", `{"path":"x","content":"y"}`)
+	if result == "" {
+		t.Error("expected error for disallowed tool")
+	}
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd /home/rishav/soul-v2 && go test ./internal/chat/ws/ -run TestReadOnlyTool -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement subagent_tools.go**
+
+Create `internal/chat/ws/subagent_tools.go`:
+
+```go
+package ws
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"context"
+	"time"
+)
+
+const maxFileReadBytes = 100 * 1024 // 100KB
+
+// executeReadOnlyTool dispatches read-only tools for the subagent.
+// Only file_read, file_search, file_grep, file_glob are allowed.
+func executeReadOnlyTool(projectRoot, name, input string) string {
+	switch name {
+	case "file_read":
+		return execROFileRead(projectRoot, input)
+	case "file_search":
+		return execROFileSearch(projectRoot, input)
+	case "file_grep":
+		return execROFileGrep(projectRoot, input)
+	case "file_glob":
+		return execROFileGlob(projectRoot, input)
+	default:
+		return fmt.Sprintf("error: tool %q is not available in read-only mode", name)
+	}
+}
+
+func resolvePath(rootDir, path string) (string, error) {
+	if path == "" {
+		return rootDir, nil
+	}
+	abs := filepath.Clean(filepath.Join(rootDir, path))
+	root := filepath.Clean(rootDir)
+	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal not allowed: %s", path)
+	}
+	return abs, nil
+}
+
+func execROFileRead(rootDir, input string) string {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return fmt.Sprintf("error: parse input: %v", err)
+	}
+	if params.Path == "" {
+		return "error: path is required"
+	}
+	abs, err := resolvePath(rootDir, params.Path)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	if len(data) > maxFileReadBytes {
+		return string(data[:maxFileReadBytes]) + "\n[truncated at 100KB]"
+	}
+	return string(data)
+}
+
+func execROFileSearch(rootDir, input string) string {
+	var params struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return fmt.Sprintf("error: parse input: %v", err)
+	}
+	if params.Pattern == "" {
+		return "error: pattern is required"
+	}
+	// Use find with -name pattern, limited to 500 results
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "find", ".", "-name", params.Pattern, "-type", "f",
+		"-not", "-path", "./.git/*",
+		"-not", "-path", "*/node_modules/*",
+		"-not", "-path", "*/.worktrees/*",
+		"-not", "-path", "*/dist/*")
+	cmd.Dir = rootDir
+	out, err := cmd.CombinedOutput()
+	if err != nil && ctx.Err() == nil {
+		return fmt.Sprintf("error: %v\n%s", err, out)
+	}
+	result := string(out)
+	lines := strings.Split(strings.TrimSpace(result), "\n")
+	if len(lines) > 500 {
+		lines = lines[:500]
+		result = strings.Join(lines, "\n") + "\n[truncated at 500 entries]"
+	}
+	if result == "" {
+		return "(no matches)"
+	}
+	return result
+}
+
+func execROFileGrep(rootDir, input string) string {
+	var params struct {
+		Pattern string `json:"pattern"`
+		Path    string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return fmt.Sprintf("error: parse input: %v", err)
+	}
+	if params.Pattern == "" {
+		return "error: pattern is required"
+	}
+	searchPath := rootDir
+	if params.Path != "" {
+		abs, err := resolvePath(rootDir, params.Path)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err)
+		}
+		searchPath = abs
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "grep", "-rn", "--include=*.go", "--include=*.ts", "--include=*.tsx",
+		"--include=*.js", "--include=*.yaml", "--include=*.yml", "--include=*.json", "--include=*.md",
+		params.Pattern, searchPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return "(no matches)"
+	}
+	result := string(out)
+	if len(result) > 50*1024 {
+		result = result[:50*1024] + "\n[truncated at 50KB]"
+	}
+	return result
+}
+
+func execROFileGlob(rootDir, input string) string {
+	var params struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return fmt.Sprintf("error: parse input: %v", err)
+	}
+	if params.Pattern == "" {
+		return "error: pattern is required"
+	}
+	matches, err := filepath.Glob(filepath.Join(rootDir, params.Pattern))
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	if len(matches) == 0 {
+		return "(no matches)"
+	}
+	var lines []string
+	for _, m := range matches {
+		rel, _ := filepath.Rel(rootDir, m)
+		lines = append(lines, rel)
+	}
+	if len(lines) > 500 {
+		lines = lines[:500]
+		lines = append(lines, "[truncated at 500 entries]")
+	}
+	return strings.Join(lines, "\n")
+}
+```
+
+- [ ] **Step 4: Update subagent.go to use real executeReadOnlyTool**
+
+Remove the stub `executeReadOnlyTool` from `subagent.go` — it's now in `subagent_tools.go`. The function signature matches: `executeReadOnlyTool(projectRoot, name, input string) string`.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `cd /home/rishav/soul-v2 && go test ./internal/chat/ws/ -run TestReadOnlyTool -v`
+Expected: ALL PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/chat/ws/subagent_tools.go internal/chat/ws/subagent_tools_test.go internal/chat/ws/subagent.go
+git commit -m "feat: implement subagent read-only tools (file_read, file_search, file_grep, file_glob)"
+```
+
+---
+
+## Task 16: PhaseRunner Orchestration
+
+**Files:**
+- Modify: `internal/tasks/phases/phases.go` (add PhaseRunner)
+- Modify: `internal/tasks/phases/phases_test.go`
+- Modify: `internal/tasks/executor/executor.go` (wire PhaseRunner)
+
+**Ref:** Spec §10 (3-phase pipeline: impl → opus diff review → opus fix)
+
+- [ ] **Step 1: Write failing tests for PhaseRunner**
+
+Add to `internal/tasks/phases/phases_test.go`:
+
+```go
+package phases
+
+import (
+	"context"
+	"testing"
+
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
+)
+
+// mockSender implements the Sender interface for testing.
+type mockSender struct {
+	responses []*stream.Response
+	callCount int
+}
+
+func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	if m.callCount >= len(m.responses) {
+		return &stream.Response{
+			StopReason: "end_turn",
+			Content:    []stream.ContentBlock{{Type: "text", Text: "LGTM"}},
+			Usage:      &stream.Usage{InputTokens: 100, OutputTokens: 50},
+		}, nil
+	}
+	resp := m.responses[m.callCount]
+	m.callCount++
+	return resp, nil
+}
+
+func TestPhaseRunner_Micro(t *testing.T) {
+	sender := &mockSender{
+		responses: []*stream.Response{
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "Done implementing"}},
+				Usage:      &stream.Usage{InputTokens: 500, OutputTokens: 200},
+			},
+		},
+	}
+
+	pr := NewPhaseRunner(sender, DefaultConfig(), ".")
+	result, err := pr.RunTask(context.Background(), "micro", "implement hello world", "You are a developer.")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Text == "" {
+		t.Error("expected non-empty result text")
+	}
+	if result.Iterations != 1 {
+		t.Errorf("expected 1 iteration for micro, got %d", result.Iterations)
+	}
+}
+
+func TestPhaseRunner_Full_LGTM(t *testing.T) {
+	sender := &mockSender{
+		responses: []*stream.Response{
+			// Phase 1: implementation
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "Implementation complete"}},
+				Usage:      &stream.Usage{InputTokens: 1000, OutputTokens: 500},
+			},
+			// Phase 2: diff review — LGTM means no fix needed
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "LGTM"}},
+				Usage:      &stream.Usage{InputTokens: 800, OutputTokens: 50},
+			},
+		},
+	}
+
+	pr := NewPhaseRunner(sender, DefaultConfig(), ".")
+	result, err := pr.RunTask(context.Background(), "full", "build feature X", "You are a developer.")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Text == "" {
+		t.Error("expected non-empty result text")
+	}
+	// Should have called impl + review = 2 calls, no fix phase
+	if sender.callCount != 2 {
+		t.Errorf("expected 2 sender calls (impl + review), got %d", sender.callCount)
+	}
+}
+
+func TestPhaseRunner_Full_WithFix(t *testing.T) {
+	sender := &mockSender{
+		responses: []*stream.Response{
+			// Phase 1: implementation
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "Implementation complete"}},
+				Usage:      &stream.Usage{InputTokens: 1000, OutputTokens: 500},
+			},
+			// Phase 2: diff review — issues found
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "Missing error handling in handler.go line 42"}},
+				Usage:      &stream.Usage{InputTokens: 800, OutputTokens: 200},
+			},
+			// Phase 3: fix
+			{
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "Fixed error handling"}},
+				Usage:      &stream.Usage{InputTokens: 600, OutputTokens: 300},
+			},
+		},
+	}
+
+	pr := NewPhaseRunner(sender, DefaultConfig(), ".")
+	result, err := pr.RunTask(context.Background(), "full", "build feature X", "You are a developer.")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Text == "" {
+		t.Error("expected non-empty result text")
+	}
+	// Should have called impl + review + fix = 3 calls
+	if sender.callCount != 3 {
+		t.Errorf("expected 3 sender calls (impl + review + fix), got %d", sender.callCount)
+	}
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd /home/rishav/soul-v2 && go test ./internal/tasks/phases/ -run TestPhaseRunner -v`
+Expected: FAIL — `NewPhaseRunner` and `RunTask` not defined
+
+- [ ] **Step 3: Implement PhaseRunner in phases.go**
+
+Add to `internal/tasks/phases/phases.go`:
+
+```go
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
+)
+
+// Sender is satisfied by *stream.Client and test mocks.
+type Sender interface {
+	Send(ctx context.Context, req *stream.Request) (*stream.Response, error)
+}
+
+// PhaseResult summarizes a completed phase run.
+type PhaseResult struct {
+	Text              string
+	Iterations        int
+	TotalInputTokens  int
+	TotalOutputTokens int
+}
+
+// PhaseRunner orchestrates the 3-phase pipeline: impl → review → fix.
+type PhaseRunner struct {
+	sender    Sender
+	config    PhaseConfig
+	taskRoot  string
+}
+
+func NewPhaseRunner(sender Sender, config PhaseConfig, taskRoot string) *PhaseRunner {
+	return &PhaseRunner{sender: sender, config: config, taskRoot: taskRoot}
+}
+
+// RunTask dispatches by workflow type.
+func (pr *PhaseRunner) RunTask(ctx context.Context, workflow, prompt, systemPrompt string) (*PhaseResult, error) {
+	maxIter := MaxIterations(workflow)
+	result := &PhaseResult{}
+
+	// Phase 1: Implementation
+	implResp, err := pr.runAgent(ctx, systemPrompt, prompt, maxIter)
+	if err != nil {
+		return nil, fmt.Errorf("phase 1 (impl): %w", err)
+	}
+	result.Text = implResp.text
+	result.Iterations += implResp.iterations
+	result.TotalInputTokens += implResp.inputTokens
+	result.TotalOutputTokens += implResp.outputTokens
+
+	if workflow == "micro" {
+		return result, nil
+	}
+
+	// Phase 2: Opus diff review
+	diff := pr.getGitDiff(ctx)
+	if diff == "" {
+		return result, nil // nothing to review
+	}
+	if len(diff) > 15000 {
+		diff = diff[:15000] + "\n... [truncated]"
+	}
+
+	reviewPrompt := fmt.Sprintf(`Review this diff for:
+- Removed declarations still referenced elsewhere
+- Logic errors or off-by-one mistakes
+- Missing/unused imports
+- Type mismatches or wrong signatures
+- Broken references
+
+If correct, respond with exactly "LGTM" (nothing else).
+Else list issues.
+
+Diff:
+%s`, diff)
+
+	reviewResp, err := pr.sender.Send(ctx, &stream.Request{
+		System:    "You are a senior code reviewer. Be precise.",
+		Messages:  []stream.Message{{Role: "user", Content: []stream.ContentBlock{{Type: "text", Text: reviewPrompt}}}},
+		MaxTokens: 4096,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("phase 2 (review): %w", err)
+	}
+	result.TotalInputTokens += reviewResp.Usage.InputTokens
+	result.TotalOutputTokens += reviewResp.Usage.OutputTokens
+	result.Iterations++
+
+	reviewText := ""
+	for _, cb := range reviewResp.Content {
+		if cb.Type == "text" {
+			reviewText += cb.Text
+		}
+	}
+	reviewText = strings.TrimSpace(reviewText)
+	if strings.HasPrefix(reviewText, "LGTM") {
+		return result, nil
+	}
+
+	// Phase 3: Opus fix agent
+	fixPrompt := fmt.Sprintf("Fix these issues found during code review:\n\n%s", reviewText)
+	fixResp, err := pr.runAgent(ctx, systemPrompt, fixPrompt, 20)
+	if err != nil {
+		return nil, fmt.Errorf("phase 3 (fix): %w", err)
+	}
+	result.Text = fixResp.text
+	result.Iterations += fixResp.iterations
+	result.TotalInputTokens += fixResp.inputTokens
+	result.TotalOutputTokens += fixResp.outputTokens
+
+	return result, nil
+}
+
+type agentRun struct {
+	text         string
+	iterations   int
+	inputTokens  int
+	outputTokens int
+}
+
+// runAgent runs a simple non-tool agent loop (for now — tool support via executor).
+func (pr *PhaseRunner) runAgent(ctx context.Context, system, prompt string, maxIter int) (*agentRun, error) {
+	messages := []stream.Message{
+		{Role: "user", Content: []stream.ContentBlock{{Type: "text", Text: prompt}}},
+	}
+
+	run := &agentRun{}
+	for i := 0; i < maxIter; i++ {
+		resp, err := pr.sender.Send(ctx, &stream.Request{
+			System:    system,
+			Messages:  messages,
+			MaxTokens: 16384,
+		})
+		if err != nil {
+			return nil, err
+		}
+		run.iterations++
+		run.inputTokens += resp.Usage.InputTokens
+		run.outputTokens += resp.Usage.OutputTokens
+
+		for _, cb := range resp.Content {
+			if cb.Type == "text" {
+				run.text = cb.Text
+			}
+		}
+
+		if resp.StopReason == "end_turn" || resp.StopReason == "" {
+			break
+		}
+		// If tool_use, we'd handle it here — but PhaseRunner delegates
+		// tool-calling to the executor's AgentLoop. This is a simplified
+		// orchestration layer that handles the 3-phase pipeline only.
+		break
+	}
+	return run, nil
+}
+
+func (pr *PhaseRunner) getGitDiff(ctx context.Context) string {
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "git", "diff", "HEAD")
+	cmd.Dir = pr.taskRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// Try diff against dev branch
+		cmd2 := exec.CommandContext(ctx2, "git", "diff", "dev")
+		cmd2.Dir = pr.taskRoot
+		out2, err2 := cmd2.CombinedOutput()
+		if err2 != nil {
+			return ""
+		}
+		return string(out2)
+	}
+	return string(out)
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd /home/rishav/soul-v2 && go test ./internal/tasks/phases/ -v`
+Expected: ALL PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/tasks/phases/phases.go internal/tasks/phases/phases_test.go
+git commit -m "feat: add PhaseRunner with 3-phase pipeline (impl → review → fix)"
+```
+
+---
+
+## Task 17: Comment Watcher Mini-Agent
+
+**Files:**
+- Modify: `internal/tasks/watcher/watcher.go` (replace stub with real agent)
+- Modify: `internal/tasks/watcher/watcher_test.go`
+
+**Ref:** Spec §8 (Comment Watcher — spawn mini-agent)
+
+- [ ] **Step 1: Update CommentWatcher to accept a Sender**
+
+Modify the `CommentWatcher` struct to include a `Sender` field and `projectRoot`:
+
+```go
+type Sender interface {
+	Send(ctx context.Context, req *stream.Request) (*stream.Response, error)
+}
+
+type CommentWatcher struct {
+	store       *store.Store
+	sender      Sender
+	projectRoot string
+	lastID      int64
+}
+
+func New(s *store.Store, sender Sender, projectRoot string) *CommentWatcher {
+	return &CommentWatcher{store: s, sender: sender, projectRoot: projectRoot}
+}
+```
+
+- [ ] **Step 2: Replace stub poll() with mini-agent dispatch**
+
+Update `poll()` in `watcher.go` — replace the placeholder reply with a real agent call:
+
+```go
+func (cw *CommentWatcher) poll(ctx context.Context) {
+	comments, err := cw.store.CommentsAfter(cw.lastID)
+	if err != nil {
+		log.Printf("watcher: poll error: %v", err)
+		return
+	}
+	for _, c := range comments {
+		cw.lastID = c.ID
+		task, err := cw.store.Get(c.TaskID)
+		if err != nil {
+			log.Printf("watcher: get task %d: %v", c.TaskID, err)
+			continue
+		}
+		actionable := task.Stage == "active" || task.Stage == "validation" || task.Stage == "blocked"
+		if !actionable {
+			cw.store.InsertComment(c.TaskID, "soul", "status",
+				"Task is in "+task.Stage+" — comment noted but no action taken.")
+			continue
+		}
+		cw.handleComment(ctx, c, task)
+	}
+}
+
+func (cw *CommentWatcher) handleComment(ctx context.Context, comment store.Comment, task store.Task) {
+	if cw.sender == nil {
+		cw.store.InsertComment(comment.TaskID, "soul", "status",
+			"Received feedback. Agent not configured.")
+		return
+	}
+
+	// Load all comments on task for context
+	allComments, err := cw.store.GetComments(comment.TaskID)
+	if err != nil {
+		log.Printf("watcher: load comments for task %d: %v", comment.TaskID, err)
+		return
+	}
+
+	// Build feedback prompt
+	var history strings.Builder
+	for _, c := range allComments {
+		history.WriteString(fmt.Sprintf("[%s] %s: %s\n", c.CreatedAt, c.Author, c.Body))
+	}
+
+	prompt := fmt.Sprintf(`Task: %s
+Description: %s
+Stage: %s
+
+Comment history:
+%s
+
+Latest comment from user:
+%s
+
+Respond to the user's feedback. Analyze the comment, provide findings or take action.
+- Do NOT run git commands
+- Do NOT modify the task description
+- Post your analysis as a response`, task.Title, task.Description, task.Stage, history.String(), comment.Body)
+
+	agentCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	resp, err := cw.sender.Send(agentCtx, &stream.Request{
+		System:    "You are a development agent responding to task feedback. Be concise and actionable.",
+		Messages:  []stream.Message{{Role: "user", Content: []stream.ContentBlock{{Type: "text", Text: prompt}}}},
+		MaxTokens: 4096,
+	})
+	if err != nil {
+		log.Printf("watcher: agent call for task %d: %v", comment.TaskID, err)
+		cw.store.InsertComment(comment.TaskID, "soul", "status",
+			fmt.Sprintf("Error processing feedback: %v", err))
+		return
+	}
+
+	// Extract text response
+	var responseText string
+	for _, cb := range resp.Content {
+		if cb.Type == "text" {
+			responseText += cb.Text
+		}
+	}
+	if responseText == "" {
+		responseText = "(no response generated)"
+	}
+
+	cw.store.InsertComment(comment.TaskID, "soul", "status", responseText)
+}
+```
+
+- [ ] **Step 3: Update test to use mock sender**
+
+Update `internal/tasks/watcher/watcher_test.go`:
+
+```go
+package watcher
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul-v2/internal/tasks/store"
+)
+
+type mockSender struct {
+	called bool
+}
+
+func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	m.called = true
+	return &stream.Response{
+		StopReason: "end_turn",
+		Content:    []stream.ContentBlock{{Type: "text", Text: "I've reviewed the feedback and will address it."}},
+		Usage:      &stream.Usage{InputTokens: 200, OutputTokens: 50},
+	}, nil
+}
+
+func TestWatcher_PollsComments_WithAgent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.Close()
+
+	task, _ := s.Create("Test", "", "")
+	s.Update(task.ID, map[string]interface{}{"stage": "active"})
+	s.InsertComment(task.ID, "user", "feedback", "Please fix the bug")
+
+	sender := &mockSender{}
+	cw := New(s, sender, ".")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	cw.poll(ctx)
+
+	if !sender.called {
+		t.Error("expected sender to be called for actionable comment")
+	}
+
+	comments, _ := s.GetComments(task.ID)
+	foundSoulReply := false
+	for _, c := range comments {
+		if c.Author == "soul" && c.Body == "I've reviewed the feedback and will address it." {
+			foundSoulReply = true
+		}
+	}
+	if !foundSoulReply {
+		t.Error("expected soul reply with agent response")
+	}
+}
+
+func TestWatcher_SkipsNonActionable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.Close()
+
+	task, _ := s.Create("Backlog task", "", "")
+	s.InsertComment(task.ID, "user", "feedback", "Hello")
+
+	sender := &mockSender{}
+	cw := New(s, sender, ".")
+	ctx := context.Background()
+	cw.poll(ctx)
+
+	if sender.called {
+		t.Error("sender should NOT be called for non-actionable task")
+	}
+
+	comments, _ := s.GetComments(task.ID)
+	found := false
+	for _, c := range comments {
+		if c.Author == "soul" && c.Body == "Task is in backlog — comment noted but no action taken." {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected non-actionable reply from soul")
+	}
+}
+
+func TestWatcher_NilSender(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.Close()
+
+	task, _ := s.Create("Test", "", "")
+	s.Update(task.ID, map[string]interface{}{"stage": "active"})
+	s.InsertComment(task.ID, "user", "feedback", "Hello")
+
+	cw := New(s, nil, ".")
+	ctx := context.Background()
+	cw.poll(ctx)
+
+	comments, _ := s.GetComments(task.ID)
+	found := false
+	for _, c := range comments {
+		if c.Author == "soul" && c.Body == "Received feedback. Agent not configured." {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected fallback reply when sender is nil")
+	}
+}
+```
+
+- [ ] **Step 4: Add required imports to watcher.go**
+
+```go
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul-v2/internal/tasks/store"
+)
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `cd /home/rishav/soul-v2 && go test ./internal/tasks/watcher/ -v`
+Expected: ALL PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/tasks/watcher/watcher.go internal/tasks/watcher/watcher_test.go
+git commit -m "feat: implement comment watcher mini-agent with Claude API dispatch"
+```
+
+---
+
+## Task 18: Static Verification + Final Commit
 
 - [ ] **Step 1: Run make verify-static**
 
@@ -2591,5 +3505,8 @@ git commit -m "fix: resolve verification issues from cross-cutting capabilities"
 | 12 | Subagent tool | 3 | 3 |
 | 13 | Context tool defs | 2 | 1 (update) |
 | 14 | Multi-session WS | 1 | 0 (uses existing) |
-| 15 | Verification | 0 | 0 (runs suite) |
-| **Total** | | **~34 files** | **~50 tests** |
+| 15 | Subagent read-only tools | 3 | 7 |
+| 16 | PhaseRunner orchestration | 2 | 3 |
+| 17 | Comment watcher agent | 2 | 3 |
+| 18 | Verification | 0 | 0 (runs suite) |
+| **Total** | | **~41 files** | **~63 tests** |
