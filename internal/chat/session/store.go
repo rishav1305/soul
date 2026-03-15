@@ -65,6 +65,7 @@ type Session struct {
 	MessageCount int       `json:"messageCount"`
 	LastMessage  string    `json:"lastMessage"`
 	UnreadCount  int       `json:"unreadCount"`
+	Product      string    `json:"product"`
 }
 
 // Message represents a single message within a session.
@@ -149,7 +150,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     status TEXT NOT NULL DEFAULT 'idle',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    message_count INTEGER NOT NULL DEFAULT 0
+    message_count INTEGER NOT NULL DEFAULT 0,
+    product TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -170,6 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, 
 	for _, alt := range []string{
 		"ALTER TABLE sessions ADD COLUMN last_message TEXT DEFAULT ''",
 		"ALTER TABLE sessions ADD COLUMN unread_count INTEGER DEFAULT 0",
+		"ALTER TABLE sessions ADD COLUMN product TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := s.db.Exec(alt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -233,13 +236,14 @@ func (s *Store) CreateSession(title string) (*Session, error) {
 	}
 
 	_, err := s.db.Exec(
-		"INSERT INTO sessions (id, title, status, created_at, updated_at, message_count, last_message, unread_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO sessions (id, title, status, created_at, updated_at, message_count, last_message, unread_count, product) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		sess.ID, sess.Title, string(sess.Status),
 		sess.CreatedAt.Format(time.RFC3339Nano),
 		sess.UpdatedAt.Format(time.RFC3339Nano),
 		sess.MessageCount,
 		sess.LastMessage,
 		sess.UnreadCount,
+		sess.Product,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: create: %w", err)
@@ -257,9 +261,9 @@ func (s *Store) GetSession(id string) (*Session, error) {
 	sess := &Session{}
 	var createdAt, updatedAt, status string
 	err := s.db.QueryRow(
-		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count FROM sessions WHERE id = ?",
+		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count, product FROM sessions WHERE id = ?",
 		id,
-	).Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount)
+	).Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount, &sess.Product)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session: not found: %s", id)
 	}
@@ -283,7 +287,7 @@ func (s *Store) GetSession(id string) (*Session, error) {
 // ListSessions returns all sessions ordered by updated_at descending.
 func (s *Store) ListSessions() ([]*Session, error) {
 	rows, err := s.db.Query(
-		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count FROM sessions ORDER BY updated_at DESC",
+		"SELECT id, title, status, created_at, updated_at, message_count, last_message, unread_count, product FROM sessions ORDER BY updated_at DESC",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session: list: %w", err)
@@ -294,7 +298,7 @@ func (s *Store) ListSessions() ([]*Session, error) {
 	for rows.Next() {
 		sess := &Session{}
 		var createdAt, updatedAt, status string
-		if err := rows.Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount); err != nil {
+		if err := rows.Scan(&sess.ID, &sess.Title, &status, &createdAt, &updatedAt, &sess.MessageCount, &sess.LastMessage, &sess.UnreadCount, &sess.Product); err != nil {
 			return nil, fmt.Errorf("session: scan row: %w", err)
 		}
 		sess.Status = Status(status)
@@ -575,6 +579,27 @@ func (s *Store) SetLastMessage(id, content string) error {
 	_, err := s.db.Exec("UPDATE sessions SET last_message = ? WHERE id = ?", preview, id)
 	if err != nil {
 		return fmt.Errorf("session: set last message: %w", err)
+	}
+	return nil
+}
+
+// SetProduct sets the product for a session.
+// Valid products are: "" (none), "tasks", "tutor", "projects", "observe".
+func (s *Store) SetProduct(sessionID, product string) error {
+	valid := map[string]bool{"": true, "tasks": true, "tutor": true, "projects": true, "observe": true}
+	if !valid[product] {
+		return fmt.Errorf("invalid product: %q", product)
+	}
+	result, err := s.db.Exec(
+		`UPDATE sessions SET product = ?, updated_at = ? WHERE id = ?`,
+		product, time.Now().UTC(), sessionID,
+	)
+	if err != nil {
+		return fmt.Errorf("set product: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("session not found: %s", sessionID)
 	}
 	return nil
 }

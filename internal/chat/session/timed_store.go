@@ -148,6 +148,14 @@ func (ts *TimedStore) SetLastMessage(id, content string) error {
 	return err
 }
 
+// SetProduct sets the product for a session and logs timing.
+func (ts *TimedStore) SetProduct(sessionID, product string) error {
+	start := time.Now()
+	err := ts.inner.SetProduct(sessionID, product)
+	ts.logQuery("SetProduct", start, sessionID)
+	return err
+}
+
 // Close closes the underlying database connection without timing instrumentation.
 func (ts *TimedStore) Close() error {
 	return ts.inner.Close()

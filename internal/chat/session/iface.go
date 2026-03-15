@@ -17,5 +17,6 @@ type StoreInterface interface {
 	RunInTransaction(fn func(tx *sql.Tx) error) error
 	ResetUnreadCount(id string) error
 	SetLastMessage(id, content string) error
+	SetProduct(sessionID, product string) error
 	Close() error
 }
