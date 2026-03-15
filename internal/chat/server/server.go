@@ -48,6 +48,10 @@ type Server struct {
 	qualityProxy  *simpleProxy
 	dataProxy     *simpleProxy
 	docsProxy     *simpleProxy
+	scoutProxy    *simpleProxy
+	sentinelProxy *simpleProxy
+	meshProxy     *simpleProxy
+	benchProxy    *simpleProxy
 }
 
 // Option configures a Server.
@@ -152,6 +156,34 @@ func WithDocsProxy() Option {
 	}
 }
 
+// WithScoutProxy enables the reverse proxy to the scout server.
+func WithScoutProxy() Option {
+	return func(s *Server) {
+		s.scoutProxy = newSimpleProxy("SOUL_SCOUT_URL", "http://127.0.0.1:3020", "/api/scout", "scout")
+	}
+}
+
+// WithSentinelProxy enables the reverse proxy to the sentinel server.
+func WithSentinelProxy() Option {
+	return func(s *Server) {
+		s.sentinelProxy = newSimpleProxy("SOUL_SENTINEL_URL", "http://127.0.0.1:3022", "/api/sentinel", "sentinel")
+	}
+}
+
+// WithMeshProxy enables the reverse proxy to the mesh server.
+func WithMeshProxy() Option {
+	return func(s *Server) {
+		s.meshProxy = newSimpleProxy("SOUL_MESH_URL", "http://127.0.0.1:3024", "/api/mesh", "mesh")
+	}
+}
+
+// WithBenchProxy enables the reverse proxy to the bench server.
+func WithBenchProxy() Option {
+	return func(s *Server) {
+		s.benchProxy = newSimpleProxy("SOUL_BENCH_URL", "http://127.0.0.1:3026", "/api/bench", "bench")
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -240,6 +272,30 @@ func New(opts ...Option) *Server {
 	if s.docsProxy != nil {
 		s.mux.Handle("/api/docs/", s.docsProxy)
 		s.mux.Handle("/api/docs", s.docsProxy)
+	}
+
+	// Scout server proxy — forward /api/scout/* to scout server.
+	if s.scoutProxy != nil {
+		s.mux.Handle("/api/scout/", s.scoutProxy)
+		s.mux.Handle("/api/scout", s.scoutProxy)
+	}
+
+	// Sentinel server proxy — forward /api/sentinel/* to sentinel server.
+	if s.sentinelProxy != nil {
+		s.mux.Handle("/api/sentinel/", s.sentinelProxy)
+		s.mux.Handle("/api/sentinel", s.sentinelProxy)
+	}
+
+	// Mesh server proxy — forward /api/mesh/* to mesh server.
+	if s.meshProxy != nil {
+		s.mux.Handle("/api/mesh/", s.meshProxy)
+		s.mux.Handle("/api/mesh", s.meshProxy)
+	}
+
+	// Bench server proxy — forward /api/bench/* to bench server.
+	if s.benchProxy != nil {
+		s.mux.Handle("/api/bench/", s.benchProxy)
+		s.mux.Handle("/api/bench", s.benchProxy)
 	}
 
 	// WebSocket route — must be registered before SPA fallback.

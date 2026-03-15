@@ -14,6 +14,7 @@ func TestForProduct_ReturnsCorrectContext(t *testing.T) {
 		"compliance", "qa", "analytics",
 		"dataeng", "costops", "viz",
 		"docs", "api",
+		"sentinel", "bench", "mesh", "scout",
 	}
 	for _, p := range products {
 		ctx := ForProduct(p)
@@ -57,12 +58,14 @@ func TestToolCounts(t *testing.T) {
 	// tasks=6+8=14, tutor=7+8=15, projects=6+8=14, observe=4+8=12
 	// infra(devops/dba/migrate)=6+8=14, quality(compliance/qa/analytics)=8+8=16
 	// dataprod(dataeng/costops/viz)=6+8=14, docsprod(docs/api)=4+8=12
+	// sentinel=7+8=15, bench=4+8=12, mesh=4+8=12, scout=21+8=29
 	expected := map[string]int{
 		"tasks": 14, "tutor": 15, "projects": 14, "observe": 12,
 		"devops": 14, "dba": 14, "migrate": 14,
 		"compliance": 16, "qa": 16, "analytics": 16,
 		"dataeng": 14, "costops": 14, "viz": 14,
 		"docs": 12, "api": 12,
+		"sentinel": 15, "bench": 12, "mesh": 12, "scout": 29,
 	}
 	for product, count := range expected {
 		ctx := ForProduct(product)
@@ -94,6 +97,7 @@ func TestDispatcher_RoutesExist(t *testing.T) {
 		"compliance", "qa", "analytics",
 		"dataeng", "costops", "viz",
 		"docs", "api",
+		"sentinel", "bench", "mesh", "scout",
 	} {
 		ctx := ForProduct(product)
 		for _, tool := range ctx.Tools {

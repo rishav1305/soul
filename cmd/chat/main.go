@@ -158,6 +158,12 @@ func runServe() {
 	serverOpts = append(serverOpts, server.WithDataProxy())
 	serverOpts = append(serverOpts, server.WithDocsProxy())
 
+	// Enable scout, sentinel, mesh, bench server proxies.
+	serverOpts = append(serverOpts, server.WithScoutProxy())
+	serverOpts = append(serverOpts, server.WithSentinelProxy())
+	serverOpts = append(serverOpts, server.WithMeshProxy())
+	serverOpts = append(serverOpts, server.WithBenchProxy())
+
 	srv := server.New(serverOpts...)
 
 	// Start tasks server SSE relay.

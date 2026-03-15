@@ -30,6 +30,14 @@ func ForProduct(product string) ProductContext {
 		ctx = dataprodContext()
 	case "docs", "api":
 		ctx = docsprodContext()
+	case "sentinel":
+		ctx = sentinelContext()
+	case "bench":
+		ctx = benchContext()
+	case "mesh":
+		ctx = meshContext()
+	case "scout":
+		ctx = scoutContext()
 	default:
 		return Default()
 	}
