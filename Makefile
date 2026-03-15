@@ -1,9 +1,9 @@
-.PHONY: build build-go build-tasks build-tutor build-projects build-observe web serve types clean deploy
+.PHONY: build build-go build-tasks build-tutor build-projects build-observe build-infra build-quality build-data build-docs web serve types clean deploy
 .PHONY: verify verify-static verify-unit verify-integ verify-e2e verify-review
 .PHONY: check-bundle check-secrets check-deps
 
 # Build
-build: web build-go build-tasks build-tutor build-projects build-observe
+build: web build-go build-tasks build-tutor build-projects build-observe build-infra build-quality build-data build-docs
 build-go:
 	go build -o soul-chat ./cmd/chat
 build-tasks:
@@ -14,12 +14,20 @@ build-projects:
 	go build -o soul-projects ./cmd/projects
 build-observe:
 	go build -o soul-observe ./cmd/observe
+build-infra:
+	go build -o soul-infra ./cmd/infra
+build-quality:
+	go build -o soul-quality ./cmd/quality
+build-data:
+	go build -o soul-data ./cmd/data
+build-docs:
+	go build -o soul-docs ./cmd/docs
 web:
 	cd web && npx vite build
 serve: build
-	./soul-chat serve & ./soul-tasks serve & ./soul-tutor serve & ./soul-projects serve & ./soul-observe serve & wait
+	./soul-chat serve & ./soul-tasks serve & ./soul-tutor serve & ./soul-projects serve & ./soul-observe serve & ./soul-infra serve & ./soul-quality serve & ./soul-data serve & ./soul-docs serve & wait
 clean:
-	rm -f soul-chat soul-tasks soul-tutor soul-projects soul-observe
+	rm -f soul-chat soul-tasks soul-tutor soul-projects soul-observe soul-infra soul-quality soul-data soul-docs
 	rm -rf web/dist
 
 # Generate
