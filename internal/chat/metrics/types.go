@@ -67,6 +67,27 @@ const (
 	EventFrontendRender = "frontend.render"
 	EventFrontendWS     = "frontend.ws"
 	EventFrontendUsage  = "frontend.usage"
+
+	// System lifecycle (extended)
+	EventSystemExit = "system.exit"
+
+	// Auth events
+	EventAuthFail = "auth.fail"
+	EventAuthOK   = "auth.ok"
+
+	// WebSocket lifecycle (extended)
+	EventWSClose            = "ws.close"
+	EventWSReconnectAttempt = "ws.reconnect.attempt"
+	EventWSReconnectSuccess = "ws.reconnect.success"
+	EventWSReconnectFail    = "ws.reconnect.fail"
+
+	// Stream lifecycle (extended)
+	EventWSStreamResume = "ws.stream.resume"
+
+	// Frontend telemetry (extended)
+	EventFrontendWSDisconnect = "frontend.ws.disconnect"
+	EventFrontendWSReconnect  = "frontend.ws.reconnect"
+	EventFrontendAuthFail     = "frontend.auth.fail"
 )
 
 // Error taxonomy constants — categories for classifying errors.
