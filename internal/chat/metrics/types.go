@@ -16,6 +16,7 @@ const (
 
 	// WebSocket events
 	EventWSConnect     = "ws.connect"
+	EventWSUpgrade     = "ws.upgrade"
 	EventWSDisconnect  = "ws.disconnect"
 	EventWSStreamStart = "ws.stream.start"
 	EventWSStreamToken = "ws.stream.token"
