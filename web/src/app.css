@@ -167,6 +167,11 @@ body {
   animation: cursor-blink 1s step-end infinite;
 }
 
+/* ─── Sidebar ─── */
+
+.sidebar-transition { transition: width 200ms ease, padding 200ms ease; }
+.sessions-transition { transition: width 200ms ease, opacity 150ms ease; }
+
 /* ─── Stream bar ─── */
 
 .stream-bar {
