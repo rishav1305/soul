@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
@@ -12,11 +13,11 @@ import (
 )
 
 // connectWS connects to the test server's WebSocket endpoint.
-func connectWS(t *testing.T, url, token string) *websocket.Conn {
+func connectWS(t *testing.T, baseURL, authToken string) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, url+"?token="+token, nil)
+	conn, _, err := websocket.Dial(ctx, fmt.Sprintf("%s?token=%s", baseURL, authToken), nil)
 	if err != nil {
 		t.Fatalf("ws connect: %v", err)
 	}
