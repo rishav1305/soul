@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct, ThinkingConfig } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
-import { reportError, reportWSLatency, reportUsage } from '../lib/telemetry';
+import { reportError, reportWSLatency, reportUsage, reportAuthFailure } from '../lib/telemetry';
 
 interface UseChatReturn {
   messages: Message[];
@@ -305,8 +305,16 @@ export function useChat(): UseChatReturn {
           const payload = data as { error: string } | undefined;
           const errorContent = payload?.error ?? 'An unknown error occurred';
 
-          if (errorContent.toLowerCase().includes('authentication')) {
+          const errorLower = errorContent.toLowerCase();
+          const isAuth = errorLower.includes('authentication') ||
+                         errorLower.includes('unauthorized') ||
+                         errorLower.includes('401');
+          if (isAuth) {
             setAuthError(true);
+            reportAuthFailure({
+              source: 'api',
+              reason: errorContent,
+            });
           }
 
           setMessages(prev => {
