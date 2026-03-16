@@ -904,8 +904,15 @@ func rateLimitMiddleware(rpm int) func(http.Handler) http.Handler {
 		}()
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only rate-limit API routes.
+			// Only rate-limit API routes (skip static files and high-frequency endpoints).
 			if !strings.HasPrefix(r.URL.Path, "/api/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Exempt telemetry, health, and auth status from rate limiting —
+			// these are high-frequency or monitoring endpoints.
+			switch r.URL.Path {
+			case "/api/telemetry", "/api/health", "/api/auth/status", "/api/models":
 				next.ServeHTTP(w, r)
 				return
 			}
