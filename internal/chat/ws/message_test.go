@@ -437,6 +437,29 @@ func TestMarshalOutbound_EmptySessionID_Omitted(t *testing.T) {
 	}
 }
 
+func TestNewToolProgress_MessageStructure(t *testing.T) {
+	msg := NewToolProgress("sess-1", "toolu_abc", "step", "Calling search...", -1, 1710600000000)
+	if msg.Type != TypeToolProgress {
+		t.Errorf("type = %q, want %q", msg.Type, TypeToolProgress)
+	}
+	if msg.SessionID != "sess-1" {
+		t.Errorf("sessionID = %q, want sess-1", msg.SessionID)
+	}
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not map")
+	}
+	if data["id"] != "toolu_abc" {
+		t.Errorf("id = %v, want toolu_abc", data["id"])
+	}
+	if data["event"] != "step" {
+		t.Errorf("event = %v, want step", data["event"])
+	}
+	if _, hasProgress := data["progress"]; hasProgress {
+		t.Error("progress field should be omitted when sentinel -1 is passed")
+	}
+}
+
 func TestMarshalOutbound_RoundTrip(t *testing.T) {
 	original := &OutboundMessage{
 		Type:      TypeChatToken,

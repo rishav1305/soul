@@ -737,6 +737,11 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 					inputJSON = json.RawMessage("{}")
 				}
 
+				// Emit tool.progress: calling (before dispatch).
+				h.sendToClient(client, NewToolProgress(sessionID, tc.ID, "step",
+					fmt.Sprintf("Calling %s...", tc.Name), -1, time.Now().UnixMilli()))
+
+				dispatchStart := time.Now()
 				var result string
 				var execErr error
 				if h.builtin != nil && h.builtin.CanHandle(tc.Name) {
@@ -746,8 +751,16 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 				} else {
 					execErr = fmt.Errorf("no handler for tool: %s", tc.Name)
 				}
+
+				// Emit tool.progress: completed or failed (after dispatch).
+				elapsed := time.Since(dispatchStart).Milliseconds()
 				if execErr != nil {
 					result = fmt.Sprintf("Error: %v", execErr)
+					h.sendToClient(client, NewToolProgress(sessionID, tc.ID, "step",
+						fmt.Sprintf("Error after %dms: %v", elapsed, execErr), -1, time.Now().UnixMilli()))
+				} else {
+					h.sendToClient(client, NewToolProgress(sessionID, tc.ID, "step",
+						fmt.Sprintf("Completed in %dms", elapsed), -1, time.Now().UnixMilli()))
 				}
 
 				// Store tool_result message.
