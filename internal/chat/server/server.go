@@ -706,11 +706,20 @@ func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueWSTicket generates a cryptographically random one-time ticket valid for 30s.
+// It also sweeps expired tickets to prevent unbounded growth.
 func (s *Server) issueWSTicket() string {
+	now := time.Now()
+	s.wsTickets.Range(func(k, v any) bool {
+		if now.After(v.(time.Time)) {
+			s.wsTickets.Delete(k)
+		}
+		return true
+	})
+
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	ticket := fmt.Sprintf("%x", b)
-	s.wsTickets.Store(ticket, time.Now().Add(30*time.Second))
+	s.wsTickets.Store(ticket, now.Add(30*time.Second))
 	return ticket
 }
 

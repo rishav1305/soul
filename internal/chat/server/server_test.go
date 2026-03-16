@@ -1264,6 +1264,24 @@ func readMetricsFile(t *testing.T, dir string) []metrics.Event {
 	return events
 }
 
+func TestWSTicket_ExpiredTicketsSweptOnIssue(t *testing.T) {
+	srv := New(WithAuthToken("secret"))
+
+	// Plant two expired tickets.
+	srv.wsTickets.Store("stale1", time.Now().Add(-1*time.Second))
+	srv.wsTickets.Store("stale2", time.Now().Add(-2*time.Second))
+
+	// Issue a new ticket — the sweep inside issueWSTicket should evict stale ones.
+	_ = srv.issueWSTicket()
+
+	if _, ok := srv.wsTickets.Load("stale1"); ok {
+		t.Error("stale1 should have been swept by issueWSTicket")
+	}
+	if _, ok := srv.wsTickets.Load("stale2"); ok {
+		t.Error("stale2 should have been swept by issueWSTicket")
+	}
+}
+
 func TestWSTicket_ExpiredTicketRejected(t *testing.T) {
 	srv := New(WithAuthToken("secret"))
 

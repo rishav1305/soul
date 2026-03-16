@@ -47,12 +47,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
   const onMessageRef = useRef(onMessage);
+  const urlRef = useRef(options.url);
   const attemptRef = useRef(0);
   const connectTimeRef = useRef<number | null>(null);
   const disconnectTimeRef = useRef<number | null>(null);
 
-  // Keep onMessage ref current to avoid stale closures.
+  // Keep callback and url refs current to avoid stale closures.
   onMessageRef.current = onMessage;
+  urlRef.current = options.url;
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -67,11 +69,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     clearReconnectTimer();
     setStatus('connecting');
 
-    // Fetch a short-lived ticket so the real token is never sent in the WS URL.
+    // If a custom URL was provided (e.g. for testing), use it directly.
+    // Otherwise fetch a short-lived ticket so the real token is never sent in the WS URL.
     // Falls back to the raw token if the ticket endpoint is unavailable.
-    fetchWSTicket().then((ticket) => {
+    const wsUrlPromise = urlRef.current
+      ? Promise.resolve(urlRef.current)
+      : fetchWSTicket().then((ticket) => getWebSocketURL(ticket));
+
+    wsUrlPromise.then((wsUrl) => {
       if (unmountedRef.current) return;
-      const socket = new WebSocket(getWebSocketURL(ticket));
+      const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
       socket.onopen = () => {
