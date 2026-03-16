@@ -135,6 +135,8 @@ This is new work beyond the minimal observability layer. **Defer to a separate o
 
 The handler checks for `batch` first. If present, it iterates and validates each entry against the allowlist individually. If absent, it processes the single `type`/`data` as before. Each entry in a batch is logged as a separate JSONL event. Partial ingestion: if one entry in a batch has an invalid type, it is skipped (logged as warning), remaining entries are still processed.
 
+**Response contract:** Always returns `204 No Content`, regardless of how many entries were accepted or rejected. Telemetry is fire-and-forget — the client should never retry failed telemetry. Dropped entries are observable server-side via the warning log, not via HTTP response. This keeps the client simple and prevents telemetry retry loops from amplifying reconnect storms.
+
 ## Layer 2: Reconnect State Recovery
 
 ### 2.1 Reconnect Handshake
@@ -216,18 +218,21 @@ In the callers, after `<-entry.done`:
 
 ### Streaming During Disconnect
 
-When a client disconnects while a stream is in progress:
-- `OnClientDisconnect` (handler.go:999) cancels all agent contexts for the client via `entry.cancel()`
-- The stream goroutine receives `context.Canceled` from `Stream()` and returns silently (per the fix in 2.3)
-- `OnClientDisconnect` waits on `<-entry.done`, then calls `completeSession` to transition the session out of `running`
-- Any partial text already stored in SQLite is preserved
+When a client disconnects while a stream is in progress, there are two cases depending on when the cancellation hits:
 
-On reconnect:
-- `session.switch` (Section 2.1) fetches `session.history` which includes any messages stored before cancellation
-- The session shows as `completed` (not stuck in `running`)
-- Tokens that were streamed to the old client object but not yet stored are lost
+**Case A — Cancel before `Stream()` returns a channel** (waiting for Claude's first SSE event):
+- `Stream()` returns `context.Canceled` → `runStream` returns silently (per fix in 2.3)
+- `OnClientDisconnect` calls `completeSession` → session transitions to `completed`
+- No assistant message was received from Claude, so none is stored. The session completes empty.
+- On reconnect, `session.history` shows the user's message with no response. This is correct — Claude never responded before the disconnect.
 
-This is acceptable — the user sees the completed partial response. Full token recovery would require a replay buffer, which is out of scope.
+**Case B — Cancel mid-stream** (tokens already flowing through `for evt := range ch`):
+- The context cancellation closes the channel → loop exits with `!gotMessageStop`
+- The existing incomplete-stream path (handler.go:630-637) persists `fullText + "[incomplete — stream ended unexpectedly]"` to SQLite
+- `completeSession` is called, session transitions to `completed`
+- On reconnect, `session.history` shows the partial response with the incomplete marker.
+
+Both cases are handled. `OnClientDisconnect` calling `completeSession` after `<-entry.done` ensures the session is never stuck in `running`. Full token recovery (tokens sent to the old client object during the disconnect window) would require a replay buffer, which is out of scope.
 
 ## Layer 3: Connection Resilience
 
@@ -307,6 +312,8 @@ interface UseWebSocketReturn {
   reconnect: () => void;  // NEW — manual reconnect trigger
 }
 ```
+
+**UI wiring:** `ChatPage.tsx` already renders a connection status banner when `status !== 'connected'`. The `reconnect` function threads through `useChat` → `ChatPage` props → the existing banner component. When `status === 'error'`, the banner shows "Connection lost" with a "Retry" button that calls `reconnect()`. When `authError === true`, the banner shows "Authentication failed" with a "Re-authenticate" button that calls `reauth()` (already exists). No new components needed — this is prop threading to the existing banner.
 
 ### 3.5 Visibility-Aware Reconnect
 
@@ -473,7 +480,8 @@ interface ToolCallData {
 |------|--------|
 | `web/src/lib/ws.ts` | AbortController + 5s timeout on ticket fetch; return `{ ticket, status }` for auth circuit breaker |
 | `web/src/hooks/useWebSocket.ts` | Close code inspection, auth circuit breaker (401-based), give-up logic, visibility handling, expose `reconnect()` |
-| `web/src/hooks/useChat.ts` | Thread `reconnect` through `UseChatReturn` so UI can wire "Retry Connection" button |
+| `web/src/hooks/useChat.ts` | Thread `reconnect` through `UseChatReturn` |
+| `web/src/pages/ChatPage.tsx` | Wire `reconnect()` to connection banner "Retry" button when `status === 'error'` |
 
 ### Layer 4 (Token Coalescing + Tool Progress)
 | File | Change |
@@ -493,7 +501,10 @@ interface ToolCallData {
 - Integration test: verify frontend telemetry events arrive at `/api/telemetry`
 
 ### Layer 2
-- Unit test: `handler_test.go` — verify `completeSession` called on `context.Canceled`
+- Unit test: `handler_test.go` — verify `runStream` returns silently on `context.Canceled` (does NOT call `completeSession` or `sendClassifiedError`)
+- Unit test: `handler_test.go` — verify `handleChatStop` calls `completeSession` after `<-entry.done`
+- Unit test: `handler_test.go` — verify `OnClientDisconnect` calls `completeSession` after `<-entry.done`
+- Unit test: `handler_test.go` — verify superseded stream in `handleChatSend` re-sets session status to `running` after `<-existing.done`
 - Manual test: disconnect WiFi mid-stream, reconnect, verify history refreshes
 
 ### Layer 3
