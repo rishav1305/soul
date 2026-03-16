@@ -12,12 +12,15 @@ interface UseWebSocketReturn {
   status: ConnectionState;
   send: (type: string, payload: Record<string, unknown>) => void;
   reconnectAttempt: number;
+  reconnect: () => void;    // Manual reconnect trigger (also clears auth circuit breaker)
+  authError: boolean;       // true when auth circuit breaker has fired
 }
 
 // Exponential backoff: 1s → 2s → 4s → 8s → 15s max, with ±30% jitter.
 const BASE_DELAY = 1000;
 const MAX_DELAY = 15000;
 const JITTER = 0.3;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 function backoffDelay(attempt: number): number {
   const exponential = Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
@@ -30,6 +33,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   const [status, setStatus] = useState<ConnectionState>('disconnected');
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [authError, setAuthError] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
@@ -37,6 +41,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const urlRef = useRef(options.url);
   const attemptRef = useRef(0);
   const openTimeRef = useRef<number>(0);
+  const consecutiveAuthFailuresRef = useRef(0);
+  const authErrorRef = useRef(false);
 
   // Keep callback and url refs current to avoid stale closures.
   onMessageRef.current = onMessage;
@@ -51,55 +57,63 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   const connect = useCallback(() => {
     if (unmountedRef.current) return;
-
     clearReconnectTimer();
     setStatus('connecting');
 
-    // If a custom URL was provided (e.g. for testing), use it directly.
-    // Otherwise fetch a short-lived ticket so the real token is never sent in the WS URL.
-    // Falls back to the raw token if the ticket endpoint is unavailable.
-    const connectStart = performance.now();
-    const wsUrlPromise = urlRef.current
-      ? Promise.resolve(urlRef.current)
-      : fetchWSTicket().then((ticket) => getWebSocketURL(ticket));
-
-    wsUrlPromise.then((wsUrl) => {
+    fetchWSTicket().then(({ ticket, status: ticketStatus }) => {
       if (unmountedRef.current) return;
-      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current });
-      openTimeRef.current = connectStart;
-      const socket = new WebSocket(wsUrl);
+
+      reportWSLifecycle('ticket_fetch', {
+        status: ticketStatus,
+        fallback: ticket === null && ticketStatus !== 401,
+      });
+
+      // Auth circuit breaker: two consecutive 401s mean auth is broken.
+      if (ticketStatus === 401) {
+        consecutiveAuthFailuresRef.current++;
+        if (consecutiveAuthFailuresRef.current >= 2) {
+          authErrorRef.current = true;
+          setAuthError(true);
+          setStatus('error');
+          return;
+        }
+        setStatus('disconnected');
+        const delay = backoffDelay(attemptRef.current);
+        attemptRef.current++;
+        setReconnectAttempt(attemptRef.current);
+        reconnectTimerRef.current = setTimeout(connect, delay);
+        return;
+      }
+      consecutiveAuthFailuresRef.current = 0;
+
+      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: !!ticket });
+
+      const socket = new WebSocket(getWebSocketURL(ticket));
       wsRef.current = socket;
 
       socket.onopen = () => {
+        openTimeRef.current = performance.now();
         reportWSLifecycle('open', { attempt: attemptRef.current });
-        // Status transitions to 'connected' only when we receive
-        // the connection.ready message from the server.
       };
 
       socket.onmessage = (event: MessageEvent) => {
         try {
-          const parsed = JSON.parse(event.data as string) as {
-            type: string;
-            data?: unknown;
-            sessionId?: string;
-            messageId?: string; // top-level replay anchor set by sendToClient
-          };
-
-          // Transition to 'connected' when we get connection.ready.
-          if (parsed.type === 'connection.ready') {
-            setStatus('connected');
-            // Reset backoff on successful connection.
-            attemptRef.current = 0;
-            setReconnectAttempt(0);
-          }
-
-          if (onMessageRef.current) {
-            onMessageRef.current(
-              parsed.type as OutboundMessageType,
-              parsed.data,
-              parsed.sessionId ?? '',
-              parsed.messageId,
-            );
+          const raw = JSON.parse(event.data as string) as unknown;
+          const messages = Array.isArray(raw) ? raw : [raw];
+          for (const parsed of messages) {
+            const msg = parsed as { type: string; data?: unknown; sessionId?: string };
+            if (msg.type === 'connection.ready') {
+              setStatus('connected');
+              attemptRef.current = 0;
+              setReconnectAttempt(0);
+            }
+            if (onMessageRef.current) {
+              onMessageRef.current(
+                msg.type as OutboundMessageType,
+                msg.data,
+                msg.sessionId ?? '',
+              );
+            }
           }
         } catch (err) {
           reportError('useWebSocket.parse', err);
@@ -117,6 +131,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         wsRef.current = null;
         if (!unmountedRef.current) {
           setStatus('disconnected');
+          if (authErrorRef.current) {
+            setStatus('error');
+            return;
+          }
+          if (attemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+            setStatus('error');
+            return;
+          }
           const delay = backoffDelay(attemptRef.current);
           attemptRef.current++;
           setReconnectAttempt(attemptRef.current);
@@ -127,8 +149,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
       socket.onerror = () => {
         reportWSLifecycle('error', { attempt: attemptRef.current });
-        // The error event is always followed by close, so we set 'error'
-        // briefly — the close handler will then schedule reconnection.
         if (!unmountedRef.current) {
           setStatus('error');
         }
@@ -136,12 +156,50 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     });
   }, [clearReconnectTimer]);
 
+  const send = useCallback((type: string, payload: Record<string, unknown>) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, ...payload }));
+    }
+  }, []);
+
+  const reconnect = useCallback(() => {
+    if (unmountedRef.current) return;
+    authErrorRef.current = false;
+    setAuthError(false);
+    consecutiveAuthFailuresRef.current = 0;
+    attemptRef.current = 0;
+    setReconnectAttempt(0);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    clearReconnectTimer();
+    connect();
+  }, [connect, clearReconnectTimer]);
+
   useEffect(() => {
     unmountedRef.current = false;
+
+    const onVisibilityChange = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        wsRef.current === null &&
+        !authErrorRef.current &&
+        attemptRef.current < MAX_RECONNECT_ATTEMPTS
+      ) {
+        clearReconnectTimer();
+        attemptRef.current = 0;
+        setReconnectAttempt(0);
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     connect();
 
     return () => {
       unmountedRef.current = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       clearReconnectTimer();
       if (wsRef.current) {
         wsRef.current.close();
@@ -150,12 +208,5 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     };
   }, [connect, clearReconnectTimer]);
 
-  const send = useCallback((type: string, payload: Record<string, unknown>) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      throw new Error('socket not open');
-    }
-    wsRef.current.send(JSON.stringify({ type, ...payload }));
-  }, []);
-
-  return { status, send, reconnectAttempt };
+  return { status, send, reconnectAttempt, reconnect, authError };
 }

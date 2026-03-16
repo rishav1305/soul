@@ -14,6 +14,7 @@ interface ChatContextValue {
   editAndResend: (messageId: string, newContent: string) => void;
   retryMessage: (messageId: string) => void;
   reauth: () => Promise<void>;
+  reconnect: () => void;
   sessions: Session[];
   currentSessionID: string | null;
   createSession: () => void;

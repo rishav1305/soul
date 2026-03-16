@@ -22,10 +22,13 @@ export function ChatPage() {
     isStreaming,
     status,
     reconnectAttempt,
+    reconnect,
+    authError,
     sendMessage,
     stopGeneration,
     editAndResend,
     retryMessage,
+    reauth,
     sessions,
     currentSessionID,
     createSession,
@@ -50,7 +53,8 @@ export function ChatPage() {
 
   const [sessionsOpen, setSessionsOpen] = useState(() => {
     const stored = localStorage.getItem(SESSIONS_KEY);
-    return stored !== null ? stored === 'true' : true;
+    if (stored !== null) return stored === 'true';
+    return window.innerWidth >= 640;
   });
 
   const toggleSessions = useCallback(() => {
@@ -101,7 +105,7 @@ export function ChatPage() {
   const isDisabled = status !== 'connected';
 
   return (
-    <div data-testid="chat-page" className="h-full flex">
+    <div data-testid="chat-page" className="h-dvh flex">
       {/* Chat content */}
       <div className="flex-1 flex flex-col min-w-0">
         <ChatTopBar
@@ -111,7 +115,13 @@ export function ChatPage() {
           sessionsOpen={sessionsOpen}
           onToggleSessions={toggleSessions}
         />
-        <ConnectionBanner status={status} reconnectAttempt={reconnectAttempt} />
+        <ConnectionBanner
+          status={status}
+          reconnectAttempt={reconnectAttempt}
+          onReconnect={reconnect}
+          authError={authError}
+          onReauth={reauth}
+        />
         {searchOpen && (
           <SearchBar query={searchQuery} onChange={setSearchQuery} onClose={closeSearch} matchCount={matchCount} />
         )}

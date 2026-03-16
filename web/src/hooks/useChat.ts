@@ -15,6 +15,7 @@ interface UseChatReturn {
   editAndResend: (messageId: string, newContent: string) => void;
   retryMessage: (messageId: string) => void;
   reauth: () => Promise<void>;
+  reconnect: () => void;
   sessions: Session[];
   currentSessionID: string | null;
   createSession: () => void;
@@ -554,7 +555,7 @@ export function useChat(): UseChatReturn {
     [],
   );
 
-  const { status, send, reconnectAttempt } = useWebSocket({ onMessage: handleMessage });
+  const { status, send, reconnectAttempt, reconnect, authError: wsAuthError } = useWebSocket({ onMessage: handleMessage });
 
   // Store send in a ref so the connection.ready handler can use it.
   const sendRef = useRef(send);
@@ -694,6 +695,7 @@ export function useChat(): UseChatReturn {
         });
         if (resp.ok) {
           setAuthError(false);
+          reconnect();   // also resets the WS circuit breaker
           return;
         }
       } catch (err) {
@@ -704,7 +706,7 @@ export function useChat(): UseChatReturn {
       }
     }
     // All retries failed — keep authError true so UI shows re-auth button.
-  }, []);
+  }, [reconnect]);
 
   const editAndResend = useCallback((messageId: string, newContent: string) => {
     setMessages(prev => {
@@ -730,13 +732,14 @@ export function useChat(): UseChatReturn {
     messages,
     isStreaming,
     status,
-    authError,
+    authError: authError || wsAuthError,
     reconnectAttempt,
     sendMessage,
     stopGeneration,
     editAndResend,
     retryMessage,
     reauth,
+    reconnect,
     sessions,
     currentSessionID,
     createSession,
