@@ -42,6 +42,107 @@ interface RawHistoryMessage {
   usage?: { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number };
 }
 
+interface ContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
+}
+
+/**
+ * Hydrate raw history messages: merge tool_use/tool_result into assistant
+ * messages with proper toolCalls arrays so they render as ToolCallBlock
+ * components instead of raw JSON.
+ */
+function hydrateHistory(raw: RawHistoryMessage[], sessionID: string): Message[] {
+  const messages: Message[] = [];
+
+  for (let i = 0; i < raw.length; i++) {
+    const m = raw[i]!;
+    const sid = m.sessionId || m.session_id || sessionID;
+    const ts = (m.createdAt || m.created_at) ?? '';
+
+    if (m.role === 'tool_use') {
+      // Parse JSON array of content blocks stored by backend.
+      let blocks: ContentBlock[] = [];
+      try { blocks = JSON.parse(m.content); } catch { /* not JSON array */ }
+
+      if (!Array.isArray(blocks)) {
+        // Single tool object (legacy format)
+        try {
+          const single = JSON.parse(m.content) as ContentBlock;
+          if (single.name) blocks = [single];
+        } catch { /* fallback: render as-is */ }
+      }
+
+      // Extract text and tool_use blocks.
+      let text = '';
+      const toolCalls: ToolCallData[] = [];
+      for (const b of blocks) {
+        if (b.type === 'text' && b.text) {
+          text += b.text;
+        } else if ((b.type === 'tool_use' || b.name) && b.name) {
+          toolCalls.push({
+            id: b.id ?? `hist-${b.name}-${i}`,
+            name: b.name,
+            input: b.input ?? {},
+            status: 'complete',
+          });
+        }
+      }
+
+      // Absorb subsequent tool_result messages into toolCalls outputs.
+      while (i + 1 < raw.length && raw[i + 1]!.role === 'tool_result') {
+        i++;
+        const tr = raw[i]!;
+        try {
+          const parsed = JSON.parse(tr.content) as { tool_use_id?: string; content?: string };
+          const tc = toolCalls.find(t => t.id === parsed.tool_use_id);
+          if (tc) {
+            tc.output = parsed.content;
+          }
+        } catch { /* skip unparseable results */ }
+      }
+
+      messages.push({
+        id: m.id,
+        role: 'assistant',
+        content: text,
+        sessionID: sid,
+        createdAt: ts,
+        model: m.model,
+        thinking: m.thinking,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        usage: m.usage,
+      });
+      continue;
+    }
+
+    if (m.role === 'tool_result') {
+      // Orphaned tool_result (not absorbed above) — skip, already handled.
+      continue;
+    }
+
+    // Normal user/assistant message.
+    messages.push({
+      id: m.id,
+      role: m.role as Message['role'],
+      content: m.content,
+      sessionID: sid,
+      createdAt: ts,
+      model: m.model,
+      thinking: m.thinking,
+      toolCalls: m.toolCalls,
+      usage: m.usage,
+    });
+  }
+
+  return messages;
+}
+
 function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -72,15 +173,27 @@ export function useChat(): UseChatReturn {
       switch (type) {
         case 'connection.ready': {
           setAuthError(false);
-          // Restore last session from localStorage on reconnect.
-          const savedId = localStorage.getItem(STORAGE_KEY);
-          if (savedId && !sessionIDRef.current) {
-            sessionIDRef.current = savedId;
-            setCurrentSessionID(savedId);
-            // Request history for the restored session.
+          if (sessionIDRef.current) {
+            // RECONNECT — session ID already set. Re-subscribe and refresh history.
+            // Reset streaming state: any in-flight stream is gone.
+            setIsStreaming(false);
+            isStreamingRef.current = false;
+            // Remove any orphaned streaming placeholder (no chat.done will arrive for it).
+            setMessages(prev => prev.filter(m => m.id !== STREAMING_MESSAGE_ID));
+            const sid = sessionIDRef.current;
             queueMicrotask(() => {
-              sendRef.current('session.switch', { sessionId: savedId });
+              sendRef.current('session.switch', { sessionId: sid });
             });
+          } else {
+            // FIRST LOAD — restore from localStorage.
+            const savedId = localStorage.getItem(STORAGE_KEY);
+            if (savedId) {
+              sessionIDRef.current = savedId;
+              setCurrentSessionID(savedId);
+              queueMicrotask(() => {
+                sendRef.current('session.switch', { sessionId: savedId });
+              });
+            }
           }
           // Recover pending message from localStorage (browser refresh during deferred creation).
           const pendingRaw = localStorage.getItem('soul-v2-pending');
@@ -206,18 +319,7 @@ export function useChat(): UseChatReturn {
           if (isStreamingRef.current) break; // Don't overwrite during streaming.
           const payload = data as { messages: Message[]; session?: { product?: string } } | undefined;
           if (payload?.messages && sessionID === sessionIDRef.current) {
-            const hydrated = payload.messages.map((m: RawHistoryMessage) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              sessionID: m.sessionId || m.session_id || sessionID,
-              createdAt: m.createdAt || m.created_at,
-              model: m.model,
-              thinking: m.thinking,
-              toolCalls: m.toolCalls,
-              usage: m.usage,
-            }));
-            setMessages(hydrated);
+            setMessages(hydrateHistory(payload.messages as unknown as RawHistoryMessage[], sessionID));
           }
           if (payload?.session?.product !== undefined) {
             setActiveProduct(payload.session.product as ChatProduct);
@@ -585,7 +687,11 @@ export function useChat(): UseChatReturn {
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        const resp = await fetch('/api/reauth', { method: 'POST' });
+        const token = getToken()?.trim();
+        const resp = await fetch('/api/reauth', {
+          method: 'POST',
+          ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+        });
         if (resp.ok) {
           setAuthError(false);
           return;
