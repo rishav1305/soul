@@ -1,4 +1,4 @@
-import TopBar from './TopBar';
+import { TopBar } from './TopBar';
 import type { Session } from '../lib/types';
 
 interface ChatTopBarProps {
@@ -9,7 +9,7 @@ interface ChatTopBarProps {
   onToggleSessions: () => void;
 }
 
-export default function ChatTopBar({
+export function ChatTopBar({
   onCreateSession,
   sessions,
   onSwitchSession: _onSwitchSession,

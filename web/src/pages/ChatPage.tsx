@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useChatContext } from '../contexts/ChatContext';
-import { useSwipeDrawer } from '../hooks/useSwipeDrawer';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
 import { MessageList } from '../components/MessageList';
 import { ChatInput } from '../components/ChatInput';
 import type { ChatInputHandle } from '../components/ChatInput';
-import { SessionList } from '../components/SessionList';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SearchBar } from '../components/SearchBar';
+import { ChatTopBar } from '../components/ChatTopBar';
+import { SessionsPanel } from '../components/SessionsPanel';
+
+const SESSIONS_KEY = 'soul-v2-sessions-open';
 
 export function ChatPage() {
   usePerformance('ChatPage');
@@ -17,13 +19,11 @@ export function ChatPage() {
     messages,
     isStreaming,
     status,
-    authError,
     reconnectAttempt,
     sendMessage,
     stopGeneration,
     editAndResend,
     retryMessage,
-    reauth,
     sessions,
     currentSessionID,
     createSession,
@@ -34,8 +34,20 @@ export function ChatPage() {
     setProduct,
   } = useChatContext();
 
-  const { isOpen, close, toggle, handlers } = useSwipeDrawer();
   const inputRef = useRef<ChatInputHandle>(null);
+
+  const [sessionsOpen, setSessionsOpen] = useState(() => {
+    const stored = localStorage.getItem(SESSIONS_KEY);
+    return stored !== null ? stored === 'true' : true;
+  });
+
+  const toggleSessions = useCallback(() => {
+    setSessionsOpen(prev => {
+      const next = !prev;
+      localStorage.setItem(SESSIONS_KEY, String(next));
+      return next;
+    });
+  }, []);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -76,70 +88,38 @@ export function ChatPage() {
 
   const isDisabled = status !== 'connected';
 
-  const handleSwitch = (id: string) => {
-    switchSession(id);
-    close();
-  };
-
-  const handleCreate = () => {
-    createSession();
-    close();
-  };
-
   return (
-    <div data-testid="chat-page" className="h-full flex" {...handlers}>
-      <ConnectionBanner status={status} reconnectAttempt={reconnectAttempt} />
-
-      {/* Backdrop — mobile only */}
-      {isOpen && (
-        <div
-          data-testid="sidebar-backdrop"
-          className="fixed inset-0 bg-black/60 z-30 md:hidden"
-          onClick={close}
-        />
-      )}
-
-      {/* Sidebar */}
-      <div
-        data-testid="sidebar-drawer"
-        className={`
-          fixed inset-y-0 left-0 z-40 w-64
-          transform transition-transform duration-200 ease-out
-          md:relative md:translate-x-0 md:transition-none
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
-      >
-        <SessionList
-          sessions={sessions}
-          activeSessionID={currentSessionID}
-          onCreate={handleCreate}
-          onSwitch={handleSwitch}
-          onDelete={deleteSession}
-          onRename={renameSession}
-        />
-      </div>
-
-      {/* Mobile sidebar toggle */}
-      <button
-        data-testid="sidebar-toggle"
-        type="button"
-        onClick={toggle}
-        className="fixed bottom-4 left-4 z-50 md:hidden p-2 rounded-full bg-elevated text-fg-muted hover:text-fg shadow-lg"
-        aria-label="Toggle sessions"
-      >
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-          <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      </button>
-
-      {/* Chat area */}
+    <div data-testid="chat-page" className="h-full flex">
+      {/* Chat content */}
       <div className="flex-1 flex flex-col min-w-0">
+        <ChatTopBar
+          onCreateSession={createSession}
+          sessions={sessions}
+          onSwitchSession={switchSession}
+          sessionsOpen={sessionsOpen}
+          onToggleSessions={toggleSessions}
+        />
+        <ConnectionBanner status={status} reconnectAttempt={reconnectAttempt} />
         {searchOpen && (
           <SearchBar query={searchQuery} onChange={setSearchQuery} onClose={closeSearch} matchCount={matchCount} />
         )}
         <MessageList messages={messages} isStreaming={isStreaming} onSend={sendMessage} onEdit={editAndResend} onRetry={retryMessage} searchQuery={searchQuery} />
         <ChatInput ref={inputRef} onSend={sendMessage} onStop={stopGeneration} disabled={isDisabled} isStreaming={isStreaming} activeProduct={activeProduct} onSetProduct={setProduct} />
       </div>
+
+      {/* Right sessions panel */}
+      <SessionsPanel
+        open={sessionsOpen}
+        sessions={sessions}
+        activeSessionID={currentSessionID}
+        onSwitch={switchSession}
+        onDelete={deleteSession}
+        onRename={renameSession}
+        onClose={() => {
+          setSessionsOpen(false);
+          localStorage.setItem(SESSIONS_KEY, 'false');
+        }}
+      />
     </div>
   );
 }

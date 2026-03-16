@@ -5,7 +5,7 @@ interface TopBarProps {
   children?: React.ReactNode;
 }
 
-export default function TopBar({ title, children }: TopBarProps) {
+export function TopBar({ title, children }: TopBarProps) {
   const { status } = useChatContext();
 
   const statusColor =
