@@ -45,6 +45,7 @@ func main() {
 func runServe() {
 	// Soft memory limit — triggers more aggressive GC before hitting 256MB.
 	debug.SetMemoryLimit(256 * 1024 * 1024)
+	startTime := time.Now()
 
 	dataDir := os.Getenv("SOUL_V2_DATA_DIR")
 	if dataDir == "" {
@@ -60,6 +61,10 @@ func runServe() {
 		log.Fatalf("create event logger: %v", err)
 	}
 	defer logger.Close()
+
+	_ = logger.Log(metrics.EventSystemStart, map[string]interface{}{
+		"pid": os.Getpid(),
+	})
 
 	alertChecker := metrics.NewAlertCheckerWithDefaults(logger)
 	logger.SetAlertChecker(alertChecker)
@@ -194,6 +199,12 @@ func runServe() {
 	go func() {
 		sig := <-sigCh
 		log.Printf("received %s, shutting down...", sig)
+		_ = logger.Log(metrics.EventSystemExit, map[string]interface{}{
+			"signal":    sig.String(),
+			"exit_code": 0,
+			"reason":    "graceful_shutdown",
+			"uptime_s":  time.Since(startTime).Seconds(),
+		})
 		if err := srv.Shutdown(context.Background()); err != nil {
 			log.Printf("shutdown error: %v", err)
 		}
