@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct, ThinkingConfig } from '../lib/types';
+import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ProgressStep, ChatProduct, ThinkingConfig } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 import { reportError, reportWSLatency, reportUsage, reportAuthFailure } from '../lib/telemetry';
 import { SendQueue } from '../lib/sendQueue';
@@ -501,7 +501,13 @@ export function useChat(): UseChatReturn {
         }
 
         case 'tool.progress': {
-          const payload = data as { id: string; progress: number } | undefined;
+          const payload = data as {
+            id: string;
+            event?: string;
+            detail?: string;
+            progress?: number;
+            ts?: number;
+          } | undefined;
           if (!payload) break;
 
           setMessages(prev => {
@@ -510,7 +516,27 @@ export function useChat(): UseChatReturn {
             const tools = [...(last.toolCalls ?? [])];
             const idx = tools.findIndex(t => t.id === payload.id);
             if (idx === -1) return prev;
-            tools[idx] = { ...tools[idx], progress: payload.progress };
+
+            const tool = tools[idx]!;
+            const updates: Partial<ToolCallData> = {};
+
+            // Update numeric progress if provided.
+            if (payload.progress !== undefined) {
+              updates.progress = payload.progress;
+            }
+
+            // Append to steps if detail is provided.
+            if (payload.detail || payload.event) {
+              const step: ProgressStep = {
+                event: (payload.event as ProgressStep['event']) ?? 'step',
+                detail: payload.detail ?? '',
+                progress: payload.progress,
+                ts: payload.ts ?? Date.now(),
+              };
+              updates.steps = [...(tool.steps ?? []), step];
+            }
+
+            tools[idx] = { ...tool, ...updates };
             return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
           });
           break;

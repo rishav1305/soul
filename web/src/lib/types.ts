@@ -361,6 +361,8 @@ export interface ToolCallData {
   output?: string;
   /** progress percentage (0-100) */
   progress?: number;
+  /** tool activity log from tool.progress events */
+  steps?: ProgressStep[];
 }
 
 /** ui-chat */
@@ -410,6 +412,14 @@ export type OutboundMessageType =
   | 'connection.ready';
 
 // --- Manual types (not auto-generated) ---
+
+// spec-defined type (see docs/superpowers/specs/2026-03-16-ws-robustness-design.md §4.3)
+export interface ProgressStep {
+  event: 'step' | 'warning' | 'metric';
+  detail: string;
+  progress?: number;
+  ts: number;
+}
 
 /** tasks */
 export interface Task {
