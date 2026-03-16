@@ -434,14 +434,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                   <circle cx="11" cy="8" r="1.5" fill="currentColor" stroke="none" />
                   <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
                 </svg>
-                {activeProduct && (
-                  <span
-                    data-testid="product-badge"
-                    className="text-xs font-mono text-blue-400"
-                  >
-                    {PRODUCTS.find(p => p.id === activeProduct)?.name ?? activeProduct}
-                  </span>
-                )}
+                <span
+                  data-testid="product-badge"
+                  className={`text-xs font-mono ${activeProduct ? 'text-soul' : 'text-fg-muted'}`}
+                >
+                  {activeProduct
+                    ? (PRODUCTS.find(p => p.id === activeProduct)?.name ?? activeProduct)
+                    : 'General'}
+                </span>
               </button>
               {showProductMenu && (
                 <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-elevated border border-border-default rounded-xl shadow-xl shadow-black/30 py-1 min-w-[140px]">
@@ -450,11 +450,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                     type="button"
                     onClick={() => { onSetProduct?.(''); setShowProductMenu(false); }}
                     className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                      !activeProduct ? 'text-blue-400 bg-blue-500/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      !activeProduct ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
                     }`}
                   >
                     <span className="w-4 text-center">—</span>
-                    <span>None (general)</span>
+                    <span>General</span>
                   </button>
                   {PRODUCTS.map(p => (
                     <button
@@ -463,7 +463,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                       type="button"
                       onClick={() => { onSetProduct?.(p.id); setShowProductMenu(false); }}
                       className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                        activeProduct === p.id ? 'text-blue-400 bg-blue-500/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                        activeProduct === p.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
                       }`}
                     >
                       <span className="w-4 text-center">{p.icon}</span>
@@ -517,12 +517,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="h-8 flex items-center gap-1.5 px-2 rounded-lg text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
-              aria-label="Attach image"
-              title="Attach image"
+              aria-label="Attach file"
+              title="Attach file"
             >
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
                 <path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
+              <span className="text-xs">Attach</span>
             </button>
 
             {/* Camera button */}
