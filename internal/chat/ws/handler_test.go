@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
+
+// testMsgBuffer holds messages from array frames for sequential delivery.
+var testMsgBuffer []map[string]interface{}
+var testMsgBufMu sync.Mutex
 
 // setupTestEnv creates a Hub with a session store and MessageHandler,
 // starts the hub event loop, and returns everything needed for testing.
@@ -66,10 +71,26 @@ func connectClient(t *testing.T, ctx context.Context, hub *Hub) (*websocket.Conn
 	return conn, cleanup
 }
 
-// readMessage reads a single JSON message from the WebSocket connection
-// with a timeout.
+// readMessage reads a single JSON message from the WebSocket connection.
+// If the server sends an array frame (coalesced messages), it buffers the
+// remaining messages and returns them one at a time across successive calls.
 func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]interface{} {
 	t.Helper()
+	t.Cleanup(func() {
+		testMsgBufMu.Lock()
+		testMsgBuffer = nil
+		testMsgBufMu.Unlock()
+	})
+
+	// Return buffered messages first.
+	testMsgBufMu.Lock()
+	if len(testMsgBuffer) > 0 {
+		msg := testMsgBuffer[0]
+		testMsgBuffer = testMsgBuffer[1:]
+		testMsgBufMu.Unlock()
+		return msg
+	}
+	testMsgBufMu.Unlock()
 
 	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -79,6 +100,24 @@ func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) map[st
 		t.Fatalf("read message: %v", err)
 	}
 
+	// Try array first.
+	if len(data) > 0 && data[0] == '[' {
+		var msgs []map[string]interface{}
+		if err := json.Unmarshal(data, &msgs); err != nil {
+			t.Fatalf("unmarshal array frame: %v", err)
+		}
+		if len(msgs) == 0 {
+			t.Fatal("empty array frame")
+		}
+		if len(msgs) > 1 {
+			testMsgBufMu.Lock()
+			testMsgBuffer = append(testMsgBuffer, msgs[1:]...)
+			testMsgBufMu.Unlock()
+		}
+		return msgs[0]
+	}
+
+	// Single object.
 	var result map[string]interface{}
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatalf("unmarshal message: %v", err)
@@ -86,25 +125,31 @@ func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) map[st
 	return result
 }
 
-// drainMessages reads all pending messages from the connection until timeout.
-func drainMessages(t *testing.T, ctx context.Context, conn *websocket.Conn, timeout time.Duration) []map[string]interface{} {
+func drainMessages(t *testing.T, conn *websocket.Conn, timeout time.Duration) []map[string]interface{} {
 	t.Helper()
-
-	var msgs []map[string]interface{}
+	var result []map[string]interface{}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	for {
-		readCtx, cancel := context.WithTimeout(ctx, timeout)
-		_, data, err := conn.Read(readCtx)
-		cancel()
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			break
 		}
-		var result map[string]interface{}
-		if err := json.Unmarshal(data, &result); err != nil {
-			t.Fatalf("unmarshal message: %v", err)
+		if len(data) > 0 && data[0] == '[' {
+			var msgs []map[string]interface{}
+			if err := json.Unmarshal(data, &msgs); err != nil {
+				t.Fatalf("drainMessages: unmarshal array: %v", err)
+			}
+			result = append(result, msgs...)
+		} else {
+			var msg map[string]interface{}
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatalf("drainMessages: unmarshal object: %v", err)
+			}
+			result = append(result, msg)
 		}
-		msgs = append(msgs, result)
 	}
-	return msgs
+	return result
 }
 
 func TestConnectionReady_SentOnConnect(t *testing.T) {
@@ -1324,7 +1369,7 @@ func TestRunStream_CanceledContext_SilentReturn(t *testing.T) {
 	}
 
 	// No chat.error should have been sent to the client.
-	msgs := drainMessages(t, ctx, conn, 300*time.Millisecond)
+	msgs := drainMessages(t, conn, 300*time.Millisecond)
 	for _, m := range msgs {
 		if m["type"] == TypeChatError {
 			t.Errorf("unexpected chat.error emitted on context.Canceled: %v", m)
