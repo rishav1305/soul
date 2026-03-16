@@ -213,14 +213,15 @@ func (s *Server) handlePillars(w http.ResponseWriter, r *http.Request) {
 	requests, _ := agg.Requests()
 	frontend, _ := agg.Frontend()
 	usage, _ := agg.Usage()
+	connHealth, _ := agg.ConnectionHealthReport()
 
 	pillars := []pillarResult{
 		buildPerformantPillar(latency, db, requests),
 		buildRobustPillar(frontend),
-		buildResilientPillar(),
+		buildResilientPillar(connHealth),
 		buildSecurePillar(),
 		buildSovereignPillar(),
-		buildTransparentPillar(usage),
+		buildTransparentPillar(usage, connHealth),
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -337,13 +338,60 @@ func buildRobustPillar(frontend *metrics.FrontendReport) pillarResult {
 	return p
 }
 
-func buildResilientPillar() pillarResult {
+func buildResilientPillar(ch *metrics.ConnectionHealthReport) pillarResult {
 	p := pillarResult{Name: "resilient"}
-	p.Constraints = []pillarConstraint{
-		{Name: "auto-reconnect", Target: "WebSocket", Enforcement: "enforced at build", Status: "static", Value: "exponential backoff"},
-		{Name: "stream-recovery", Target: "SSE streams", Enforcement: "enforced at build", Status: "static", Value: "automatic retry"},
-		{Name: "graceful-shutdown", Target: "all servers", Enforcement: "enforced at build", Status: "static", Value: "SIGTERM handler"},
+
+	// Live: chat drop rate < 0.5%
+	dropRate := 0.0
+	dropValue := "no data"
+	if ch != nil && ch.TotalConnects > 0 {
+		dropRate = ch.DropRate()
+		dropValue = strconv.FormatFloat(dropRate*100, 'f', 3, 64) + "%"
 	}
+	dropStatus := "pass"
+	if dropRate > 0.005 {
+		dropStatus = "fail"
+	} else if dropRate > 0.002 {
+		dropStatus = "warn"
+	}
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "chat-drop-rate",
+		Target:      "< 0.5% sessions/hour",
+		Enforcement: "runtime metric",
+		Status:      dropStatus,
+		Value:       dropValue,
+	})
+
+	// Live: reconnect success rate > 95%
+	reconnectRate := 1.0
+	reconnectValue := "no data"
+	if ch != nil && (ch.ReconnectSuccesses+ch.ReconnectFailures) > 0 {
+		reconnectRate = ch.ReconnectSuccessRate()
+		reconnectValue = strconv.FormatFloat(reconnectRate*100, 'f', 1, 64) + "%"
+	}
+	rateStatus := "pass"
+	if reconnectRate < 0.95 {
+		rateStatus = "fail"
+	} else if reconnectRate < 0.98 {
+		rateStatus = "warn"
+	}
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "reconnect-success-rate",
+		Target:      "> 95%",
+		Enforcement: "runtime metric",
+		Status:      rateStatus,
+		Value:       reconnectValue,
+	})
+
+	// Static: graceful shutdown (kept)
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "graceful-shutdown",
+		Target:      "SIGTERM handler on all servers",
+		Enforcement: "enforced at build",
+		Status:      "static",
+		Value:       "SIGTERM handler",
+	})
+
 	countStatuses(&p)
 	return p
 }
@@ -371,7 +419,7 @@ func buildSovereignPillar() pillarResult {
 	return p
 }
 
-func buildTransparentPillar(usage *metrics.UsageReport) pillarResult {
+func buildTransparentPillar(usage *metrics.UsageReport, ch *metrics.ConnectionHealthReport) pillarResult {
 	p := pillarResult{Name: "transparent"}
 
 	// Event tracking coverage.
@@ -407,6 +455,40 @@ func buildTransparentPillar(usage *metrics.UsageReport) pillarResult {
 		Enforcement: "runtime metric",
 		Status:      usageStatus,
 		Value:       usageValue,
+	})
+
+	// Auth event coverage
+	authEventCount := 0
+	authStatus := "warn"
+	if ch != nil {
+		authEventCount = ch.AuthFailures + ch.AuthSuccesses
+		if authEventCount > 0 {
+			authStatus = "pass"
+		}
+	}
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "auth-event-coverage",
+		Target:      "> 0 auth events tracked",
+		Enforcement: "runtime metric",
+		Status:      authStatus,
+		Value:       strconv.Itoa(authEventCount) + " events",
+	})
+
+	// WS lifecycle coverage
+	wsEventCount := 0
+	wsStatus := "warn"
+	if ch != nil {
+		wsEventCount = ch.TotalConnects + ch.TotalDisconnects
+		if wsEventCount > 0 {
+			wsStatus = "pass"
+		}
+	}
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "ws-lifecycle-coverage",
+		Target:      "> 0 WS lifecycle events tracked",
+		Enforcement: "runtime metric",
+		Status:      wsStatus,
+		Value:       strconv.Itoa(wsEventCount) + " events",
 	})
 
 	// Static constraints.
