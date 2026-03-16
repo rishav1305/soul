@@ -100,9 +100,12 @@ func runServe() {
 	defer sampler.Stop()
 
 	// Create WebSocket hub, stream client, and message handler.
+	connHealth := metrics.NewConnectionHealth(1 * time.Hour)
 	hub := ws.NewHub(
 		ws.WithMetricsLogger(logger),
 		ws.WithSessionStore(store),
+		ws.WithConnectionHealth(connHealth),
+		ws.WithReplayBuffer(ws.NewReplayBuffer(200, 100)),
 	)
 	streamClient := stream.NewClient(authSource,
 		stream.WithBetaHeader("prompt-caching-2024-07-31,interleaved-thinking-2025-05-14,"+auth.OAuthBetaHeader),

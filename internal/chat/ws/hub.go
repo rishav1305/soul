@@ -36,6 +36,8 @@ type Hub struct {
 	sessionStore   session.StoreInterface
 	handler        *MessageHandler
 	allowedOrigins []string
+	connHealth     *metrics.ConnectionHealth
+	replay         *ReplayBuffer
 	clientCounter  uint64
 }
 
@@ -68,6 +70,26 @@ func WithMessageHandler(mh *MessageHandler) HubOption {
 // If empty, only localhost origins are allowed by default.
 func WithAllowedOrigins(origins []string) HubOption {
 	return func(h *Hub) { h.allowedOrigins = origins }
+}
+
+// WithConnectionHealth sets the connection health tracker.
+func WithConnectionHealth(ch *metrics.ConnectionHealth) HubOption {
+	return func(h *Hub) { h.connHealth = ch }
+}
+
+// ConnectionHealth returns the hub's connection health tracker.
+func (h *Hub) ConnectionHealth() *metrics.ConnectionHealth {
+	return h.connHealth
+}
+
+// WithReplayBuffer sets the replay buffer for session resume.
+func WithReplayBuffer(rb *ReplayBuffer) HubOption {
+	return func(h *Hub) { h.replay = rb }
+}
+
+// ReplayBuffer returns the hub's replay buffer.
+func (h *Hub) ReplayBuffer() *ReplayBuffer {
+	return h.replay
 }
 
 // defaultAllowedOrigins returns the default origin patterns that allow
@@ -130,10 +152,16 @@ func (h *Hub) Run(ctx context.Context) {
 			return
 		case client := <-h.register:
 			h.clients[client] = true
+			if h.connHealth != nil {
+				h.connHealth.RecordConnect()
+			}
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				client.closeSend()
+				if h.connHealth != nil {
+					h.connHealth.RecordDisconnect(classifyCloseCode(client.closeCode))
+				}
 				// Cancel all running agents for this client.
 				if h.handler != nil {
 					go h.handler.OnClientDisconnect(client)
