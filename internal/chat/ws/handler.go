@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +114,8 @@ func (h *MessageHandler) HandleMessage(client *Client, raw []byte) {
 		h.handleSessionRename(client, msg)
 	case TypeSessionSetProduct:
 		h.handleSessionSetProduct(client, msg)
+	case TypeSessionResume:
+		h.handleSessionResume(client, msg)
 	default:
 		log.Printf("ws: unknown message type %q from client %s", msg.Type, client.ID())
 	}
@@ -1118,6 +1121,54 @@ func (h *MessageHandler) generateSmartTitle(sessionID string) {
 	}
 }
 
+// handleSessionResume processes a session.resume message. It replays any
+// buffered messages that the client missed since lastMessageId.
+func (h *MessageHandler) handleSessionResume(client *Client, msg *InboundMessage) {
+	sessionID := msg.SessionID
+	lastMsgID := msg.LastMessageID
+	if sessionID == "" || lastMsgID == "" {
+		return
+	}
+
+	var replayed int
+	replayOK := false
+	if h.hub.replay != nil {
+		msgs, found := h.hub.replay.Replay(sessionID, lastMsgID)
+		replayOK = found
+		replayed = len(msgs)
+		for _, m := range msgs {
+			client.Send(m)
+		}
+	}
+
+	if h.metrics != nil {
+		if replayOK {
+			_ = h.metrics.Log(metrics.EventWSReconnectSuccess, map[string]interface{}{
+				"session_id": sessionID,
+				"client_id":  client.ID(),
+				"replayed":   replayed,
+			})
+		} else {
+			_ = h.metrics.Log(metrics.EventWSReconnectFail, map[string]interface{}{
+				"session_id": sessionID,
+				"client_id":  client.ID(),
+				"reason":     "replay_buffer_miss",
+			})
+		}
+	}
+	if h.hub.connHealth != nil {
+		h.hub.connHealth.RecordReconnectAttempt(replayOK)
+	}
+
+	if h.metrics != nil && replayed > 0 {
+		_ = h.metrics.Log(metrics.EventWSStreamResume, map[string]interface{}{
+			"session_id":  sessionID,
+			"last_msg_id": lastMsgID,
+			"replayed":    replayed,
+		})
+	}
+}
+
 // sendError sends a chat.error message to a single client.
 func (h *MessageHandler) sendError(client *Client, sessionID, errMsg string) {
 	out := NewChatError(sessionID, errMsg)
@@ -1126,12 +1177,22 @@ func (h *MessageHandler) sendError(client *Client, sessionID, errMsg string) {
 
 // sendToClient marshals and sends a message to a single client.
 func (h *MessageHandler) sendToClient(client *Client, msg *OutboundMessage) {
+	// Assign replay anchor BEFORE marshaling so it's included in the JSON the client receives
+	if h.hub.replay != nil && msg.SessionID != "" && msg.MessageID == "" {
+		msg.MessageID = msg.SessionID + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+
 	data, err := MarshalOutbound(msg)
 	if err != nil {
 		log.Printf("ws: failed to marshal outbound message: %v", err)
 		return
 	}
 	client.Send(data)
+
+	// Store in replay buffer using the same ID that was just serialized to the client
+	if h.hub.replay != nil && msg.SessionID != "" && msg.MessageID != "" {
+		h.hub.replay.Store(msg.SessionID, msg.MessageID, data)
+	}
 }
 
 // broadcast marshals and sends a message to all connected clients via the hub.

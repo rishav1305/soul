@@ -16,6 +16,7 @@ const (
 	TypeSessionDelete     = "session.delete"
 	TypeSessionRename     = "session.rename"
 	TypeSessionSetProduct = "session.setProduct"
+	TypeSessionResume     = "session.resume"
 )
 
 // Input validation limits.
@@ -61,19 +62,22 @@ type ThinkingConfig struct {
 
 // InboundMessage represents a message received from a WebSocket client.
 type InboundMessage struct {
-	Type        string          `json:"type"`
-	SessionID   string          `json:"sessionId,omitempty"`
-	Content     string          `json:"content,omitempty"`
-	Model       string          `json:"model,omitempty"`
-	Attachments []Attachment    `json:"attachments,omitempty"`
-	Product     string          `json:"product,omitempty"`
-	Thinking    *ThinkingConfig `json:"thinking,omitempty"`
+	Type          string          `json:"type"`
+	SessionID     string          `json:"sessionId,omitempty"`
+	Content       string          `json:"content,omitempty"`
+	Model         string          `json:"model,omitempty"`
+	Attachments   []Attachment    `json:"attachments,omitempty"`
+	Product       string          `json:"product,omitempty"`
+	Thinking      *ThinkingConfig `json:"thinking,omitempty"`
+	MessageID     string          `json:"messageId,omitempty"`     // idempotency key from client
+	LastMessageID string          `json:"lastMessageId,omitempty"` // for session.resume replay anchor
 }
 
 // OutboundMessage represents a message sent to a WebSocket client.
 type OutboundMessage struct {
 	Type      string      `json:"type"`
 	SessionID string      `json:"sessionId,omitempty"`
+	MessageID string      `json:"messageId,omitempty"` // replay anchor for session.resume
 	Data      interface{} `json:"data,omitempty"`
 }
 
