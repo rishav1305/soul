@@ -145,6 +145,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			// Close all remaining clients on shutdown.
 			for client := range h.clients {
+				client.closeReason.Store("server_shutdown")
 				client.closeSend()
 				client.Close()
 				delete(h.clients, client)
@@ -200,11 +201,10 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 	// Validate origin before upgrade.
 	if !h.isOriginAllowed(r) {
 		if h.metrics != nil {
-			_ = h.metrics.Log(metrics.EventAuthFail, map[string]interface{}{
-				"source":    "ws",
-				"reason":    "origin_rejected",
-				"client_ip": r.RemoteAddr,
+			_ = h.metrics.Log(metrics.EventWSUpgrade, map[string]interface{}{
+				"outcome":   "origin_rejected",
 				"origin":    r.Header.Get("Origin"),
+				"client_id": "",
 			})
 		}
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -216,6 +216,13 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("ws: upgrade failed: %v", err)
+		if h.metrics != nil {
+			_ = h.metrics.Log(metrics.EventWSUpgrade, map[string]interface{}{
+				"outcome": "upgrade_failed",
+				"origin":  r.Header.Get("Origin"),
+				"client_id": "",
+			})
+		}
 		return
 	}
 
@@ -245,6 +252,11 @@ func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 		_ = h.metrics.Log(metrics.EventWSConnect, map[string]interface{}{
 			"client_id": clientID,
 			"origin":    origin,
+		})
+		_ = h.metrics.Log(metrics.EventWSUpgrade, map[string]interface{}{
+			"outcome":   "success",
+			"origin":    origin,
+			"client_id": clientID,
 		})
 	}
 
