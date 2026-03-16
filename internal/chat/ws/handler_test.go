@@ -1200,6 +1200,44 @@ func TestHandleChatSend_SupersededStream_RestoresRunningStatus(t *testing.T) {
 // The stream.Client is pointed at an unreachable address. With a pre-cancelled
 // context, http.Client.Do immediately returns a wrapped context.Canceled error,
 // which is the exact path the fix guards.
+func TestOnClientDisconnect_CompletesRunningSessions(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	// Drain the two initial messages (connection.ready + session.list).
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	sess, _ := store.CreateSession("Test")
+	_ = store.UpdateSessionStatus(sess.ID, session.StatusRunning)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+	client := clients[0]
+
+	done := make(chan struct{})
+	handler := hub.handler
+	cs := handler.getOrCreateChatSession(client)
+	cs.mu.Lock()
+	cs.agents[sess.ID] = agentEntry{
+		cancel: func() { close(done) },
+		done:   done,
+	}
+	cs.mu.Unlock()
+
+	handler.OnClientDisconnect(client)
+
+	updated, _ := store.GetSession(sess.ID)
+	if updated.Status == session.StatusRunning {
+		t.Error("session still running after disconnect, expected completed")
+	}
+}
+
 func TestRunStream_CanceledContext_SilentReturn(t *testing.T) {
 	hub, store, cancel := setupTestEnv(t)
 	defer cancel()

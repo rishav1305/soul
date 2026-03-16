@@ -1068,9 +1068,10 @@ func (h *MessageHandler) OnClientDisconnect(client *Client) {
 	cs.agents = nil
 	cs.mu.Unlock()
 
-	for _, entry := range agents {
+	for sessionID, entry := range agents {
 		entry.cancel()
 		<-entry.done
+		h.completeSession(client, sessionID)
 	}
 }
 
