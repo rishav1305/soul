@@ -2,6 +2,8 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -308,12 +310,16 @@ func TestMarshalBatch_SingleMessage_PlainObject(t *testing.T) {
 	if result[0] == '[' {
 		t.Errorf("single message should not be wrapped in array, got: %s", result)
 	}
+	// Round-trip check: result must equal the original message exactly.
+	if string(result) != string(msgs[0]) {
+		t.Errorf("single message round-trip failed: got %q, want %q", result, msgs[0])
+	}
 }
 
 func TestMarshalBatch_MultipleMessages_ArrayFrame(t *testing.T) {
 	msgs := [][]byte{
-		[]byte(`{"type":"chat.token"}`),
-		[]byte(`{"type":"chat.token"}`),
+		[]byte(`{"type":"chat.token","seq":1}`),
+		[]byte(`{"type":"chat.token","seq":2}`),
 	}
 	result, err := marshalBatch(msgs)
 	if err != nil {
@@ -321,6 +327,33 @@ func TestMarshalBatch_MultipleMessages_ArrayFrame(t *testing.T) {
 	}
 	if result[0] != '[' {
 		t.Errorf("multiple messages should be wrapped in array, got: %s", result)
+	}
+	// Verify the result is valid JSON and contains both messages.
+	var frames []json.RawMessage
+	if err := json.Unmarshal(result, &frames); err != nil {
+		t.Fatalf("result is not valid JSON array: %v", err)
+	}
+	if len(frames) != 2 {
+		t.Errorf("expected 2 frames in array, got %d", len(frames))
+	}
+}
+
+func TestMarshalBatch_ExactlyOneBatch(t *testing.T) {
+	msgs := make([][]byte, 33)
+	for i := range msgs {
+		msgs[i] = []byte(fmt.Sprintf(`{"n":%d}`, i))
+	}
+	result, err := marshalBatch(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Result must be a valid JSON array with all 33 messages.
+	var frames []json.RawMessage
+	if err := json.Unmarshal(result, &frames); err != nil {
+		t.Fatalf("result is not valid JSON array: %v", err)
+	}
+	if len(frames) != 33 {
+		t.Errorf("expected 33 frames in array, got %d", len(frames))
 	}
 }
 

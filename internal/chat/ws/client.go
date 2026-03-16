@@ -238,6 +238,8 @@ func (c *Client) ReadPump() {
 // marshalBatch serializes a batch of messages for wire transmission.
 // Single message: returned as-is (plain JSON object, no array wrapper).
 // Multiple messages: joined into a JSON array.
+// This function never returns a non-nil error; the error return is retained
+// for future extensibility if encoding steps are added.
 func marshalBatch(msgs [][]byte) ([]byte, error) {
 	if len(msgs) == 1 {
 		return msgs[0], nil
@@ -288,6 +290,12 @@ func (c *Client) WritePump() {
 
 			// Got first message — drain additional pending messages within the
 			// coalescing window. Use non-blocking reads to avoid delaying pings.
+			//
+			// The default: branch exits the loop immediately when the channel is
+			// empty (the common case). The time and size limits are a safety valve
+			// for sustained burst traffic where messages arrive faster than we drain:
+			// without them, a continuous stream could delay pings indefinitely or
+			// grow the batch without bound.
 			batch := [][]byte{msg}
 			batchStart := time.Now()
 		drain:
