@@ -1,20 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionState, OutboundMessageType } from '../lib/types';
 import { getWebSocketURL, fetchWSTicket } from '../lib/ws';
-import { reportError, reportDisconnect, reportReconnect } from '../lib/telemetry';
-
-function classifyCloseCode(code: number): string {
-  switch (code) {
-    case 1000: return 'normal';
-    case 1001: return 'client_nav';
-    case 1006: return 'network';
-    case 1008: return 'auth';
-    case 1011: return 'server_error';
-    case 1012:
-    case 1013: return 'server_restart';
-    default: return 'unknown';
-  }
-}
+import { reportError, reportWSLifecycle } from '../lib/telemetry';
 
 interface UseWebSocketOptions {
   url?: string;
@@ -49,8 +36,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const onMessageRef = useRef(onMessage);
   const urlRef = useRef(options.url);
   const attemptRef = useRef(0);
-  const connectTimeRef = useRef<number | null>(null);
-  const disconnectTimeRef = useRef<number | null>(null);
+  const openTimeRef = useRef<number>(0);
 
   // Keep callback and url refs current to avoid stale closures.
   onMessageRef.current = onMessage;
@@ -72,16 +58,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     // If a custom URL was provided (e.g. for testing), use it directly.
     // Otherwise fetch a short-lived ticket so the real token is never sent in the WS URL.
     // Falls back to the raw token if the ticket endpoint is unavailable.
+    const connectStart = performance.now();
     const wsUrlPromise = urlRef.current
       ? Promise.resolve(urlRef.current)
       : fetchWSTicket().then((ticket) => getWebSocketURL(ticket));
 
     wsUrlPromise.then((wsUrl) => {
       if (unmountedRef.current) return;
+      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current });
+      openTimeRef.current = connectStart;
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
       socket.onopen = () => {
+        reportWSLifecycle('open', { attempt: attemptRef.current });
         // Status transitions to 'connected' only when we receive
         // the connection.ready message from the server.
       };
@@ -98,20 +88,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           // Transition to 'connected' when we get connection.ready.
           if (parsed.type === 'connection.ready') {
             setStatus('connected');
-            connectTimeRef.current = Date.now();
-
-            // Report successful reconnect if this is a reconnection.
-            if (attemptRef.current > 0) {
-              reportReconnect({
-                attempt: attemptRef.current,
-                backoffMs: 0,
-                success: true,
-                totalDowntimeMs: disconnectTimeRef.current
-                  ? Date.now() - disconnectTimeRef.current
-                  : undefined,
-              });
-            }
-
             // Reset backoff on successful connection.
             attemptRef.current = 0;
             setReconnectAttempt(0);
@@ -131,33 +107,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       };
 
       socket.onclose = (event: CloseEvent) => {
+        const duration = performance.now() - openTimeRef.current;
+        reportWSLifecycle('close', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+          duration_ms: Math.round(duration),
+        });
         wsRef.current = null;
         if (!unmountedRef.current) {
-          const reasonClass = classifyCloseCode(event.code);
-          disconnectTimeRef.current = Date.now();
-
-          reportDisconnect({
-            closeCode: event.code,
-            reasonClass,
-            connectionDurationMs: connectTimeRef.current
-              ? Date.now() - connectTimeRef.current
-              : undefined,
-          });
-
           setStatus('disconnected');
           const delay = backoffDelay(attemptRef.current);
           attemptRef.current++;
           setReconnectAttempt(attemptRef.current);
-          reportReconnect({
-            attempt: attemptRef.current,
-            backoffMs: delay,
-            success: false,
-          });
+
           reconnectTimerRef.current = setTimeout(connect, delay);
         }
       };
 
       socket.onerror = () => {
+        reportWSLifecycle('error', { attempt: attemptRef.current });
         // The error event is always followed by close, so we set 'error'
         // briefly — the close handler will then schedule reconnection.
         if (!unmountedRef.current) {
