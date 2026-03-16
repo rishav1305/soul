@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -697,31 +698,62 @@ func (s *Server) handleGetMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTelemetry accepts frontend events and logs them to the metrics logger.
+// Supports both single events and batched payloads.
 func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	if s.metrics == nil {
 		http.Error(w, "metrics not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	var payload struct {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+	if err != nil {
+		http.Error(w, "read error", http.StatusBadRequest)
+		return
+	}
+
+	// Try to detect batch vs single event.
+	var envelope struct {
+		Batch []struct {
+			Type string                 `json:"type"`
+			Data map[string]interface{} `json:"data"`
+		} `json:"batch"`
+		// Single-event fields (ignored when batch is present)
 		Type string                 `json:"type"`
 		Data map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	switch payload.Type {
-	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS, metrics.EventFrontendUsage,
-		metrics.EventFrontendWSDisconnect, metrics.EventFrontendWSReconnect, metrics.EventFrontendAuthFail:
-		// OK — known event types
-	default:
-		http.Error(w, "unknown event type", http.StatusBadRequest)
-		return
+	validTypes := map[string]bool{
+		metrics.EventFrontendError:        true,
+		metrics.EventFrontendRender:       true,
+		metrics.EventFrontendWS:           true,
+		metrics.EventFrontendUsage:        true,
+		metrics.EventFrontendWSDisconnect: true,
+		metrics.EventFrontendWSReconnect:  true,
+		metrics.EventFrontendAuthFail:     true,
 	}
 
-	_ = s.metrics.Log(payload.Type, payload.Data)
+	if envelope.Batch != nil {
+		// Batched path: process each entry, skip invalid types.
+		for _, entry := range envelope.Batch {
+			if !validTypes[entry.Type] {
+				log.Printf("telemetry: batch entry has unknown type %q, skipping", entry.Type)
+				continue
+			}
+			_ = s.metrics.Log(entry.Type, entry.Data)
+		}
+	} else {
+		// Single event path (backward compat).
+		if !validTypes[envelope.Type] {
+			http.Error(w, "unknown event type", http.StatusBadRequest)
+			return
+		}
+		_ = s.metrics.Log(envelope.Type, envelope.Data)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

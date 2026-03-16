@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/ws"
 )
@@ -21,6 +22,17 @@ import (
 func newTestServer(t *testing.T, opts ...Option) *Server {
 	t.Helper()
 	return New(opts...)
+}
+
+// newTestServerWithMetrics creates a Server with an EventLogger for testing.
+func newTestServerWithMetrics(t *testing.T) *Server {
+	t.Helper()
+	mel, err := metrics.NewEventLogger(t.TempDir(), "")
+	if err != nil {
+		t.Fatalf("metrics.NewEventLogger: %v", err)
+	}
+	t.Cleanup(func() { _ = mel.Close() })
+	return New(WithMetrics(mel))
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -1390,5 +1402,29 @@ func TestTelemetryRateLimited(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("expected 429 after rate limit, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleTelemetry_BatchedPayload_Returns204(t *testing.T) {
+	s := newTestServerWithMetrics(t)
+	body := `{"batch":[{"type":"frontend.ws","data":{"event":"close","code":1006}},{"type":"frontend.ws","data":{"event":"connect_attempt","attempt":1}}]}`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTelemetry_BatchedPayload_SkipsInvalidType(t *testing.T) {
+	s := newTestServerWithMetrics(t)
+	body := `{"batch":[{"type":"frontend.ws","data":{"event":"close"}},{"type":"unknown.type","data":{}}]}`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204 (partial ingestion), got %d", w.Code)
 	}
 }
