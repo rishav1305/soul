@@ -541,6 +541,11 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 
 		ch, err := h.streamClient.Stream(ctx, req)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				// Expected: chat.stop, superseded stream, or client disconnect.
+				// Caller handles session lifecycle — they know the intent.
+				return
+			}
 			log.Printf("ws: stream error after %v for session %s round %d: %v",
 				time.Since(roundStart).Round(time.Millisecond), sessionID, round, err)
 			var authErr *stream.AuthError
@@ -548,6 +553,9 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 				log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
 			} else {
 				log.Printf("ws: stream error for session %s: %v", sessionID, err)
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				h.completeSession(client, sessionID)
 			}
 			h.logAPIError(sessionID, err)
 			h.sendClassifiedError(client, sessionID, err)

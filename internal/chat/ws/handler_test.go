@@ -13,6 +13,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/rishav1305/soul-v2/internal/chat/session"
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
 
 // setupTestEnv creates a Hub with a session store and MessageHandler,
@@ -677,6 +678,104 @@ func TestNewMessageHandler(t *testing.T) {
 	}
 }
 
+func TestBuildAPIMessages_MergesConsecutiveRoles(t *testing.T) {
+	sessionMsgs := []*session.Message{
+		{Role: "user", Content: "first"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "reply one"},
+		{Role: "assistant", Content: "reply two"},
+	}
+
+	got := buildAPIMessages(sessionMsgs)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 API messages after normalization, got %d", len(got))
+	}
+	if got[0].Role != "user" {
+		t.Fatalf("got[0].Role = %q, want %q", got[0].Role, "user")
+	}
+	if got[1].Role != "assistant" {
+		t.Fatalf("got[1].Role = %q, want %q", got[1].Role, "assistant")
+	}
+	if len(got[0].Content) != 2 {
+		t.Fatalf("user content blocks = %d, want 2", len(got[0].Content))
+	}
+	if len(got[1].Content) != 2 {
+		t.Fatalf("assistant content blocks = %d, want 2", len(got[1].Content))
+	}
+	if got[0].Content[0].Text != "first" || got[0].Content[1].Text != "second" {
+		t.Fatalf("unexpected user text blocks: %#v", got[0].Content)
+	}
+	if got[1].Content[0].Text != "reply one" || got[1].Content[1].Text != "reply two" {
+		t.Fatalf("unexpected assistant text blocks: %#v", got[1].Content)
+	}
+}
+
+func TestBuildAPIMessages_MergesToolAndTextByRole(t *testing.T) {
+	toolUseBlocks := []stream.ContentBlock{
+		{
+			Type:  "tool_use",
+			ID:    "tool-1",
+			Name:  "demo_tool",
+			Input: json.RawMessage(`{"k":"v"}`),
+		},
+	}
+	toolUseJSON, err := json.Marshal(toolUseBlocks)
+	if err != nil {
+		t.Fatalf("marshal tool_use: %v", err)
+	}
+
+	toolResultJSON, err := json.Marshal(struct {
+		ToolUseID string `json:"tool_use_id"`
+		Content   string `json:"content"`
+	}{
+		ToolUseID: "tool-1",
+		Content:   "done",
+	})
+	if err != nil {
+		t.Fatalf("marshal tool_result: %v", err)
+	}
+
+	sessionMsgs := []*session.Message{
+		{Role: "assistant", Content: "prelude"},
+		{Role: "tool_use", Content: string(toolUseJSON)},
+		{Role: "tool_result", Content: string(toolResultJSON)},
+		{Role: "user", Content: "follow-up question"},
+	}
+
+	got := buildAPIMessages(sessionMsgs)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 API messages after normalization, got %d", len(got))
+	}
+
+	assistant := got[0]
+	if assistant.Role != "assistant" {
+		t.Fatalf("assistant role = %q, want %q", assistant.Role, "assistant")
+	}
+	if len(assistant.Content) != 2 {
+		t.Fatalf("assistant content blocks = %d, want 2", len(assistant.Content))
+	}
+	if assistant.Content[0].Type != "text" || assistant.Content[0].Text != "prelude" {
+		t.Fatalf("unexpected first assistant block: %#v", assistant.Content[0])
+	}
+	if assistant.Content[1].Type != "tool_use" || assistant.Content[1].ID != "tool-1" {
+		t.Fatalf("unexpected second assistant block: %#v", assistant.Content[1])
+	}
+
+	user := got[1]
+	if user.Role != "user" {
+		t.Fatalf("user role = %q, want %q", user.Role, "user")
+	}
+	if len(user.Content) != 2 {
+		t.Fatalf("user content blocks = %d, want 2", len(user.Content))
+	}
+	if user.Content[0].Type != "tool_result" || user.Content[0].ToolUseID != "tool-1" {
+		t.Fatalf("unexpected first user block: %#v", user.Content[0])
+	}
+	if user.Content[1].Type != "text" || user.Content[1].Text != "follow-up question" {
+		t.Fatalf("unexpected second user block: %#v", user.Content[1])
+	}
+}
+
 // --- Security: Input Validation Tests ---
 
 func TestSecurity_ChatSend_OversizedContent(t *testing.T) {
@@ -976,3 +1075,112 @@ func TestHandleChatSend_DedupSendsDone(t *testing.T) {
 		t.Errorf("expected chat.done on dedup, got %v", msg["type"])
 	}
 }
+
+// --- runStream context.Canceled behaviour ---
+
+// staticTokenSource satisfies stream.TokenSource for tests.
+type staticTokenSource struct{ token string }
+
+func (s *staticTokenSource) Token() (string, error) { return s.token, nil }
+
+// TestRunStream_CanceledContext_SilentReturn verifies that runStream returns
+// silently when the agent context is already cancelled, without completing the
+// session or sending a chat.error to the client.
+//
+// The stream.Client is pointed at an unreachable address. With a pre-cancelled
+// context, http.Client.Do immediately returns a wrapped context.Canceled error,
+// which is the exact path the fix guards.
+func TestRunStream_CanceledContext_SilentReturn(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	// Drain connection.ready + session.list.
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	// Create a session and set it to StatusRunning so we can detect any
+	// unintended status transition.
+	sess, err := store.CreateSession("CancelTest")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := store.UpdateSessionStatus(sess.ID, session.StatusRunning); err != nil {
+		t.Fatalf("set running: %v", err)
+	}
+
+	// Grab the hub's internal client handle.
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("expected at least one connected client")
+	}
+	wsClient := clients[0]
+
+	// Build a real stream.Client pointed at a test server that never responds.
+	// We pre-cancel the agentCtx so http.Do returns context.Canceled immediately
+	// — before the server even needs to reply.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block forever — we should never reach here because the context is
+		// pre-cancelled and http.Do returns before the request is sent.
+		select {}
+	}))
+	defer srv.Close()
+
+	sc := stream.NewClient(
+		&staticTokenSource{token: "test-token"},
+		stream.WithBaseURL(srv.URL),
+	)
+
+	// Create a handler wired with the stream client.
+	handler := NewMessageHandler(hub, store, nil, WithStreamClient(sc))
+
+	// Build a minimal stream request.
+	req := &stream.Request{
+		Model:     "claude-haiku-4-5-20251001",
+		MaxTokens: 64,
+		Messages: []stream.Message{
+			{Role: "user", Content: []stream.ContentBlock{{Type: "text", Text: "ping"}}},
+		},
+		SkipValidation: true,
+	}
+
+	// Pre-cancel the agent context — this is the key condition under test.
+	agentCtx, agentCancel := context.WithCancel(context.Background())
+	agentCancel()
+
+	// runStream should return quickly and silently.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.runStream(wsClient, sess.ID, req, agentCtx, "")
+	}()
+
+	select {
+	case <-done:
+		// Good: runStream returned.
+	case <-time.After(3 * time.Second):
+		t.Fatal("runStream did not return within 3s — likely blocked instead of returning on context.Canceled")
+	}
+
+	// Session must still be StatusRunning — runStream must NOT have completed it.
+	updated, err := store.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if updated.Status != session.StatusRunning {
+		t.Errorf("session status = %q, want %q — runStream incorrectly changed session lifecycle on context.Canceled",
+			updated.Status, session.StatusRunning)
+	}
+
+	// No chat.error should have been sent to the client.
+	msgs := drainMessages(t, ctx, conn, 300*time.Millisecond)
+	for _, m := range msgs {
+		if m["type"] == TypeChatError {
+			t.Errorf("unexpected chat.error emitted on context.Canceled: %v", m)
+		}
+	}
+}
+
