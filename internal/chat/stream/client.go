@@ -225,9 +225,19 @@ func (c *Client) Send(ctx context.Context, req *Request) (*Response, error) {
 
 // handleErrorResponse converts an HTTP error response into the appropriate error type.
 func (c *Client) handleErrorResponse(resp *http.Response) error {
+	// Claude API errors have the format: {"type": "error", "error": {"type": "...", "message": "..."}}
+	var wrapper struct {
+		Type  string   `json:"type"`
+		Error APIError `json:"error"`
+	}
 	var apiErr APIError
-	if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		apiErr = APIError{Type: "unknown", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+	} else if wrapper.Error.Type != "" {
+		apiErr = wrapper.Error
+	} else {
+		// Fallback: maybe the error was at the top level
+		apiErr = APIError{Type: wrapper.Type, Message: fmt.Sprintf("HTTP %d (no error detail)", resp.StatusCode)}
 	}
 	apiErr.StatusCode = resp.StatusCode
 

@@ -375,7 +375,66 @@ func buildAPIMessages(sessionMsgs []*session.Message) []stream.Message {
 			})
 		}
 	}
+	// Fix orphaned tool_use: if a tool_use message (assistant) is not followed
+	// by tool_result messages (user), add synthetic tool_results so Claude doesn't
+	// reject the conversation. This happens when a stream is cancelled mid-tool-loop.
+	apiMessages = fixOrphanedToolUse(apiMessages)
+
 	return normalizeAPIMessages(apiMessages)
+}
+
+// fixOrphanedToolUse ensures every tool_use block has a corresponding tool_result.
+func fixOrphanedToolUse(messages []stream.Message) []stream.Message {
+	fixed := make([]stream.Message, 0, len(messages))
+	for i, msg := range messages {
+		fixed = append(fixed, msg)
+
+		// Check if this is an assistant message with tool_use blocks
+		if msg.Role != "assistant" {
+			continue
+		}
+		var toolUseIDs []string
+		for _, cb := range msg.Content {
+			if cb.Type == "tool_use" {
+				toolUseIDs = append(toolUseIDs, cb.ID)
+			}
+		}
+		if len(toolUseIDs) == 0 {
+			continue
+		}
+
+		// Check if the next message(s) provide tool_results for all tool_use IDs
+		provided := make(map[string]bool)
+		for j := i + 1; j < len(messages); j++ {
+			if messages[j].Role != "user" {
+				break
+			}
+			for _, cb := range messages[j].Content {
+				if cb.Type == "tool_result" {
+					provided[cb.ToolUseID] = true
+				}
+			}
+		}
+
+		// Add synthetic tool_results for any missing IDs
+		var missing []stream.ContentBlock
+		for _, id := range toolUseIDs {
+			if !provided[id] {
+				missing = append(missing, stream.ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: id,
+					Content:   "[tool execution was interrupted]",
+				})
+			}
+		}
+		if len(missing) > 0 {
+			fixed = append(fixed, stream.Message{
+				Role:    "user",
+				Content: missing,
+			})
+		}
+	}
+	return fixed
 }
 
 // normalizeAPIMessages merges consecutive messages with the same role into one
