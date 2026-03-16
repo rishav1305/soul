@@ -358,6 +358,64 @@ func TestHubShutdownClosesClients(t *testing.T) {
 	}
 }
 
+func TestHubShutdownSetsCloseReasonServerShutdown(t *testing.T) {
+	h := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	hubDone := make(chan struct{})
+	go func() {
+		h.Run(ctx)
+		close(hubDone)
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.HandleUpgrade(w, r)
+	}))
+
+	wsURL := "ws" + srv.URL[len("http"):]
+	dialCtx, dialCancel := context.WithTimeout(ctx, 2*time.Second)
+	_, _, err := websocket.Dial(dialCtx, wsURL, nil)
+	dialCancel()
+	if err != nil {
+		srv.Close()
+		t.Fatalf("dial: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Get the registered client from the hub.
+	clients := h.Clients()
+	if len(clients) != 1 {
+		t.Fatalf("expected 1 client, got %d", len(clients))
+	}
+	client := clients[0]
+
+	// Verify closeReason is not set before shutdown.
+	if reason := client.closeReason.Load(); reason != nil {
+		t.Errorf("expected closeReason to be nil before shutdown, got %v", reason)
+	}
+
+	// Close the HTTP test server and cancel the hub context to trigger shutdown.
+	srv.Close()
+	cancel()
+
+	select {
+	case <-hubDone:
+		// Hub shut down successfully.
+	case <-time.After(2 * time.Second):
+		t.Fatal("hub did not shut down within timeout")
+	}
+
+	// Verify that closeReason is now set to "server_shutdown".
+	reason := client.closeReason.Load()
+	if reason == nil {
+		t.Fatal("expected closeReason to be set after shutdown, got nil")
+	}
+	if reason.(string) != "server_shutdown" {
+		t.Errorf("expected closeReason to be 'server_shutdown', got %q", reason.(string))
+	}
+}
+
 func TestGenerateClientID(t *testing.T) {
 	h := NewHub()
 	id1 := h.generateClientID()
