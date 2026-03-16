@@ -160,7 +160,11 @@ func (h *Hub) Run(ctx context.Context) {
 				delete(h.clients, client)
 				client.closeSend()
 				if h.connHealth != nil {
-					h.connHealth.RecordDisconnect(classifyCloseCode(client.closeCode))
+					reason := "unknown"
+					if v := client.closeReason.Load(); v != nil {
+						reason = v.(string)
+					}
+					h.connHealth.RecordDisconnect(reason)
 				}
 				// Cancel all running agents for this client.
 				if h.handler != nil {

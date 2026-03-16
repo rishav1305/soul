@@ -298,26 +298,29 @@ func TestClientSendAfterClose(t *testing.T) {
 	c.closeSend()
 }
 
-func TestClassifyCloseCode(t *testing.T) {
-	tests := []struct {
-		code     int
-		expected string
-	}{
-		{1000, "normal"},
-		{1001, "client_nav"},
-		{1006, "network"},
-		{1008, "auth"},
-		{1011, "server_error"},
-		{1012, "server_restart"},
-		{1013, "server_restart"},
-		{4001, "auth"},
-		{4000, "unknown"},
-		{0, "unknown"},
+func TestClient_SlowClientQueueFull_SetsCloseReason(t *testing.T) {
+	// Create a minimal client without a real connection.
+	c := &Client{
+		id:   "test-client",
+		send: make(chan []byte, sendChannelCap),
 	}
-	for _, tt := range tests {
-		got := classifyCloseCode(tt.code)
-		if got != tt.expected {
-			t.Errorf("classifyCloseCode(%d) = %q, want %q", tt.code, got, tt.expected)
-		}
+
+	// Fill the channel to capacity.
+	for i := 0; i < sendChannelCap; i++ {
+		c.send <- []byte(`{"type":"test"}`)
+	}
+
+	// Next send should trigger slow-client close and set closeReason.
+	ok := c.Send([]byte(`{"type":"overflow"}`))
+	if ok {
+		t.Fatal("expected Send to return false for full channel")
+	}
+	// closeReason must be non-nil and equal to "slow_client_queue_full".
+	v := c.closeReason.Load()
+	if v == nil {
+		t.Fatal("closeReason is nil, expected slow_client_queue_full")
+	}
+	if reason := v.(string); reason != "slow_client_queue_full" {
+		t.Errorf("closeReason = %q, want %q", reason, "slow_client_queue_full")
 	}
 }

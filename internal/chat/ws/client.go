@@ -45,7 +45,12 @@ type Client struct {
 	cancel    context.CancelFunc
 	ctx       context.Context
 	connTime  time.Time
-	closeCode int // WebSocket close code from last disconnect
+
+	// closeReason stores the classified reason for disconnect, set at the point
+	// of failure and read by ReadPump's deferred disconnect metric emission.
+	// Uses atomic.Value for safe concurrent access (WritePump/Send write it,
+	// ReadPump reads it in defer).
+	closeReason atomic.Value // stores string
 
 	// Rate limiting: sliding window of inbound message timestamps.
 	rateMu   sync.Mutex
@@ -123,6 +128,7 @@ func (c *Client) Send(msg []byte) bool {
 	default:
 		// Channel full — close slow client instead of silently dropping messages.
 		log.Printf("ws: client %s send channel full, closing slow client", c.id)
+		c.closeReason.Store("slow_client_queue_full")
 		c.sendDone = true
 		close(c.send)
 		return false
@@ -160,10 +166,21 @@ func (c *Client) ReadPump() {
 
 		if c.hub.metrics != nil {
 			duration := time.Since(c.connTime).Seconds()
-			_ = c.hub.metrics.Log(metrics.EventWSClose, map[string]interface{}{
+			reason := "read_pump_exit" // fallback if no reason was classified
+			if v := c.closeReason.Load(); v != nil {
+				reason = v.(string)
+			}
+			// close_code: use websocket.CloseStatus from last read error if available.
+			// We don't have the error in defer scope, so use -1 (abnormal) as default;
+			// client_normal_close is the only reason that receives code 1000.
+			closeCode := -1
+			if reason == "client_normal_close" {
+				closeCode = 1000
+			}
+			_ = c.hub.metrics.Log(metrics.EventWSDisconnect, map[string]interface{}{
 				"client_id":        c.id,
-				"close_code":       c.closeCode,
-				"reason_class":     classifyCloseCode(c.closeCode),
+				"reason":           reason,
+				"close_code":       closeCode,
 				"duration_seconds": duration,
 			})
 		}
@@ -172,14 +189,22 @@ func (c *Client) ReadPump() {
 	for {
 		typ, data, err := c.conn.Read(c.ctx)
 		if err != nil {
-			c.closeCode = int(websocket.CloseStatus(err))
-			// Check if this is a normal close or context cancellation.
-			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
+			switch {
+			case websocket.CloseStatus(err) == websocket.StatusNormalClosure:
 				log.Printf("ws: client %s closed normally", c.id)
-			} else if c.ctx.Err() != nil {
+				if c.closeReason.Load() == nil {
+					c.closeReason.Store("client_normal_close")
+				}
+			case c.ctx.Err() != nil:
 				log.Printf("ws: client %s context cancelled", c.id)
-			} else {
+				if c.closeReason.Load() == nil {
+					c.closeReason.Store("context_cancelled")
+				}
+			default:
 				log.Printf("ws: client %s read error: %v", c.id, err)
+				if c.closeReason.Load() == nil {
+					c.closeReason.Store("read_error")
+				}
 			}
 			return
 		}
@@ -232,6 +257,7 @@ func (c *Client) WritePump() {
 			err := c.conn.Write(c.ctx, websocket.MessageText, msg)
 			if err != nil {
 				log.Printf("ws: client %s write error: %v", c.id, err)
+				c.closeReason.Store("write_error")
 				return
 			}
 
@@ -242,6 +268,7 @@ func (c *Client) WritePump() {
 			cancel()
 			if err != nil {
 				log.Printf("ws: client %s ping failed: %v", c.id, err)
+				c.closeReason.Store("ping_timeout")
 				return
 			}
 
@@ -257,22 +284,3 @@ func (c *Client) Close() {
 	c.conn.Close(websocket.StatusGoingAway, "server shutting down")
 }
 
-// classifyCloseCode maps WebSocket close codes to human-readable reason classes.
-func classifyCloseCode(code int) string {
-	switch code {
-	case 1000:
-		return "normal"
-	case 1001:
-		return "client_nav"
-	case 1006:
-		return "network"
-	case 1008, 4001:
-		return "auth"
-	case 1011:
-		return "server_error"
-	case 1012, 1013:
-		return "server_restart"
-	default:
-		return "unknown"
-	}
-}
