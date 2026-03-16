@@ -297,3 +297,27 @@ func TestClientSendAfterClose(t *testing.T) {
 	// Double close should not panic.
 	c.closeSend()
 }
+
+func TestClassifyCloseCode(t *testing.T) {
+	tests := []struct {
+		code     int
+		expected string
+	}{
+		{1000, "normal"},
+		{1001, "client_nav"},
+		{1006, "network"},
+		{1008, "auth"},
+		{1011, "server_error"},
+		{1012, "server_restart"},
+		{1013, "server_restart"},
+		{4001, "auth"},
+		{4000, "unknown"},
+		{0, "unknown"},
+	}
+	for _, tt := range tests {
+		got := classifyCloseCode(tt.code)
+		if got != tt.expected {
+			t.Errorf("classifyCloseCode(%d) = %q, want %q", tt.code, got, tt.expected)
+		}
+	}
+}
