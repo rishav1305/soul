@@ -349,7 +349,7 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 			}
 			cs.mu.Unlock()
 		}()
-		h.runStream(client, sessionID, req, agentCtx)
+		h.runStream(client, sessionID, req, agentCtx, product)
 	}()
 }
 
@@ -506,7 +506,7 @@ type toolCall struct {
 // runStream executes the Claude API streaming call and forwards events to the client.
 // It handles tool-use loops: if Claude responds with tool_use blocks, it dispatches
 // them to product servers and sends the results back for up to maxToolRounds.
-func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request, agentCtx context.Context) {
+func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream.Request, agentCtx context.Context, product string) {
 	startTime := time.Now()
 
 	// Use the provided agent context with a 5-minute deadline.
@@ -520,6 +520,7 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 		_ = h.metrics.Log(metrics.EventWSStreamStart, map[string]interface{}{
 			"session_id": sessionID,
 			"client_id":  client.ID(),
+			"product":    product,
 		})
 	}
 
@@ -817,11 +818,14 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 		if h.metrics != nil {
 			duration := time.Since(startTime).Milliseconds()
 			_ = h.metrics.Log(metrics.EventWSStreamEnd, map[string]interface{}{
-				"session_id":   sessionID,
-				"client_id":    client.ID(),
-				"message_id":   messageID,
-				"total_tokens": totalOutputTokens,
-				"duration_ms":  duration,
+				"session_id":    sessionID,
+				"client_id":     client.ID(),
+				"message_id":    messageID,
+				"product":       product,
+				"model":         model,
+				"total_ms":      duration,
+				"input_tokens":  totalInputTokens,
+				"output_tokens": totalOutputTokens,
 			})
 			_ = h.metrics.Log(metrics.EventAPIRequest, map[string]interface{}{
 				"session_id":    sessionID,
