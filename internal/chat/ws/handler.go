@@ -271,13 +271,15 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		}
 	}
 
-	// Inject product context if session has a product set.
-	if sess != nil && sess.Product != "" {
-		pctx := prodctx.ForProduct(sess.Product)
-		req.System = pctx.System
-		if len(pctx.Tools) > 0 {
-			req.Tools = pctx.Tools
-		}
+	// Inject product context (or default context for general mode).
+	product := ""
+	if sess != nil {
+		product = sess.Product
+	}
+	pctx := prodctx.ForProduct(product)
+	req.System = pctx.System
+	if len(pctx.Tools) > 0 {
+		req.Tools = pctx.Tools
 	}
 
 	// Generate a message ID for the assistant response ahead of time.
@@ -373,7 +375,35 @@ func buildAPIMessages(sessionMsgs []*session.Message) []stream.Message {
 			})
 		}
 	}
-	return apiMessages
+	return normalizeAPIMessages(apiMessages)
+}
+
+// normalizeAPIMessages merges consecutive messages with the same role into one
+// message by appending content blocks in order. This keeps Claude payloads
+// valid when a turn ends with a user message (for example after a stream error).
+func normalizeAPIMessages(messages []stream.Message) []stream.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	normalized := make([]stream.Message, 0, len(messages))
+	for _, msg := range messages {
+		if len(normalized) == 0 || normalized[len(normalized)-1].Role != msg.Role {
+			cloned := stream.Message{
+				Role: msg.Role,
+			}
+			if len(msg.Content) > 0 {
+				cloned.Content = append([]stream.ContentBlock(nil), msg.Content...)
+			}
+			normalized = append(normalized, cloned)
+			continue
+		}
+
+		last := &normalized[len(normalized)-1]
+		last.Content = append(last.Content, msg.Content...)
+	}
+
+	return normalized
 }
 
 // toolCall holds accumulated data for a single tool_use block during streaming.
@@ -411,8 +441,15 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 
 	// Tool loop: stream, check for tool_use, dispatch, repeat.
 	for round := 0; round <= maxToolRounds; round++ {
+		roundStart := time.Now()
+		log.Printf("ws: stream round %d for session %s (model=%s, system=%d chars, messages=%d, tools=%d, thinking=%v)",
+			round, sessionID, req.Model, len(req.System), len(req.Messages), len(req.Tools),
+			req.Thinking != nil)
+
 		ch, err := h.streamClient.Stream(ctx, req)
 		if err != nil {
+			log.Printf("ws: stream error after %v for session %s round %d: %v",
+				time.Since(roundStart).Round(time.Millisecond), sessionID, round, err)
 			var authErr *stream.AuthError
 			if errors.As(err, &authErr) {
 				log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
@@ -463,14 +500,18 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 						h.sendToClient(client, tokenMsg)
 
 						// Log first token only (per spec: ws.stream.token).
-						if !firstTokenLogged && h.metrics != nil {
+						if !firstTokenLogged {
 							firstTokenLogged = true
-							_ = h.metrics.Log(metrics.EventWSStreamToken, map[string]interface{}{
-								"session_id":     sessionID,
-								"client_id":      client.ID(),
-								"message_id":     messageID,
-								"first_token_ms": time.Since(startTime).Milliseconds(),
-							})
+							log.Printf("ws: first token for session %s after %v (round %d)",
+								sessionID, time.Since(startTime).Round(time.Millisecond), round)
+							if h.metrics != nil {
+								_ = h.metrics.Log(metrics.EventWSStreamToken, map[string]interface{}{
+									"session_id":     sessionID,
+									"client_id":      client.ID(),
+									"message_id":     messageID,
+									"first_token_ms": time.Since(startTime).Milliseconds(),
+								})
+							}
 						}
 					}
 					if evt.Delta.PartialJSON != "" && currentToolIdx >= 0 {
