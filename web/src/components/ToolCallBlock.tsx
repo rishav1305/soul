@@ -2,22 +2,32 @@ import { useState, useMemo } from 'react';
 import type { ToolCallBlockProps } from '../lib/types';
 import { DiffBlock } from './DiffBlock';
 
-const TOOL_ICONS: Record<string, string> = {
-  code_read: '\uD83D\uDCC4',
-  code_write: '\u270F\uFE0F',
-  code_edit: '\u270F\uFE0F',
-  code_search: '\uD83D\uDD0D',
-  code_grep: '\uD83D\uDD0D',
-  code_exec: '\u26A1',
-  task_update: '\uD83D\uDCCB',
-  task_create: '\uD83D\uDCCB',
-  e2e_assert: '\uD83E\uDDEA',
-  e2e_dom: '\uD83E\uDDEA',
-  e2e_screenshot: '\uD83D\uDCF8',
-};
+function ToolIcon({ name, className }: { name: string; className?: string }) {
+  const cls = className ?? 'text-fg-muted';
+  const props = { width: 10, height: 10, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, className: cls };
 
-function toolIcon(name: string): string {
-  return TOOL_ICONS[name] ?? '\u2699\uFE0F';
+  switch (name) {
+    case 'code_read':
+      return <svg {...props}><path d="M3 2h7l3 3v9H3z" /><path d="M10 2v3h3" /></svg>;
+    case 'code_write':
+    case 'code_edit':
+      return <svg {...props}><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>;
+    case 'code_search':
+    case 'code_grep':
+      return <svg {...props}><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>;
+    case 'code_exec':
+      return <svg {...props}><path d="M4 4l4 4-4 4" /><path d="M10 12h4" /></svg>;
+    case 'task_update':
+    case 'task_create':
+      return <svg {...props}><rect x="2" y="2" width="12" height="12" rx="2" /><path d="M5 8h6M8 5v6" /></svg>;
+    case 'e2e_assert':
+    case 'e2e_dom':
+      return <svg {...props}><path d="M3 8l3 3 7-7" /></svg>;
+    case 'e2e_screenshot':
+      return <svg {...props}><rect x="2" y="3" width="12" height="10" rx="1" /><circle cx="8" cy="8" r="2" /></svg>;
+    default:
+      return <svg {...props}><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1" /></svg>;
+  }
 }
 
 function extractContext(name: string, input: Record<string, unknown>): string | null {
@@ -84,10 +94,7 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
   const isRunning = tool.status === 'running';
   const isError = tool.status === 'error';
 
-  const statusIcon = isRunning ? '\u25CC' : isError ? '\u2717' : '\u2713';
-  const statusColor = isRunning ? 'text-fg-muted' : isError ? 'text-red-500' : 'text-green-500';
-
-  const icon = toolIcon(tool.name);
+  const statusColor = isRunning ? 'text-soul' : isError ? 'text-red-500' : 'text-green-500';
   const context = useMemo(() => extractContext(tool.name, tool.input), [tool.name, tool.input]);
   const summary = briefSummary(tool);
   const hasDetails = !!tool.output;
@@ -105,9 +112,19 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
 
   const pillContent = (
     <>
-      <span className={`${statusColor} ${isRunning ? 'animate-pulse' : ''} shrink-0`}>
-        {statusIcon}
-      </span>
+      {isRunning ? (
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="shrink-0 animate-spin">
+          <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="7 4" className="text-soul" />
+        </svg>
+      ) : isError ? (
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-red-500">
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      ) : (
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-green-500">
+          <path d="M3 8l3 3 7-7" />
+        </svg>
+      )}
       {isRunning && typeof tool.progress === 'number' && tool.progress > 0 && (
         <div className="w-12 h-1 rounded-full bg-overlay shrink-0 overflow-hidden">
           <div
@@ -116,7 +133,7 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
           />
         </div>
       )}
-      <span className="shrink-0">{icon}</span>
+      <ToolIcon name={tool.name} className={`shrink-0 ${statusColor}`} />
       <span className="text-fg-secondary">{tool.name}</span>
       {context && (
         <span
