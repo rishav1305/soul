@@ -246,82 +246,84 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
       data-testid="message-bubble"
       className={`group flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-fade-in`}
     >
-      <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row w-full'} max-w-[85%]`}>
-        {/* Role avatar */}
-        <div className="shrink-0 mt-3">
-          {isUser ? (
-            <div className="w-6 h-6 rounded-full bg-elevated flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-fg-muted">
-                <circle cx="8" cy="5" r="3" />
-                <path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5" />
-              </svg>
-            </div>
+      {/* Assistant header: golden diamond + model + tokens */}
+      {!isUser && (
+        <div className="flex items-center gap-1.5 mb-1">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            className={isStreaming ? 'drop-shadow-[0_0_6px_var(--color-soul-glow)]' : ''}>
+            <defs>
+              <linearGradient id="diamond-gold" x1="2" y1="0" x2="14" y2="16">
+                <stop offset="0%" stopColor="#f0c040" />
+                <stop offset="50%" stopColor="#d4a018" />
+                <stop offset="100%" stopColor="#b8860b" />
+              </linearGradient>
+            </defs>
+            <path d="M8 0L14 8L8 16L2 8Z" fill="url(#diamond-gold)">
+              {isStreaming && <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />}
+            </path>
+          </svg>
+          {badge && <span className="text-[9px] font-mono text-fg-muted">{badge}</span>}
+          {message.usage && (
+            <>
+              <span className="text-[9px] text-fg-muted/50">{'\u00B7'}</span>
+              <span className="text-[9px] font-mono text-fg-muted/70">
+                {formatTokens(message.usage.inputTokens)} {'\u2192'} {formatTokens(message.usage.outputTokens)}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Message content */}
+      <div className={`min-w-0 max-w-[85%] ${
+        isUser
+          ? 'bg-[#12123a] border border-[#1e1e50] px-4 py-3 text-fg rounded-[16px_16px_4px_16px]'
+          : 'bg-surface border border-border-subtle px-4 py-3 text-fg rounded-[4px_14px_14px_14px]'
+      }`}>
+        {/* Thinking block above text for assistant */}
+        {!isUser && message.thinking && (
+          <ThinkingBlock content={message.thinking} isStreaming={isStreaming && !message.content} />
+        )}
+
+        {/* Text content */}
+        {message.content && (
+          isUser ? (
+            <p className="whitespace-pre-wrap break-words text-fg leading-relaxed">
+              {searchQuery ? <HighlightText text={message.content} query={searchQuery} /> : message.content}
+            </p>
           ) : (
-            <div className={`w-6 h-6 rounded-full bg-soul/15 flex items-center justify-center ${isStreaming ? 'diamond-pulse diamond-breathe' : ''}`}>
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="var(--color-soul)">
-                <path d="M8 0L14 8L8 16L2 8Z" />
-              </svg>
-            </div>
-          )}
-        </div>
-
-        {/* Message content */}
-        <div className={`min-w-0 px-4 py-3 ${
-          isUser
-            ? 'bg-elevated border-l-2 border-soul/40 text-fg rounded-2xl rounded-br-md'
-            : 'text-fg rounded-2xl rounded-bl-md'
-        }`}>
-          {/* Thinking block above text for assistant */}
-          {!isUser && message.thinking && (
-            <ThinkingBlock content={message.thinking} isStreaming={isStreaming && !message.content} />
-          )}
-
-          {/* Text content */}
-          {message.content && (
-            isUser ? (
-              <p className="whitespace-pre-wrap break-words text-fg">
-                {searchQuery ? <HighlightText text={message.content} query={searchQuery} /> : message.content}
-              </p>
-            ) : (
+            <div className="leading-[1.7]">
               <Markdown content={message.content} />
-            )
-          )}
+            </div>
+          )
+        )}
 
-          {/* Streaming indicator */}
-          {isStreaming && !isUser && (
-            message.content ? (
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-soul animate-pulse" />
-                <span className="text-[10px] font-mono text-fg-muted">
-                  {message.content.split(/\s+/).filter(Boolean).length} word{message.content.split(/\s+/).filter(Boolean).length !== 1 ? 's' : ''}
-                </span>
-              </div>
-            ) : !message.thinking ? (
-              <div className="flex items-center gap-2 py-1">
-                <span className="text-sm text-fg-muted animate-pulse">Soul is thinking...</span>
-              </div>
-            ) : null
-          )}
+        {/* Streaming indicator */}
+        {isStreaming && !isUser && (
+          message.content ? (
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="streaming-cursor" />
+              <span className="text-[10px] font-mono text-fg-muted">
+                {message.content.split(/\s+/).filter(Boolean).length} words
+              </span>
+            </div>
+          ) : !message.thinking ? (
+            <div className="flex items-center gap-2 py-1">
+              <span className="streaming-cursor" />
+            </div>
+          ) : null
+        )}
 
-          {/* Tool calls below text */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
-            <ToolCallGroup toolCalls={message.toolCalls} />
-          )}
+        {/* Tool calls below text */}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <ToolCallGroup toolCalls={message.toolCalls} />
+        )}
 
-        </div>
       </div>
 
       {/* Metadata footer */}
-      <div className={`flex items-center gap-2 mt-1.5 text-[10px] text-fg-muted ${isUser ? 'mr-[34px]' : 'ml-[34px]'}`}>
+      <div className={`flex items-center gap-2 mt-1.5 text-[10px] text-fg-muted ${isUser ? '' : ''}`}>
         <span>{timeStr}</span>
-        {badge && (
-          <span className="px-1.5 py-0.5 rounded bg-soul/10 text-soul font-mono">{badge}</span>
-        )}
-        {message.usage && !isUser && (
-          <span className="text-fg-muted">
-            {formatTokens(message.usage.inputTokens)} in {'\u00B7'} {formatTokens(message.usage.outputTokens)} out
-          </span>
-        )}
         {message.content && <CopyBtn content={message.content} />}
         {isUser && onEdit && (
           <EditBtn content={message.content} onEdit={(newText) => onEdit(message.id, newText)} />
