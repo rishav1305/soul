@@ -859,3 +859,120 @@ func TestSecurity_MessageType_TooLong(t *testing.T) {
 		t.Errorf("expected 'invalid message type', got %v", data["error"])
 	}
 }
+
+func TestHandleSessionResume_ReplaysMissedMessages(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+	_ = store
+
+	// Give the hub a replay buffer.
+	rb := NewReplayBuffer(100, 10)
+	hub.replay = rb
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Create a session.
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"session.create"}`)); err != nil {
+		t.Fatalf("write session.create: %v", err)
+	}
+	created := readMessage(t, ctx, conn)
+	if created["type"] != TypeSessionCreated {
+		t.Fatalf("expected session.created, got %v", created["type"])
+	}
+	createdData := created["data"].(map[string]interface{})
+	sess := createdData["session"].(map[string]interface{})
+	sessionID := sess["id"].(string)
+
+	// Manually store two replay entries (simulating missed messages).
+	missedMsgID := sessionID + "-anchor"
+	missed := []byte(`{"type":"chat.token","sessionId":"` + sessionID + `","messageId":"` + missedMsgID + `","data":{"token":"missed"}}`)
+	rb.Store(sessionID, missedMsgID, missed)
+
+	laterMsgID := sessionID + "-later"
+	later := []byte(`{"type":"chat.done","sessionId":"` + sessionID + `","messageId":"` + laterMsgID + `","data":{}}`)
+	rb.Store(sessionID, laterMsgID, later)
+
+	// Send session.resume with anchor pointing to the first entry —
+	// server should replay only entries after the anchor.
+	resumeMsg := `{"type":"session.resume","sessionId":"` + sessionID + `","lastMessageId":"` + missedMsgID + `"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(resumeMsg)); err != nil {
+		t.Fatalf("write session.resume: %v", err)
+	}
+
+	// Expect the replayed later message.
+	replayed := readMessage(t, ctx, conn)
+	if replayed["type"] != "chat.done" {
+		t.Errorf("expected replayed chat.done, got %v", replayed["type"])
+	}
+}
+
+func TestHandleSessionResume_AnchorMissing_NoReplay(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	hub.replay = NewReplayBuffer(100, 10)
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	// Resume with an anchor that was never stored — server emits a metric
+	// but sends nothing back to the client.
+	resumeMsg := `{"type":"session.resume","sessionId":"nonexistent","lastMessageId":"ghost-anchor"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(resumeMsg)); err != nil {
+		t.Fatalf("write session.resume: %v", err)
+	}
+
+	// No message should arrive within a short window.
+	msgs := drainMessages(t, ctx, conn, 150*time.Millisecond)
+	if len(msgs) > 0 {
+		t.Errorf("expected no replay messages, got %d: first type=%v", len(msgs), msgs[0]["type"])
+	}
+}
+
+func TestHandleChatSend_DedupSendsDone(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	// Create a session.
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"session.create"}`)); err != nil {
+		t.Fatalf("write session.create: %v", err)
+	}
+	created := readMessage(t, ctx, conn)
+	createdData := created["data"].(map[string]interface{})
+	sess := createdData["session"].(map[string]interface{})
+	sessionID := sess["id"].(string)
+
+	// Pre-seed the handler's seenMessages with the target messageId.
+	handler := NewMessageHandler(hub, store, nil)
+	hub.SetHandler(handler)
+	handler.seenMu.Lock()
+	handler.seenMessages["dup-msg-id"] = time.Now()
+	handler.seenMu.Unlock()
+
+	// Send chat.send with the duplicate messageId — expect chat.done, not silence.
+	chatMsg := `{"type":"chat.send","sessionId":"` + sessionID + `","content":"hello","messageId":"dup-msg-id"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
+		t.Fatalf("write chat.send: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatDone {
+		t.Errorf("expected chat.done on dedup, got %v", msg["type"])
+	}
+}

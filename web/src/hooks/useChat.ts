@@ -68,7 +68,7 @@ export function useChat(): UseChatReturn {
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
 
   const handleMessage = useCallback(
-    (type: OutboundMessageType, data: unknown, sessionID: string) => {
+    (type: OutboundMessageType, data: unknown, sessionID: string, messageId?: string) => {
       switch (type) {
         case 'connection.ready': {
           setAuthError(false);
@@ -266,8 +266,10 @@ export function useChat(): UseChatReturn {
           const payload = data as { token: string; messageId: string } | undefined;
           if (!payload) break;
 
-          if (payload.messageId) {
-            lastMessageIdRef.current = payload.messageId;
+          // Track the top-level messageId (replay anchor) — NOT data.messageId which
+          // is the Claude API message ID and does not match the replay buffer keys.
+          if (messageId) {
+            lastMessageIdRef.current = messageId;
           }
 
           setMessages(prev => {

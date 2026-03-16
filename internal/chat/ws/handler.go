@@ -176,6 +176,8 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		if _, seen := h.seenMessages[msg.MessageID]; seen {
 			h.seenMu.Unlock()
 			log.Printf("ws: dedup — skipping already-seen message %s", msg.MessageID)
+			// Send chat.done so the client does not remain wedged in a streaming/pending state.
+			h.sendToClient(client, NewChatDone(msg.SessionID, msg.MessageID))
 			return
 		}
 		h.seenMessages[msg.MessageID] = time.Now()

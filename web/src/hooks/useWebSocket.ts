@@ -18,7 +18,7 @@ function classifyCloseCode(code: number): string {
 
 interface UseWebSocketOptions {
   url?: string;
-  onMessage?: (type: OutboundMessageType, data: unknown, sessionID: string) => void;
+  onMessage?: (type: OutboundMessageType, data: unknown, sessionID: string, messageId?: string) => void;
 }
 
 interface UseWebSocketReturn {
@@ -85,6 +85,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             type: string;
             data?: unknown;
             sessionId?: string;
+            messageId?: string; // top-level replay anchor set by sendToClient
           };
 
           // Transition to 'connected' when we get connection.ready.
@@ -114,6 +115,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
               parsed.type as OutboundMessageType,
               parsed.data,
               parsed.sessionId ?? '',
+              parsed.messageId,
             );
           }
         } catch (err) {
@@ -173,9 +175,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   }, [connect, clearReconnectTimer]);
 
   const send = useCallback((type: string, payload: Record<string, unknown>) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, ...payload }));
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      throw new Error('socket not open');
     }
+    wsRef.current.send(JSON.stringify({ type, ...payload }));
   }, []);
 
   return { status, send, reconnectAttempt };
