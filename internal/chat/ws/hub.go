@@ -167,6 +167,14 @@ func (h *Hub) Run(ctx context.Context) {
 func (h *Hub) HandleUpgrade(w http.ResponseWriter, r *http.Request) {
 	// Validate origin before upgrade.
 	if !h.isOriginAllowed(r) {
+		if h.metrics != nil {
+			_ = h.metrics.Log(metrics.EventAuthFail, map[string]interface{}{
+				"source":    "ws",
+				"reason":    "origin_rejected",
+				"client_ip": r.RemoteAddr,
+				"origin":    r.Header.Get("Origin"),
+			})
+		}
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
