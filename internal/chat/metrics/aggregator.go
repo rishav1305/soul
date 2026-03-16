@@ -636,3 +636,63 @@ func getFloatField(data map[string]interface{}, key string) float64 {
 		return 0
 	}
 }
+
+// ConnectionHealthReport contains connection reliability metrics derived from JSONL events.
+type ConnectionHealthReport struct {
+	TotalConnects       int
+	TotalDisconnects    int
+	AbnormalDisconnects int
+	AuthFailures        int
+	AuthSuccesses       int
+	ReconnectSuccesses  int
+	ReconnectFailures   int
+}
+
+// DropRate returns the fraction of abnormal disconnects vs total connects.
+func (r *ConnectionHealthReport) DropRate() float64 {
+	if r.TotalConnects == 0 {
+		return 0
+	}
+	return float64(r.AbnormalDisconnects) / float64(r.TotalConnects)
+}
+
+// ReconnectSuccessRate returns the fraction of successful reconnects.
+func (r *ConnectionHealthReport) ReconnectSuccessRate() float64 {
+	total := r.ReconnectSuccesses + r.ReconnectFailures
+	if total == 0 {
+		return 1.0
+	}
+	return float64(r.ReconnectSuccesses) / float64(total)
+}
+
+// ConnectionHealthReport reads JSONL metrics and computes connection health.
+func (a *Aggregator) ConnectionHealthReport() (*ConnectionHealthReport, error) {
+	events, err := a.readProductEvents("") // empty prefix = all event types
+	if err != nil {
+		return nil, err
+	}
+
+	report := &ConnectionHealthReport{}
+	for _, ev := range events {
+		switch ev.EventType {
+		case EventWSConnect:
+			report.TotalConnects++
+		case EventWSClose:
+			report.TotalDisconnects++
+			if reason, ok := ev.Data["reason_class"].(string); ok {
+				if reason != "normal" && reason != "client_nav" {
+					report.AbnormalDisconnects++
+				}
+			}
+		case EventAuthFail:
+			report.AuthFailures++
+		case EventAuthOK:
+			report.AuthSuccesses++
+		case EventWSReconnectSuccess:
+			report.ReconnectSuccesses++
+		case EventWSReconnectFail:
+			report.ReconnectFailures++
+		}
+	}
+	return report, nil
+}

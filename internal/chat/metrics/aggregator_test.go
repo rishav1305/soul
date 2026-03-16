@@ -2,6 +2,8 @@ package metrics
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -586,6 +588,51 @@ func TestGetFloatField(t *testing.T) {
 	}
 	if v := getFloatField(nil, "value"); v != 0 {
 		t.Errorf("getFloatField(nil, value) = %f, want 0", v)
+	}
+}
+
+func TestAggregator_ConnectionHealth(t *testing.T) {
+	dir := t.TempDir()
+
+	f, _ := os.Create(filepath.Join(dir, "metrics.jsonl"))
+	lines := []string{
+		`{"ts":"2026-03-16T10:00:00Z","event":"ws.close","data":{"reason_class":"normal"}}`,
+		`{"ts":"2026-03-16T10:00:01Z","event":"ws.close","data":{"reason_class":"network"}}`,
+		`{"ts":"2026-03-16T10:00:02Z","event":"ws.close","data":{"reason_class":"normal"}}`,
+		`{"ts":"2026-03-16T10:00:03Z","event":"ws.connect","data":{}}`,
+		`{"ts":"2026-03-16T10:00:03.001Z","event":"ws.connect","data":{}}`,
+		`{"ts":"2026-03-16T10:00:03.002Z","event":"ws.connect","data":{}}`,
+		`{"ts":"2026-03-16T10:00:04Z","event":"auth.fail","data":{"source":"api"}}`,
+		`{"ts":"2026-03-16T10:00:05Z","event":"auth.ok","data":{"source":"api"}}`,
+		`{"ts":"2026-03-16T10:00:06Z","event":"ws.reconnect.success","data":{}}`,
+		`{"ts":"2026-03-16T10:00:07Z","event":"ws.reconnect.fail","data":{}}`,
+	}
+	for _, l := range lines {
+		f.WriteString(l + "\n")
+	}
+	f.Close()
+
+	agg := NewAggregator(dir)
+
+	report, err := agg.ConnectionHealthReport()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.TotalConnects != 3 {
+		t.Errorf("expected 3 connects, got %d", report.TotalConnects)
+	}
+	if report.AbnormalDisconnects != 1 {
+		t.Errorf("expected 1 abnormal disconnect, got %d", report.AbnormalDisconnects)
+	}
+	if report.AuthFailures != 1 {
+		t.Errorf("expected 1 auth failure, got %d", report.AuthFailures)
+	}
+	if report.ReconnectSuccesses != 1 {
+		t.Errorf("expected 1 reconnect success, got %d", report.ReconnectSuccesses)
+	}
+	if report.ReconnectFailures != 1 {
+		t.Errorf("expected 1 reconnect failure, got %d", report.ReconnectFailures)
 	}
 }
 
