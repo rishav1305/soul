@@ -60,17 +60,21 @@ The `server_shutdown` reason requires a small change in `Hub.Run`'s shutdown pat
 
 ### 1.2 WS Upgrade Metric
 
-**File:** `internal/chat/ws/hub.go`
+**Files:** `internal/chat/ws/hub.go`, `internal/chat/server/server.go`
 
-Emit `ws.upgrade` metric in `HandleUpgrade` with outcome classification:
+Emit `ws.upgrade` metric at two points to capture the full upgrade lifecycle:
+
+**Point 1 — Auth middleware** (`server.go:878`): The auth middleware rejects `/ws` requests with HTTP 401 *before* `HandleUpgrade` is called. Add a `ws.upgrade` metric emission in the auth middleware's `/ws` rejection path with `outcome: "auth_rejected"`. This is the most important failure to capture.
+
+**Point 2 — HandleUpgrade** (`hub.go:167`): Emit `ws.upgrade` for origin rejection and upgrade success/failure.
 
 | Field | Values |
 |-------|--------|
-| `outcome` | `success`, `origin_rejected`, `upgrade_failed` |
+| `outcome` | `auth_rejected`, `origin_rejected`, `upgrade_failed`, `success` |
 | `origin` | Request origin header |
-| `client_id` | Assigned client ID (on success) |
+| `client_id` | Assigned client ID (on success, empty otherwise) |
 
-This captures upgrade failures that are currently invisible because `server.go:1060` excludes `/ws` from request logging.
+This captures the full spectrum of upgrade failures. Auth rejections (the most common failure) are instrumented at the middleware level where they actually occur, not just in `HandleUpgrade` where they never arrive.
 
 ### 1.3 Frontend WS Lifecycle Telemetry
 
@@ -94,9 +98,23 @@ The telemetry allowlist in `server.go:692` already accepts `frontend.ws`. These 
 
 No changes needed to the allowlist — `frontend.ws` is already accepted. The `handleTelemetry` handler logs whatever `data` map it receives. Both `reportWSLatency` (`event: 'round_trip'`) and the new `reportWSLifecycle` (`event: 'close'`, `'open'`, etc.) use the `event` sub-field for disambiguation within the same `frontend.ws` bucket.
 
+### 1.5 Observe Integration
+
+**File:** `internal/observe/server/handlers.go`
+
+The observe server's `buildResilientPillar` function already consumes `ConnectionHealthReport` from the metrics aggregator. The new metrics feed into the existing JSONL log and should be surfaced in the resilient pillar:
+
+- **`ws.disconnect` reason taxonomy** → aggregator groups disconnects by reason. The resilient pillar's "connection stability" score uses the ratio of `client_normal_close` vs abnormal reasons (`ping_timeout`, `slow_client_queue_full`, `write_error`).
+- **`ws.upgrade` outcomes** → aggregator counts `auth_rejected` and `origin_rejected` separately. The resilient pillar flags non-zero auth rejections as a health issue.
+- **`frontend.ws` lifecycle events** → aggregator computes median reconnect-to-ready latency from `connect_attempt` → `open` timestamps. Surfaced as "recovery time" in the resilient pillar.
+
+The aggregator changes are minimal: add grouping/counting for the new `reason` and `outcome` fields in existing event types. No new aggregator tables or storage schemas.
+
 ### Metric Budget
 
-~4-6 new metric events per connection lifecycle (upgrade, connect, open, close, ticket_fetch, error). Negligible I/O impact given the existing per-request logging volume.
+~4-6 new metric events per connection lifecycle (upgrade, connect, open, close, ticket_fetch, error). Under normal operation, this is negligible I/O.
+
+**Reconnect storm behavior:** During reconnect storms, the frontend can generate bursts of lifecycle telemetry. The `/api/telemetry` endpoint is rate-limited at 60 RPM per IP (`server.go:945`) and intentionally NOT exempt (each write causes a synchronous fsync). To avoid dropping diagnostics during the incidents when they matter most, the frontend should batch lifecycle events client-side: accumulate events in an array and flush in a single `POST /api/telemetry` with a `batch: [event1, event2, ...]` payload every 5 seconds (or on page unload via `navigator.sendBeacon`). This requires a small backend change to accept batched payloads in `handleTelemetry`.
 
 ## Layer 2: Reconnect State Recovery
 
@@ -144,13 +162,24 @@ When a client disconnects, `OnClientDisconnect` (line 999) cancels the agent con
 
 Note: the agent context is derived from `context.Background()` (line 305), not the client context — so normal client disconnection does NOT cancel the stream. Only `OnClientDisconnect`'s explicit `entry.cancel()` does.
 
-Fix: call `completeSession` on the error path when the error is `context.Canceled` or `context.DeadlineExceeded`:
+Fix: handle cancellation and timeout separately from real errors. `context.Canceled` is expected control flow (fired by `chat.stop`, superseded streams, and `OnClientDisconnect`) — it should complete the session silently, not emit a user-facing error:
 
 ```go
 if err != nil {
-    if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+    if errors.Is(err, context.Canceled) {
+        // Expected: chat.stop, superseded stream, or client disconnect.
+        // Complete session silently — no user-facing error.
         h.completeSession(client, sessionID)
+        return
     }
+    if errors.Is(err, context.DeadlineExceeded) {
+        // 5-minute stream timeout — complete session and notify user.
+        h.completeSession(client, sessionID)
+        h.logAPIError(sessionID, err)
+        h.sendClassifiedError(client, sessionID, err)
+        return
+    }
+    // Real API error — log and notify.
     h.logAPIError(sessionID, err)
     h.sendClassifiedError(client, sessionID, err)
     return
@@ -199,19 +228,35 @@ Inspect `CloseEvent` in `onclose` and classify:
 
 ### 3.3 Auth Circuit Breaker
 
-**File:** `web/src/hooks/useWebSocket.ts`
+**Files:** `web/src/lib/ws.ts`, `web/src/hooks/useWebSocket.ts`
 
-Auth failures return HTTP 401 before the WebSocket upgrade, so the browser fires `onerror` + `onclose` with code 1006 — indistinguishable from a network blip via close codes alone.
+Auth failures return HTTP 401 before the WebSocket upgrade, so the browser fires `onerror` + `onclose` with code 1006 — indistinguishable from a network blip via close codes alone. A generic "pre-open failure" counter would false-positive on server restarts, DNS blips, and proxy issues, blocking auto-recovery for non-auth outages.
 
-Solution: track consecutive pre-open failures. If `onclose` fires 3 times without `onopen` ever succeeding, assume the endpoint is rejecting connections. Set status to `error`, stop auto-reconnecting.
+**Solution: use the ticket fetch as the auth probe.** The ticket endpoint (`GET /api/ws-ticket`) requires the same auth as the WS upgrade. Its HTTP response code is the definitive auth signal:
 
 ```
-if (socket never reached onopen) consecutivePreOpenFailures++
-if (consecutivePreOpenFailures >= 3) → status = 'error', stop reconnecting
-Reset to 0 on any successful onopen
+fetchWSTicket() enhanced to return { ticket, status }:
+  - status 200 → auth OK, use ticket
+  - status 401 → auth failure, increment authFailureCount
+  - status 0/timeout/network error → not auth, just use fallback
+  - other status → not auth, just use fallback
+
+In connect():
+  result = fetchWSTicket()
+  if result.status === 401:
+    consecutiveAuthFailures++
+    if consecutiveAuthFailures >= 2:
+      status = 'error', stop reconnecting
+      // User must reauth or use manual reconnect()
+    return  // don't even attempt WS upgrade
+  else:
+    consecutiveAuthFailures = 0  // any non-401 resets
+    proceed with WebSocket(getWebSocketURL(result.ticket))
 ```
 
-**Interaction with ticket fetch timeout (3.1):** A ticket fetch timeout does not itself indicate an auth failure — the ticket endpoint may be temporarily slow while auth is fine. The `consecutivePreOpenFailures` counter only increments when the WebSocket connection itself fails to open (after `new WebSocket(...)` is called), not during the ticket fetch phase. With the 5s ticket timeout and 3-attempt circuit breaker, worst-case time to circuit-break is ~15-20s of visible "connecting" status.
+**Why this is better:** Only actual 401 responses trigger the circuit breaker. Server restarts (connection refused → status 0), DNS failures (network error → status 0), and proxy issues all reset the counter and continue normal reconnection. The circuit breaker fires after just 2 consecutive 401s (not 3 generic failures) because 401 is unambiguous.
+
+**Interaction with ticket fetch timeout (3.1):** A ticket fetch timeout aborts with status 0, which does NOT increment `consecutiveAuthFailures`. Only explicit 401 responses count.
 
 ### 3.4 Reconnect Give-Up with Manual Retry
 
@@ -308,7 +353,7 @@ socket.onmessage = (event) => {
 };
 ```
 
-Backwards-compatible — single objects still work. The frontend doesn't need to know whether coalescing is enabled.
+**Compatibility scope:** The only WS consumer is the web frontend, deployed atomically with the backend (same `make build`). No external WS clients or protocol versioning is needed. The single-message optimization (batch=1 sends a plain JSON object, not an array) means existing tests that check individual frames continue to pass without modification. Tests that inspect multi-message scenarios (e.g., streaming tests) need updating to handle array frames. No protocol version header is required since frontend and backend are always co-deployed.
 
 ### 4.3 Tool Progress Wire Format
 
@@ -325,7 +370,7 @@ Extended payload for future tool detail UI:
     "event": "step",
     "detail": "Searching handler.go:107-129",
     "progress": 0.4,
-    "ts": 1710600000
+    "ts": 1710600000000
   }
 }
 ```
@@ -374,8 +419,10 @@ interface ToolCallData {
 |------|--------|
 | `internal/chat/ws/client.go` | Add `closeReason` field, classify disconnect reasons, emit in metric |
 | `internal/chat/ws/hub.go` | Emit `ws.upgrade` metric in `HandleUpgrade`; set `server_shutdown` reason in `Run` shutdown path |
+| `internal/chat/server/server.go` | Emit `ws.upgrade` with `auth_rejected` in auth middleware `/ws` path; accept batched telemetry payloads in `handleTelemetry` |
 | `web/src/hooks/useWebSocket.ts` | Emit lifecycle telemetry events |
-| `web/src/lib/telemetry.ts` | Add `reportWSLifecycle` helper |
+| `web/src/lib/telemetry.ts` | Add `reportWSLifecycle` helper; add client-side telemetry batching (5s flush / sendBeacon on unload) |
+| `internal/observe/server/handlers.go` | Extend resilient pillar to consume disconnect reason taxonomy and upgrade outcomes |
 
 ### Layer 2 (Reconnect Recovery)
 | File | Change |
@@ -386,8 +433,8 @@ interface ToolCallData {
 ### Layer 3 (Connection Resilience)
 | File | Change |
 |------|--------|
-| `web/src/lib/ws.ts` | AbortController + 5s timeout on ticket fetch |
-| `web/src/hooks/useWebSocket.ts` | Close code inspection, auth circuit breaker, give-up logic, visibility handling, expose `reconnect()` |
+| `web/src/lib/ws.ts` | AbortController + 5s timeout on ticket fetch; return `{ ticket, status }` for auth circuit breaker |
+| `web/src/hooks/useWebSocket.ts` | Close code inspection, auth circuit breaker (401-based), give-up logic, visibility handling, expose `reconnect()` |
 | `web/src/hooks/useChat.ts` | Thread `reconnect` through `UseChatReturn` so UI can wire "Retry Connection" button |
 
 ### Layer 4 (Token Coalescing + Tool Progress)
@@ -412,9 +459,11 @@ interface ToolCallData {
 - Manual test: disconnect WiFi mid-stream, reconnect, verify history refreshes
 
 ### Layer 3
-- Unit test: `useWebSocket` — verify circuit breaker stops after 3 pre-open failures
-- Unit test: `fetchWSTicket` — verify 5s abort, verify fallback to raw token
-- Manual test: stop server, verify client stops reconnecting after 10 failures, verify "Retry" button works
+- Unit test: `useWebSocket` — verify auth circuit breaker stops after 2 consecutive 401s from ticket fetch
+- Unit test: `useWebSocket` — verify non-401 errors (network, timeout, server restart) do NOT trigger circuit breaker
+- Unit test: `fetchWSTicket` — verify 5s abort, verify fallback to raw token, verify `{ ticket, status }` return
+- Unit test: `useWebSocket` — verify give-up after 10 consecutive reconnect failures
+- Manual test: stop server, verify client reconnects after restart; invalidate auth, verify circuit breaker fires after 2 attempts
 
 ### Layer 4
 - Unit test: `client_test.go` — verify coalescing batches messages, single-message passthrough, 32-message cap
