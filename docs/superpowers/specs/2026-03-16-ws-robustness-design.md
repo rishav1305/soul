@@ -313,7 +313,19 @@ interface UseWebSocketReturn {
 }
 ```
 
-**UI wiring:** `ChatPage.tsx` already renders a connection status banner when `status !== 'connected'`. The `reconnect` function threads through `useChat` → `ChatPage` props → the existing banner component. When `status === 'error'`, the banner shows "Connection lost" with a "Retry" button that calls `reconnect()`. When `authError === true`, the banner shows "Authentication failed" with a "Re-authenticate" button that calls `reauth()` (already exists). No new components needed — this is prop threading to the existing banner.
+**UI wiring:** `ChatPage.tsx:115` already renders `<ConnectionBanner status={status} reconnectAttempt={reconnectAttempt} />`. The current banner only has a dismiss button — no retry or reauth actions. The threading chain is:
+
+1. `useWebSocket` → exposes `reconnect()` in return type
+2. `useChat` → destructures `reconnect` from `useWebSocket`, includes in `UseChatReturn`
+3. `ChatPage.tsx` → destructures `reconnect`, `authError`, `reauth` from `useChat`, passes to `ConnectionBanner`
+4. `ConnectionBanner.tsx` → accepts new props `onReconnect?: () => void`, `authError?: boolean`, `onReauth?: () => void`
+
+Banner behavior by state:
+- `status === 'disconnected'`: "Connection lost. Reconnecting..." (existing, no button change)
+- `status === 'error'` + `authError === false`: "Connection lost." + **"Retry"** button → calls `onReconnect()`
+- `status === 'error'` + `authError === true`: "Authentication failed." + **"Re-authenticate"** button → calls `onReauth()`
+
+**Auth recovery scope:** `reauth()` (already in `useChat.ts:622`) calls `POST /api/reauth` which reloads Claude OAuth credentials from disk. This handles stale/expired OAuth tokens. If the failure is a misconfigured app bearer token (`WithAuthToken` at server startup), no frontend action can fix it — that requires server-side reconfiguration. The circuit breaker's job is to stop hammering the server, not to fix all auth scenarios.
 
 ### 3.5 Visibility-Aware Reconnect
 
@@ -481,7 +493,8 @@ interface ToolCallData {
 | `web/src/lib/ws.ts` | AbortController + 5s timeout on ticket fetch; return `{ ticket, status }` for auth circuit breaker |
 | `web/src/hooks/useWebSocket.ts` | Close code inspection, auth circuit breaker (401-based), give-up logic, visibility handling, expose `reconnect()` |
 | `web/src/hooks/useChat.ts` | Thread `reconnect` through `UseChatReturn` |
-| `web/src/pages/ChatPage.tsx` | Wire `reconnect()` to connection banner "Retry" button when `status === 'error'` |
+| `web/src/pages/ChatPage.tsx` | Pass `reconnect`, `authError`, `reauth` to `ConnectionBanner` |
+| `web/src/components/ConnectionBanner.tsx` | Accept `onReconnect`, `authError`, `onReauth` props; render Retry/Re-authenticate buttons by state |
 
 ### Layer 4 (Token Coalescing + Tool Progress)
 | File | Change |
