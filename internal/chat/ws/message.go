@@ -45,6 +45,7 @@ const (
 	TypeSessionProductSet = "session.productSet"
 	TypeToolCall          = "tool.call"
 	TypeToolComplete      = "tool.complete"
+	TypeToolProgress      = "tool.progress"
 )
 
 // Attachment represents a file attached to a chat message.
@@ -290,5 +291,25 @@ func NewToolComplete(sessionID, toolID, toolName, result string) *OutboundMessag
 			"toolName": toolName,
 			"result":   result,
 		},
+	}
+}
+
+// NewToolProgress creates a tool.progress outbound message with activity detail.
+func NewToolProgress(sessionID, toolID, event, detail string, progress float64, tsMs int64) *OutboundMessage {
+	data := map[string]interface{}{
+		"id":    toolID,
+		"event": event,
+		"ts":    tsMs,
+	}
+	if detail != "" {
+		data["detail"] = detail
+	}
+	if progress >= 0 {
+		data["progress"] = progress
+	}
+	return &OutboundMessage{
+		Type:      TypeToolProgress,
+		SessionID: sessionID,
+		Data:      data,
 	}
 }
