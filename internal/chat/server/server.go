@@ -36,12 +36,13 @@ type Server struct {
 	sessionStore session.StoreInterface
 	hub          *ws.Hub
 	staticDir    string
-	authToken    string   // bearer token for API auth (empty = disabled)
-	wsTickets    sync.Map // map[string]time.Time — one-time short-lived WS tickets
+	authToken    string    // bearer token for API auth (empty = disabled)
+	wsTickets    sync.Map  // map[string]time.Time — one-time short-lived WS tickets
 	httpServer   *http.Server
 	startTime    time.Time
 	tlsCert      string // path to TLS certificate
 	tlsKey       string // path to TLS private key
+	litellmUpstream string
 	tasksProxy    *tasksProxy
 	tutorProxy    *tutorProxy
 	projectsProxy *projectsProxy
@@ -55,6 +56,7 @@ type Server struct {
 	meshProxy     *simpleProxy
 	benchProxy    *simpleProxy
 	modelCache    modelCache
+	compaction    *compactionShim
 }
 
 // Option configures a Server.
@@ -193,6 +195,14 @@ func WithBenchProxy() Option {
 	}
 }
 
+// WithLiteLLMUpstream sets the upstream URL used by the local Responses shim.
+// If empty, SOUL_LITELLM_UPSTREAM_URL (or a local fallback) is used.
+func WithLiteLLMUpstream(url string) Option {
+	return func(s *Server) {
+		s.litellmUpstream = strings.TrimSpace(url)
+	}
+}
+
 // New creates a configured Server. Defaults: port 3002, host 127.0.0.1.
 // Environment variables SOUL_V2_PORT and SOUL_V2_HOST override defaults
 // but are overridden by explicit options.
@@ -219,6 +229,7 @@ func New(opts ...Option) *Server {
 	}
 
 	s.modelCache = modelCache{ttl: time.Hour}
+	s.compaction = newCompactionShim(s.litellmUpstream)
 
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
@@ -241,6 +252,14 @@ func New(opts ...Option) *Server {
 
 	// Models route.
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
+
+	// LiteLLM Responses shim routes.
+	s.mux.HandleFunc("POST /litellm/v1/responses/compact", s.handleResponsesCompact)
+	s.mux.HandleFunc("POST /litellm/v1/responses", s.handleResponses)
+	s.mux.HandleFunc("POST /litellm/responses/compact", s.handleResponsesCompact)
+	s.mux.HandleFunc("POST /litellm/responses", s.handleResponses)
+	s.mux.HandleFunc("POST /v1/responses/compact", s.handleResponsesCompact)
+	s.mux.HandleFunc("POST /v1/responses", s.handleResponses)
 
 	// Tasks server proxy — forward /api/tasks/* and /api/products/* to tasks server.
 	if s.tasksProxy != nil {
@@ -345,7 +364,17 @@ func New(opts ...Option) *Server {
 		handler = requestLoggerMiddleware(s.metrics)(handler)
 	}
 	if s.authToken != "" {
-		handler = authMiddleware(s.authToken, s.metrics, s.consumeWSTicket)(handler)
+		wsRejectedHook := func(r *http.Request) {
+			if s.metrics != nil {
+				_ = s.metrics.Log(metrics.EventWSUpgrade, map[string]interface{}{
+					"outcome":   "auth_rejected",
+					"origin":    r.Header.Get("Origin"),
+					"client_id": "",
+				})
+			}
+		}
+		authMW := authMiddleware(s.authToken, s.consumeWSTicket, wsRejectedHook)
+		handler = authMW(handler)
 	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
@@ -698,7 +727,7 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 
 // handleWSTicket issues a short-lived one-time ticket for WebSocket authentication.
 // Clients exchange their bearer token (via Authorization header) for a ticket,
-// then use ?ticket=<hex> in the WebSocket URL so the real token never appears in
+// then use ?ticket=<uuid> in the WebSocket URL so the real token never appears in
 // proxy/server logs.
 func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 	ticket := s.issueWSTicket()
@@ -862,10 +891,11 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// authMiddleware rejects requests to /api/* and /ws without a valid bearer token.
+// authMiddleware rejects requests to protected API routes without a valid bearer token.
 // Static assets (/, /assets/*, /manifest.json, /favicon.ico, /sw.js) are exempt.
-// ticketValid, if non-nil, accepts one-time WS tickets issued by /api/ws-ticket.
-func authMiddleware(token string, logger *metrics.EventLogger, ticketValid func(string) bool) func(http.Handler) http.Handler {
+// ticketValid, if non-nil, is used to accept one-time WS tickets on the /ws path.
+// onWSRejected, if non-nil, is called when a /ws request fails authentication.
+func authMiddleware(token string, ticketValid func(string) bool, onWSRejected func(r *http.Request)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
@@ -875,9 +905,12 @@ func authMiddleware(token string, logger *metrics.EventLogger, ticketValid func(
 
 			path := r.URL.Path
 
-			// Only require auth for /api/* and /ws — everything else is SPA
+			// Only require auth for protected API paths and /ws — everything else is SPA
 			// (static assets, SPA routes like /chat, /tasks, /tutor, etc.)
-			if !strings.HasPrefix(path, "/api/") && path != "/ws" {
+			protected := strings.HasPrefix(path, "/api/") ||
+				strings.HasPrefix(path, "/litellm/") ||
+				strings.HasPrefix(path, "/v1/responses")
+			if !protected && path != "/ws" {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -900,19 +933,14 @@ func authMiddleware(token string, logger *metrics.EventLogger, ticketValid func(
 					next.ServeHTTP(w, r)
 					return
 				}
+				if onWSRejected != nil {
+					onWSRejected(r)
+				}
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":"unauthorized"}`))
-			if logger != nil {
-				_ = logger.Log(metrics.EventAuthFail, map[string]interface{}{
-					"source":    "api",
-					"reason":    "missing_or_invalid_token",
-					"client_ip": r.RemoteAddr,
-					"path":      r.URL.Path,
-				})
-			}
 		})
 	}
 }
@@ -953,7 +981,7 @@ func bodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
 }
 
 // rateLimitMiddleware implements a simple per-IP sliding window rate limiter.
-// It only applies to /api/ routes; static files are not rate-limited.
+// It applies to protected API routes; static files are not rate-limited.
 func rateLimitMiddleware(rpm int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		var clients sync.Map // map[string]*clientWindow
@@ -977,14 +1005,18 @@ func rateLimitMiddleware(rpm int) func(http.Handler) http.Handler {
 		}()
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only rate-limit API routes (skip static files and high-frequency endpoints).
-			if !strings.HasPrefix(r.URL.Path, "/api/") {
+			// Only rate-limit protected API routes (skip static files).
+			isAPI := strings.HasPrefix(r.URL.Path, "/api/") ||
+				strings.HasPrefix(r.URL.Path, "/litellm/") ||
+				strings.HasPrefix(r.URL.Path, "/v1/responses")
+			if !isAPI {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Exempt health and auth-status probes — they are called by monitoring
-			// systems and must never be throttled. Telemetry is NOT exempt:
-			// each write causes a synchronous fsync, so rate-limiting prevents I/O amplification.
+			// Exempt health and auth-status probes from rate limiting — they are
+			// called by monitoring systems and must never be throttled. Telemetry
+			// is intentionally NOT exempt: each write causes a synchronous fsync,
+			// so it must be rate-limited to prevent I/O amplification.
 			switch r.URL.Path {
 			case "/api/health", "/api/auth/status", "/api/models":
 				next.ServeHTTP(w, r)

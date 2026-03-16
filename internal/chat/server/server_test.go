@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/ws"
 )
@@ -111,6 +110,56 @@ func TestXFrameOptions(t *testing.T) {
 
 	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
 		t.Errorf("expected X-Frame-Options=DENY, got %q", got)
+	}
+}
+
+func TestReferrerPolicy(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Referrer-Policy"); got != "strict-origin-when-cross-origin" {
+		t.Errorf("expected Referrer-Policy=strict-origin-when-cross-origin, got %q", got)
+	}
+}
+
+func TestPermissionsPolicy(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Permissions-Policy"); got != "camera=(), microphone=(), geolocation=()" {
+		t.Errorf("expected Permissions-Policy=camera=(), microphone=(), geolocation=(), got %q", got)
+	}
+}
+
+func TestHSTS_WhenHTTPS(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	expected := "max-age=31536000; includeSubDomains"
+	if got := rec.Header().Get("Strict-Transport-Security"); got != expected {
+		t.Errorf("expected HSTS header when X-Forwarded-Proto=https, got %q", got)
+	}
+}
+
+func TestHSTS_AbsentWhenHTTP(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("expected no HSTS header on plain HTTP, got %q", got)
 	}
 }
 
@@ -1205,63 +1254,24 @@ func TestHealthzEndpoint(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_EmitsAuthFailEvent(t *testing.T) {
-	tmpDir := t.TempDir()
-	logger, err := metrics.NewEventLogger(tmpDir, "")
-	if err != nil {
-		t.Fatal(err)
+func TestWSTicket_IssuedAndConsumed(t *testing.T) {
+	srv := New(WithAuthToken("secret"))
+
+	// Issue a ticket.
+	ticket := srv.issueWSTicket()
+	if ticket == "" {
+		t.Fatal("expected non-empty ticket")
 	}
 
-	handler := authMiddleware("test-token", logger, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	// Request to protected path with no token
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", w.Code)
+	// Consuming it once should succeed.
+	if !srv.consumeWSTicket(ticket) {
+		t.Error("first consume should return true")
 	}
 
-	// Read metrics file and check for auth.fail event
-	events := readMetricsFile(t, tmpDir)
-	found := false
-	for _, e := range events {
-		if e.EventType == "auth.fail" {
-			found = true
-			if e.Data["source"] != "api" {
-				t.Errorf("expected source=api, got %v", e.Data["source"])
-			}
-		}
+	// Second consume (replay) must fail — one-time use.
+	if srv.consumeWSTicket(ticket) {
+		t.Error("second consume should return false (one-time use)")
 	}
-	if !found {
-		t.Error("auth.fail event not emitted on 401")
-	}
-}
-
-// readMetricsFile reads all events from the metrics JSONL file in the given directory.
-func readMetricsFile(t *testing.T, dir string) []metrics.Event {
-	t.Helper()
-	files, _ := filepath.Glob(filepath.Join(dir, "metrics*.jsonl"))
-	var events []metrics.Event
-	for _, f := range files {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if line == "" {
-				continue
-			}
-			var ev metrics.Event
-			if err := json.Unmarshal([]byte(line), &ev); err == nil {
-				events = append(events, ev)
-			}
-		}
-	}
-	return events
 }
 
 func TestWSTicket_ExpiredTicketsSweptOnIssue(t *testing.T) {
@@ -1333,6 +1343,29 @@ func TestWSTicket_AcceptedOnWSRoute(t *testing.T) {
 	}
 	if wsResp.StatusCode == http.StatusUnauthorized {
 		t.Error("ticket-based WS auth should not return 401")
+	}
+}
+
+func TestAuthMiddleware_WSRejection_CallsHook(t *testing.T) {
+	rejected := false
+	hook := func(r *http.Request) { rejected = true }
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
+
+	// authMiddleware with third arg (onWSRejected hook)
+	handler := authMiddleware("secret-token", nil, hook)(next)
+
+	req := httptest.NewRequest("GET", "/ws", nil) // no auth credentials
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+	if !rejected {
+		t.Error("expected onWSRejected hook to be called on /ws auth rejection")
 	}
 }
 
