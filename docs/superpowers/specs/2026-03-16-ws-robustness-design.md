@@ -100,21 +100,40 @@ No changes needed to the allowlist — `frontend.ws` is already accepted. The `h
 
 ### 1.5 Observe Integration
 
-**File:** `internal/observe/server/handlers.go`
+**Files:** `internal/chat/metrics/aggregator.go`, `internal/observe/server/handlers.go`
 
-The observe server's `buildResilientPillar` function already consumes `ConnectionHealthReport` from the metrics aggregator. The new metrics feed into the existing JSONL log and should be surfaced in the resilient pillar:
+The observe server's `buildResilientPillar` currently returns static constraints only (hardcoded strings at handlers.go:340-348). There is no dynamic `ConnectionHealthReport` type or live metric consumption. Making the resilient pillar consume the new WS metrics requires:
 
-- **`ws.disconnect` reason taxonomy** → aggregator groups disconnects by reason. The resilient pillar's "connection stability" score uses the ratio of `client_normal_close` vs abnormal reasons (`ping_timeout`, `slow_client_queue_full`, `write_error`).
-- **`ws.upgrade` outcomes** → aggregator counts `auth_rejected` and `origin_rejected` separately. The resilient pillar flags non-zero auth rejections as a health issue.
-- **`frontend.ws` lifecycle events** → aggregator computes median reconnect-to-ready latency from `connect_attempt` → `open` timestamps. Surfaced as "recovery time" in the resilient pillar.
+1. **New aggregator report type** — Add a `ConnectionHealthReport` struct to `aggregator.go` that scans the JSONL log for `ws.disconnect` and `ws.upgrade` events and computes:
+   - Disconnect reason counts (grouped by `reason` field)
+   - Upgrade outcome counts (grouped by `outcome` field)
+   - Mean connection duration from `ws.disconnect` `duration_seconds`
 
-The aggregator changes are minimal: add grouping/counting for the new `reason` and `outcome` fields in existing event types. No new aggregator tables or storage schemas.
+2. **Resilient pillar upgrade** — Change `buildResilientPillar()` from static constraints to dynamic constraints that consume `ConnectionHealthReport`. Flag abnormal disconnect ratios and non-zero auth rejections.
+
+This is new work beyond the minimal observability layer. **Defer to a separate observe spec** if the 4-layer plan needs to ship incrementally. The JSONL events from Layer 1 are independently valuable — they can be queried manually (`grep` / `jq`) even before the observe dashboard consumes them.
 
 ### Metric Budget
 
 ~4-6 new metric events per connection lifecycle (upgrade, connect, open, close, ticket_fetch, error). Under normal operation, this is negligible I/O.
 
-**Reconnect storm behavior:** During reconnect storms, the frontend can generate bursts of lifecycle telemetry. The `/api/telemetry` endpoint is rate-limited at 60 RPM per IP (`server.go:945`) and intentionally NOT exempt (each write causes a synchronous fsync). To avoid dropping diagnostics during the incidents when they matter most, the frontend should batch lifecycle events client-side: accumulate events in an array and flush in a single `POST /api/telemetry` with a `batch: [event1, event2, ...]` payload every 5 seconds, or on page unload via `fetch(..., {keepalive: true})` (not `sendBeacon`, which cannot set `Authorization` headers). This requires a small backend change to accept batched payloads in `handleTelemetry`.
+**Reconnect storm behavior:** During reconnect storms, the frontend can generate bursts of lifecycle telemetry. The `/api/telemetry` endpoint is rate-limited at 60 RPM per IP (`server.go:945`) and intentionally NOT exempt (each write causes a synchronous fsync). To avoid dropping diagnostics during the incidents when they matter most, the frontend should batch lifecycle events client-side: accumulate events in an array and flush in a single `POST /api/telemetry` every 5 seconds, or on page unload via `fetch(..., {keepalive: true})` (not `sendBeacon`, which cannot set `Authorization` headers).
+
+**Batched telemetry payload schema:** The backend `handleTelemetry` accepts two formats, distinguished by the presence of the `batch` field:
+
+```json
+// Single event (existing, unchanged):
+{ "type": "frontend.ws", "data": { "event": "close", "code": 1006 } }
+
+// Batched events (new):
+{ "batch": [
+    { "type": "frontend.ws", "data": { "event": "close", "code": 1006 } },
+    { "type": "frontend.ws", "data": { "event": "connect_attempt", "attempt": 3 } }
+  ]
+}
+```
+
+The handler checks for `batch` first. If present, it iterates and validates each entry against the allowlist individually. If absent, it processes the single `type`/`data` as before. Each entry in a batch is logged as a separate JSONL event. Partial ingestion: if one entry in a batch has an invalid type, it is skipped (logged as warning), remaining entries are still processed.
 
 ## Layer 2: Reconnect State Recovery
 
@@ -197,13 +216,18 @@ In the callers, after `<-entry.done`:
 
 ### Streaming During Disconnect
 
-If a stream was in progress when the connection dropped:
-- The backend stream continues (runs on `context.Background()`)
-- On reconnect, `session.history` includes messages stored so far
-- If stream is still running, session shows as `running`
-- Tokens emitted while disconnected are lost (sent to the old client object)
+When a client disconnects while a stream is in progress:
+- `OnClientDisconnect` (handler.go:999) cancels all agent contexts for the client via `entry.cancel()`
+- The stream goroutine receives `context.Canceled` from `Stream()` and returns silently (per the fix in 2.3)
+- `OnClientDisconnect` waits on `<-entry.done`, then calls `completeSession` to transition the session out of `running`
+- Any partial text already stored in SQLite is preserved
 
-This is acceptable — the user sees the session as "running" and gets the completed response when `completeSession` fires. Partial token recovery would require a replay buffer, which is out of scope.
+On reconnect:
+- `session.switch` (Section 2.1) fetches `session.history` which includes any messages stored before cancellation
+- The session shows as `completed` (not stuck in `running`)
+- Tokens that were streamed to the old client object but not yet stored are lost
+
+This is acceptable — the user sees the completed partial response. Full token recovery would require a replay buffer, which is out of scope.
 
 ## Layer 3: Connection Resilience
 
@@ -362,7 +386,11 @@ socket.onmessage = (event) => {
 };
 ```
 
-**Compatibility scope:** The only WS consumer is the web frontend, deployed atomically with the backend (same `make build`). No external WS clients or protocol versioning is needed. The single-message optimization (batch=1 sends a plain JSON object, not an array) means existing tests that check individual frames continue to pass without modification. Tests that inspect multi-message scenarios (e.g., streaming tests) need updating to handle array frames. No protocol version header is required since frontend and backend are always co-deployed.
+**Compatibility scope:** The only WS consumer is the web frontend, deployed atomically with the backend (same `make build`). No external WS clients or protocol versioning needed.
+
+**Test impact:** Existing handler tests (`handler_test.go`) use a `readMessage` helper that reads one frame and parses it as a single JSON object. The bootstrap sequence sends `connection.ready` then `session.list` as separate `client.Send()` calls. With coalescing, if both arrive in the send channel before WritePump processes them (likely with fast in-memory test databases), they get batched into one array frame. This breaks ~25 test call sites that expect separate reads (e.g., `handler_test.go:137-148`, `handler_test.go:164-166`).
+
+**Fix:** Update the `readMessage` test helper to unwrap array frames: if the frame is a JSON array, buffer the messages and return them one at a time across calls. This is a single helper change, not per-test changes. Alternatively, the single-message optimization (batch=1 → plain object) preserves compatibility when messages are spaced apart, but the coalescing window makes this unreliable in tests where sends happen back-to-back.
 
 ### 4.3 Tool Progress Wire Format
 
@@ -430,9 +458,9 @@ interface ToolCallData {
 | `internal/chat/ws/hub.go` | Emit `ws.upgrade` metric in `HandleUpgrade`; set `server_shutdown` reason in `Run` shutdown path |
 | `internal/chat/server/server.go` | Emit `ws.upgrade` with `auth_rejected` in auth middleware `/ws` path; accept batched telemetry payloads in `handleTelemetry` |
 | `web/src/hooks/useWebSocket.ts` | Emit lifecycle telemetry events |
-| `web/src/lib/telemetry.ts` | Add `reportWSLifecycle` helper; add client-side telemetry batching (5s flush / sendBeacon on unload) |
-| `internal/observe/server/handlers.go` | Extend resilient pillar to consume disconnect reason taxonomy and upgrade outcomes |
-| `internal/chat/metrics/aggregator.go` | Add grouping/counting for `reason` field in `ws.disconnect` and `outcome` field in `ws.upgrade` |
+| `web/src/lib/telemetry.ts` | Add `reportWSLifecycle` helper; add client-side telemetry batching (5s flush / `fetch({keepalive})` on unload) |
+| `internal/observe/server/handlers.go` | Deferred — requires new `ConnectionHealthReport` type and dynamic resilient pillar (see Section 1.5). Separate observe spec recommended. |
+| `internal/chat/metrics/aggregator.go` | Deferred — requires new report struct for WS disconnect/upgrade aggregation (see Section 1.5). |
 
 ### Layer 2 (Reconnect Recovery)
 | File | Change |
@@ -479,6 +507,7 @@ interface ToolCallData {
 - Unit test: `client_test.go` — verify coalescing batches messages, single-message passthrough, 32-message cap
 - Unit test: `useWebSocket` — verify array frame parsing
 - Unit test: `handler_test.go` — verify `tool.progress` emitted before/after dispatch
+- Test helper: update `readMessage` in `handler_test.go` to unwrap array frames (buffer and return one at a time)
 - Load test: stream 2000 tokens, verify no slow-client disconnect
 
 ## Out of Scope
