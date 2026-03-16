@@ -311,6 +311,20 @@ func New(opts ...Option) *Server {
 		s.mux.Handle("/api/bench", s.benchProxy)
 	}
 
+	// Unauthenticated health probe — used by load balancers and monitoring.
+	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		wsCount := 0
+		if s.hub != nil {
+			wsCount = s.hub.ClientCount()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":         "ok",
+			"uptime_s":       time.Since(s.startTime).Seconds(),
+			"ws_connections": wsCount,
+		})
+	})
+
 	// WebSocket route — must be registered before SPA fallback.
 	if s.hub != nil {
 		s.mux.HandleFunc("/ws", s.hub.HandleUpgrade)

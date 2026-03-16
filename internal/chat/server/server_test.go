@@ -1186,6 +1186,25 @@ func TestSessionEndpoints_Return503WhenStoreNil(t *testing.T) {
 	}
 }
 
+func TestHealthzEndpoint(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&body)
+
+	if body["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", body["status"])
+	}
+}
+
 func TestAuthMiddleware_EmitsAuthFailEvent(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger, err := metrics.NewEventLogger(tmpDir, "")
