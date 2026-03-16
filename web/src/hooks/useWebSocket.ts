@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionState, OutboundMessageType } from '../lib/types';
 import { getWebSocketURL } from '../lib/ws';
-import { reportError } from '../lib/telemetry';
+import { reportError, reportDisconnect, reportReconnect } from '../lib/telemetry';
+
+function classifyCloseCode(code: number): string {
+  switch (code) {
+    case 1000: return 'normal';
+    case 1001: return 'client_nav';
+    case 1006: return 'network';
+    case 1008: return 'auth';
+    case 1011: return 'server_error';
+    case 1012:
+    case 1013: return 'server_restart';
+    default: return 'unknown';
+  }
+}
 
 interface UseWebSocketOptions {
   url?: string;
@@ -35,6 +48,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const unmountedRef = useRef(false);
   const onMessageRef = useRef(onMessage);
   const attemptRef = useRef(0);
+  const connectTimeRef = useRef<number | null>(null);
+  const disconnectTimeRef = useRef<number | null>(null);
 
   // Keep onMessage ref current to avoid stale closures.
   onMessageRef.current = onMessage;
@@ -72,6 +87,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Transition to 'connected' when we get connection.ready.
         if (parsed.type === 'connection.ready') {
           setStatus('connected');
+          connectTimeRef.current = Date.now();
+
+          // Report successful reconnect if this is a reconnection
+          if (attemptRef.current > 0) {
+            reportReconnect({
+              attempt: attemptRef.current,
+              backoffMs: 0,
+              success: true,
+              totalDowntimeMs: disconnectTimeRef.current
+                ? Date.now() - disconnectTimeRef.current
+                : undefined,
+            });
+          }
+
           // Reset backoff on successful connection.
           attemptRef.current = 0;
           setReconnectAttempt(0);
@@ -89,13 +118,29 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
       wsRef.current = null;
       if (!unmountedRef.current) {
+        const reasonClass = classifyCloseCode(event.code);
+        disconnectTimeRef.current = Date.now();
+
+        reportDisconnect({
+          closeCode: event.code,
+          reasonClass,
+          connectionDurationMs: connectTimeRef.current
+            ? Date.now() - connectTimeRef.current
+            : undefined,
+        });
+
         setStatus('disconnected');
         const delay = backoffDelay(attemptRef.current);
         attemptRef.current++;
         setReconnectAttempt(attemptRef.current);
+        reportReconnect({
+          attempt: attemptRef.current,
+          backoffMs: delay,
+          success: false,
+        });
         reconnectTimerRef.current = setTimeout(connect, delay);
       }
     };
