@@ -1,4 +1,11 @@
-type TelemetryEvent = 'frontend.error' | 'frontend.render' | 'frontend.ws' | 'frontend.usage';
+type TelemetryEvent =
+  | 'frontend.error'
+  | 'frontend.render'
+  | 'frontend.ws'
+  | 'frontend.usage'
+  | 'frontend.ws.disconnect'
+  | 'frontend.ws.reconnect'
+  | 'frontend.auth.fail';
 
 function sendTelemetry(type: TelemetryEvent, data: Record<string, unknown>): void {
   try {
@@ -30,4 +37,28 @@ export function reportWSLatency(firstTokenMs: number, totalMs: number): void {
 
 export function reportUsage(action: string, data?: Record<string, unknown>): void {
   sendTelemetry('frontend.usage', { action, ...data });
+}
+
+export function reportDisconnect(data: {
+  closeCode: number;
+  reasonClass: string;
+  connectionDurationMs?: number;
+}): void {
+  sendTelemetry('frontend.ws.disconnect', data);
+}
+
+export function reportReconnect(data: {
+  attempt: number;
+  backoffMs: number;
+  success: boolean;
+  totalDowntimeMs?: number;
+}): void {
+  sendTelemetry('frontend.ws.reconnect', data);
+}
+
+export function reportAuthFailure(data: {
+  source: 'ws' | 'api';
+  reason: string;
+}): void {
+  sendTelemetry('frontend.auth.fail', data);
 }
