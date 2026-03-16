@@ -329,6 +329,12 @@ func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
 		existing.cancel()
 		cs.mu.Unlock()
 		<-existing.done
+		// Old stream was superseded — restore session to running so the new stream can take over.
+		if err := h.sessionStore.UpdateSessionStatus(sessionID, session.StatusRunning); err == nil {
+			if updated, err := h.sessionStore.GetSession(sessionID); err == nil {
+				h.broadcast(NewSessionUpdated(updated))
+			}
+		}
 		cs.mu.Lock()
 	}
 

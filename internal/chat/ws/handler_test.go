@@ -1133,6 +1133,66 @@ func TestHandleChatStop_CompletesSession(t *testing.T) {
 	t.Error("session still running after chat.stop, expected completed")
 }
 
+func TestHandleChatSend_SupersededStream_RestoresRunningStatus(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	// Drain the two initial messages (connection.ready + session.list).
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	sess, _ := store.CreateSession("Test")
+	_ = store.UpdateSessionStatus(sess.ID, session.StatusRunning)
+	// Add a user message so handleChatSend doesn't fail validation
+	_, _ = store.AddMessage(sess.ID, "user", "hello")
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+	client := clients[0]
+
+	// Add a fake existing agent.
+	done := make(chan struct{})
+	handler := hub.handler
+	cs := handler.getOrCreateChatSession(client)
+	cs.mu.Lock()
+	cs.agents[sess.ID] = agentEntry{
+		cancel: func() {},
+		done:   done,
+	}
+	cs.mu.Unlock()
+
+	// Simulate the old stream completing after a delay.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(done)
+	}()
+
+	// Send chat.send to trigger superseded path.
+	sendMsg, _ := json.Marshal(map[string]interface{}{
+		"type":      TypeChatSend,
+		"sessionId": sess.ID,
+		"content":   "new message",
+	})
+	conn.Write(ctx, websocket.MessageText, sendMsg)
+
+	// Poll until session transitions back to running (or timeout).
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		updated, _ := store.GetSession(sess.ID)
+		if updated.Status == session.StatusRunning {
+			return // test passes
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	final, _ := store.GetSession(sess.ID)
+	t.Errorf("session status = %v, want running after superseded stream", final.Status)
+}
+
 // TestRunStream_CanceledContext_SilentReturn verifies that runStream returns
 // silently when the agent context is already cancelled, without completing the
 // session or sending a chat.error to the client.
