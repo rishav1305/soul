@@ -380,7 +380,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
             ref={textareaRef}
             data-testid="chat-input"
             className="w-full bg-transparent px-4 pt-3 pb-2 text-fg placeholder:text-fg-muted resize-none overflow-y-hidden focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder={chatMode === 'brainstorm' ? 'Describe what you want to build...' : chatMode === 'architect' ? 'Describe the architecture...' : chatMode === 'code' ? 'Describe what to code...' : 'Message Soul...'}
+            placeholder={chatMode === 'brainstorm' ? 'Describe what you want to build...' : chatMode === 'architect' ? 'Describe the architecture...' : chatMode === 'code' ? 'Describe what to code...' : 'Message...'}
             rows={1}
             value={value}
             onChange={handleChange}
