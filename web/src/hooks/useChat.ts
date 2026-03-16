@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallData, ChatProduct, ThinkingConfig } from '../lib/types';
 import { useWebSocket } from './useWebSocket';
 import { reportError, reportWSLatency, reportUsage, reportAuthFailure } from '../lib/telemetry';
+import { SendQueue } from '../lib/sendQueue';
 
 interface UseChatReturn {
   messages: Message[];
@@ -60,6 +61,8 @@ export function useChat(): UseChatReturn {
   const isStreamingRef = useRef(false);
   const sendTimeRef = useRef<number>(0);
   const firstTokenTimeRef = useRef<number>(0);
+  const sendQueueRef = useRef(new SendQueue());
+  const lastMessageIdRef = useRef<string | null>(null);
 
   // Keep streaming ref in sync.
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -91,6 +94,23 @@ export function useChat(): UseChatReturn {
                 }
               }
             } catch (err) { reportError('useChat.pendingRestore', err); }
+          }
+
+          // Request replay of any missed messages since last disconnect
+          if (lastMessageIdRef.current && sessionIDRef.current) {
+            sendRef.current('session.resume', {
+              sessionId: sessionIDRef.current,
+              lastMessageId: lastMessageIdRef.current,
+            });
+          }
+
+          // Flush any queued messages from before disconnect
+          sendQueueRef.current.restore();
+          if (sendQueueRef.current.pending() > 0) {
+            sendQueueRef.current.flush((payload) => {
+              const { type, ...data } = payload;
+              sendRef.current(type as string, data as Record<string, unknown>);
+            });
           }
           break;
         }
@@ -245,6 +265,10 @@ export function useChat(): UseChatReturn {
           }
           const payload = data as { token: string; messageId: string } | undefined;
           if (!payload) break;
+
+          if (payload.messageId) {
+            lastMessageIdRef.current = payload.messageId;
+          }
 
           setMessages(prev => {
             const streamIdx = prev.findIndex(m => m.id === STREAMING_MESSAGE_ID);
@@ -466,10 +490,22 @@ export function useChat(): UseChatReturn {
       if (options?.attachments?.length) payload.attachments = options.attachments;
       sendTimeRef.current = performance.now();
       firstTokenTimeRef.current = 0;
-      send('chat.send', payload);
-      reportUsage('chat.send', { model: options?.model, thinking: options?.thinking, hasAttachments: !!options?.attachments?.length });
+
+      const messageId = sendQueueRef.current.enqueue({
+        type: 'chat.send',
+        ...payload,
+      });
+
+      if (status === 'connected') {
+        sendQueueRef.current.flush((queuedPayload) => {
+          const { type, ...data } = queuedPayload;
+          send(type as string, data as Record<string, unknown>);
+        });
+      }
+
+      reportUsage('chat.send', { model: options?.model, thinking: options?.thinking, hasAttachments: !!options?.attachments?.length, messageId });
     },
-    [send],
+    [send, status],
   );
 
   // Pending message for deferred session creation.
@@ -485,6 +521,13 @@ export function useChat(): UseChatReturn {
       setTimeout(() => sendMessage(content, options), 50);
     }
   }, [currentSessionID, sendMessage]);
+
+  // Persist send queue to localStorage when disconnected so messages survive page reload.
+  useEffect(() => {
+    if (status === 'disconnected') {
+      sendQueueRef.current.persist();
+    }
+  }, [status]);
 
   const stopGeneration = useCallback(() => {
     if (!sessionIDRef.current) return;
