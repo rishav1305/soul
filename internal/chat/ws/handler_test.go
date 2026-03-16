@@ -1083,6 +1083,56 @@ type staticTokenSource struct{ token string }
 
 func (s *staticTokenSource) Token() (string, error) { return s.token, nil }
 
+func TestHandleChatStop_CompletesSession(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	// Drain the two initial messages (connection.ready + session.list).
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	sess, _ := store.CreateSession("Test")
+	_ = store.UpdateSessionStatus(sess.ID, session.StatusRunning)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+	client := clients[0]
+
+	// Add a fake agent entry that completes immediately when cancelled.
+	done := make(chan struct{})
+	handler := hub.handler
+	cs := handler.getOrCreateChatSession(client)
+	cs.mu.Lock()
+	cs.agents[sess.ID] = agentEntry{
+		cancel: func() { close(done) },
+		done:   done,
+	}
+	cs.mu.Unlock()
+
+	// Send chat.stop.
+	stopMsg, _ := json.Marshal(map[string]interface{}{
+		"type":      TypeChatStop,
+		"sessionId": sess.ID,
+	})
+	conn.Write(ctx, websocket.MessageText, stopMsg)
+
+	// Wait for session status to change.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		updated, _ := store.GetSession(sess.ID)
+		if updated.Status != session.StatusRunning {
+			return // test passes
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Error("session still running after chat.stop, expected completed")
+}
+
 // TestRunStream_CanceledContext_SilentReturn verifies that runStream returns
 // silently when the agent context is already cancelled, without completing the
 // session or sending a chat.error to the client.

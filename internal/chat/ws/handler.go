@@ -1036,6 +1036,7 @@ func (h *MessageHandler) handleChatStop(client *Client, msg *InboundMessage) {
 	if ok {
 		entry.cancel()
 		<-entry.done
+		h.completeSession(client, msg.SessionID)
 	}
 }
 
