@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/pkg/auth"
+	"github.com/rishav1305/soul-v2/internal/chat/metrics"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/ws"
 )
@@ -1183,4 +1184,63 @@ func TestSessionEndpoints_Return503WhenStoreNil(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthMiddleware_EmitsAuthFailEvent(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger, err := metrics.NewEventLogger(tmpDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler := authMiddleware("test-token", logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Request to protected path with no token
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+
+	// Read metrics file and check for auth.fail event
+	events := readMetricsFile(t, tmpDir)
+	found := false
+	for _, e := range events {
+		if e.EventType == "auth.fail" {
+			found = true
+			if e.Data["source"] != "api" {
+				t.Errorf("expected source=api, got %v", e.Data["source"])
+			}
+		}
+	}
+	if !found {
+		t.Error("auth.fail event not emitted on 401")
+	}
+}
+
+// readMetricsFile reads all events from the metrics JSONL file in the given directory.
+func readMetricsFile(t *testing.T, dir string) []metrics.Event {
+	t.Helper()
+	files, _ := filepath.Glob(filepath.Join(dir, "metrics*.jsonl"))
+	var events []metrics.Event
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if line == "" {
+				continue
+			}
+			var ev metrics.Event
+			if err := json.Unmarshal([]byte(line), &ev); err == nil {
+				events = append(events, ev)
+			}
+		}
+	}
+	return events
 }

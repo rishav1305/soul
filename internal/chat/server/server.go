@@ -326,7 +326,7 @@ func New(opts ...Option) *Server {
 		handler = requestLoggerMiddleware(s.metrics)(handler)
 	}
 	if s.authToken != "" {
-		handler = authMiddleware(s.authToken)(handler)
+		handler = authMiddleware(s.authToken, s.metrics)(handler)
 	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
@@ -665,7 +665,8 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch payload.Type {
-	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS, metrics.EventFrontendUsage:
+	case metrics.EventFrontendError, metrics.EventFrontendRender, metrics.EventFrontendWS, metrics.EventFrontendUsage,
+		metrics.EventFrontendWSDisconnect, metrics.EventFrontendWSReconnect, metrics.EventFrontendAuthFail:
 		// OK — known event types
 	default:
 		http.Error(w, "unknown event type", http.StatusBadRequest)
@@ -807,7 +808,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 
 // authMiddleware rejects requests to /api/* and /ws without a valid bearer token.
 // Static assets (/, /assets/*, /manifest.json, /favicon.ico, /sw.js) are exempt.
-func authMiddleware(token string) func(http.Handler) http.Handler {
+func authMiddleware(token string, logger *metrics.EventLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
@@ -840,6 +841,14 @@ func authMiddleware(token string) func(http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":"unauthorized"}`))
+			if logger != nil {
+				_ = logger.Log(metrics.EventAuthFail, map[string]interface{}{
+					"source":    "api",
+					"reason":    "missing_or_invalid_token",
+					"client_ip": r.RemoteAddr,
+					"path":      r.URL.Path,
+				})
+			}
 		})
 	}
 }
