@@ -434,7 +434,7 @@ export function Sidebar() {
             onClick={closeMobile}
           />
           <aside
-            className="md:hidden fixed top-0 left-0 bottom-0 w-[200px] bg-deep border-r border-border-subtle z-50 flex flex-col sidebar-transition"
+            className="md:hidden fixed top-0 left-0 bottom-0 w-[260px] bg-deep border-r border-border-subtle z-50 flex flex-col sidebar-transition"
           >
             {sidebarContent}
           </aside>
