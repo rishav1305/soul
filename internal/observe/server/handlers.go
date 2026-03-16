@@ -216,7 +216,7 @@ func (s *Server) handlePillars(w http.ResponseWriter, r *http.Request) {
 	connHealth, _ := agg.ConnectionHealthReport()
 
 	pillars := []pillarResult{
-		buildPerformantPillar(latency, db, requests),
+		buildPerformantPillar(latency, db, requests, agg),
 		buildRobustPillar(frontend),
 		buildResilientPillar(connHealth),
 		buildSecurePillar(),
@@ -229,7 +229,7 @@ func (s *Server) handlePillars(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func buildPerformantPillar(latency *metrics.LatencyReport, db *metrics.DBReport, requests *metrics.RequestsReport) pillarResult {
+func buildPerformantPillar(latency *metrics.LatencyReport, db *metrics.DBReport, requests *metrics.RequestsReport, agg *metrics.Aggregator) pillarResult {
 	p := pillarResult{Name: "performant"}
 
 	// First-token P50 vs 200ms threshold.
@@ -300,6 +300,26 @@ func buildPerformantPillar(latency *metrics.LatencyReport, db *metrics.DBReport,
 		Enforcement: "runtime metric",
 		Status:      httpStatus,
 		Value:       httpValue,
+	})
+
+	// Stream total P95 < 30s
+	stP95, _ := agg.StreamTotalP95()
+	stStatus := "pass"
+	stValue := "no data"
+	if stP95 > 0 {
+		stValue = strconv.FormatFloat(stP95, 'f', 0, 64) + "ms"
+		if stP95 > 30000 {
+			stStatus = "fail"
+		} else if stP95 > 20000 {
+			stStatus = "warn"
+		}
+	}
+	p.Constraints = append(p.Constraints, pillarConstraint{
+		Name:        "stream-total-p95",
+		Target:      "< 30s",
+		Enforcement: "runtime metric",
+		Status:      stStatus,
+		Value:       stValue,
 	})
 
 	countStatuses(&p)

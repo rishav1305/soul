@@ -696,3 +696,27 @@ func (a *Aggregator) ConnectionHealthReport() (*ConnectionHealthReport, error) {
 	}
 	return report, nil
 }
+
+// StreamTotalP95 reads ws.stream.end events and returns the P95 total stream duration in ms.
+func (a *Aggregator) StreamTotalP95() (float64, error) {
+	events, err := a.readProductEvents("ws.stream.")
+	if err != nil {
+		return 0, err
+	}
+
+	var durations []float64
+	for _, ev := range events {
+		if ev.EventType == EventWSStreamEnd {
+			if totalMs, ok := ev.Data["total_ms"].(float64); ok {
+				durations = append(durations, totalMs)
+			}
+		}
+	}
+	if len(durations) == 0 {
+		return 0, nil
+	}
+
+	sort.Float64s(durations)
+	idx := int(float64(len(durations)-1) * 0.95)
+	return durations[idx], nil
+}
