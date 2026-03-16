@@ -235,10 +235,43 @@ func (c *Client) ReadPump() {
 	}
 }
 
+// marshalBatch serializes a batch of messages for wire transmission.
+// Single message: returned as-is (plain JSON object, no array wrapper).
+// Multiple messages: joined into a JSON array.
+func marshalBatch(msgs [][]byte) ([]byte, error) {
+	if len(msgs) == 1 {
+		return msgs[0], nil
+	}
+	// Join as JSON array: [msg1,msg2,...].
+	total := 2 // [ and ]
+	for i, m := range msgs {
+		total += len(m)
+		if i > 0 {
+			total++ // comma
+		}
+	}
+	out := make([]byte, 0, total)
+	out = append(out, '[')
+	for i, m := range msgs {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, m...)
+	}
+	out = append(out, ']')
+	return out, nil
+}
+
 // WritePump writes messages from the send channel to the WebSocket connection.
-// It also handles periodic ping/pong to detect dead connections.
-// WritePump blocks until the send channel is closed or an error occurs.
+// It coalesces multiple pending messages into a single array frame to reduce
+// frame overhead during high-throughput streaming.
+// Ping handling and context cancellation are preserved in the outer select.
 func (c *Client) WritePump() {
+	const (
+		coalesceWindow = 5 * time.Millisecond
+		maxBatchSize   = 32
+	)
+
 	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		ticker.Stop()
@@ -249,20 +282,40 @@ func (c *Client) WritePump() {
 		select {
 		case msg, ok := <-c.send:
 			if !ok {
-				// Send channel was closed by the hub.
 				c.conn.Close(websocket.StatusNormalClosure, "")
 				return
 			}
 
-			err := c.conn.Write(c.ctx, websocket.MessageText, msg)
+			// Got first message — drain additional pending messages within the
+			// coalescing window. Use non-blocking reads to avoid delaying pings.
+			batch := [][]byte{msg}
+			batchStart := time.Now()
+		drain:
+			for len(batch) < maxBatchSize && time.Since(batchStart) < coalesceWindow {
+				select {
+				case next, ok := <-c.send:
+					if !ok {
+						// Channel closed during drain — send what we have, then exit.
+						break drain
+					}
+					batch = append(batch, next)
+				default:
+					break drain // Channel empty — send immediately.
+				}
+			}
+
+			frame, err := marshalBatch(batch)
 			if err != nil {
+				log.Printf("ws: client %s marshal batch error: %v", c.id, err)
+				return
+			}
+			if err := c.conn.Write(c.ctx, websocket.MessageText, frame); err != nil {
 				log.Printf("ws: client %s write error: %v", c.id, err)
 				c.closeReason.Store("write_error")
 				return
 			}
 
 		case <-ticker.C:
-			// Send a ping to check if the client is still alive.
 			ctx, cancel := context.WithTimeout(c.ctx, pongTimeout)
 			err := c.conn.Ping(ctx)
 			cancel()

@@ -298,6 +298,32 @@ func TestClientSendAfterClose(t *testing.T) {
 	c.closeSend()
 }
 
+func TestMarshalBatch_SingleMessage_PlainObject(t *testing.T) {
+	msgs := [][]byte{[]byte(`{"type":"chat.token"}`)}
+	result, err := marshalBatch(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Single message: no array wrapper.
+	if result[0] == '[' {
+		t.Errorf("single message should not be wrapped in array, got: %s", result)
+	}
+}
+
+func TestMarshalBatch_MultipleMessages_ArrayFrame(t *testing.T) {
+	msgs := [][]byte{
+		[]byte(`{"type":"chat.token"}`),
+		[]byte(`{"type":"chat.token"}`),
+	}
+	result, err := marshalBatch(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result[0] != '[' {
+		t.Errorf("multiple messages should be wrapped in array, got: %s", result)
+	}
+}
+
 func TestClient_SlowClientQueueFull_SetsCloseReason(t *testing.T) {
 	// Create a minimal client without a real connection.
 	c := &Client{
