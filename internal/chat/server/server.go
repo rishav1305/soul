@@ -36,7 +36,8 @@ type Server struct {
 	sessionStore session.StoreInterface
 	hub          *ws.Hub
 	staticDir    string
-	authToken    string // bearer token for API auth (empty = disabled)
+	authToken    string   // bearer token for API auth (empty = disabled)
+	wsTickets    sync.Map // map[string]time.Time — one-time short-lived WS tickets
 	httpServer   *http.Server
 	startTime    time.Time
 	tlsCert      string // path to TLS certificate
@@ -234,6 +235,10 @@ func New(opts ...Option) *Server {
 	// Telemetry route.
 	s.mux.HandleFunc("POST /api/telemetry", s.handleTelemetry)
 
+	// WS ticket route — exchanges a bearer token for a short-lived one-time ticket
+	// so the real auth token is never sent in the WebSocket upgrade URL.
+	s.mux.HandleFunc("GET /api/ws-ticket", s.handleWSTicket)
+
 	// Models route.
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 
@@ -340,7 +345,7 @@ func New(opts ...Option) *Server {
 		handler = requestLoggerMiddleware(s.metrics)(handler)
 	}
 	if s.authToken != "" {
-		handler = authMiddleware(s.authToken, s.metrics)(handler)
+		handler = authMiddleware(s.authToken, s.metrics, s.consumeWSTicket)(handler)
 	}
 	handler = rateLimitMiddleware(60)(handler)
 	handler = bodyLimitMiddleware(64 << 10)(handler) // 64KB
@@ -691,6 +696,34 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleWSTicket issues a short-lived one-time ticket for WebSocket authentication.
+// Clients exchange their bearer token (via Authorization header) for a ticket,
+// then use ?ticket=<hex> in the WebSocket URL so the real token never appears in
+// proxy/server logs.
+func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
+	ticket := s.issueWSTicket()
+	writeJSON(w, http.StatusOK, map[string]string{"ticket": ticket})
+}
+
+// issueWSTicket generates a cryptographically random one-time ticket valid for 30s.
+func (s *Server) issueWSTicket() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	ticket := fmt.Sprintf("%x", b)
+	s.wsTickets.Store(ticket, time.Now().Add(30*time.Second))
+	return ticket
+}
+
+// consumeWSTicket validates and atomically consumes a one-time WS ticket.
+// Returns false if the ticket is unknown or expired.
+func (s *Server) consumeWSTicket(ticket string) bool {
+	v, ok := s.wsTickets.LoadAndDelete(ticket)
+	if !ok {
+		return false
+	}
+	return time.Now().Before(v.(time.Time))
+}
+
 // isValidUUID checks if a string is a valid UUID v4 format.
 func isValidUUID(s string) bool {
 	if len(s) != 36 {
@@ -822,7 +855,8 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 
 // authMiddleware rejects requests to /api/* and /ws without a valid bearer token.
 // Static assets (/, /assets/*, /manifest.json, /favicon.ico, /sw.js) are exempt.
-func authMiddleware(token string, logger *metrics.EventLogger) func(http.Handler) http.Handler {
+// ticketValid, if non-nil, accepts one-time WS tickets issued by /api/ws-ticket.
+func authMiddleware(token string, logger *metrics.EventLogger, ticketValid func(string) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
@@ -839,17 +873,24 @@ func authMiddleware(token string, logger *metrics.EventLogger) func(http.Handler
 				return
 			}
 
-			// Check Authorization header
+			// Check Authorization header (all routes).
 			if r.Header.Get("Authorization") == "Bearer "+token {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Check query param for /ws only — browsers can't set headers on WebSocket.
-			// Not accepted on /api/* to prevent token leakage in logs/referrers.
-			if path == "/ws" && r.URL.Query().Get("token") == token {
-				next.ServeHTTP(w, r)
-				return
+			// /ws only: browsers cannot set Authorization headers on WebSocket upgrades.
+			// Accept a short-lived one-time ticket (preferred) or the raw token (fallback).
+			// Neither is accepted on /api/* to prevent token leakage in logs/referrers.
+			if path == "/ws" {
+				if t := r.URL.Query().Get("ticket"); t != "" && ticketValid != nil && ticketValid(t) {
+					next.ServeHTTP(w, r)
+					return
+				}
+				if r.URL.Query().Get("token") == token {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -932,10 +973,11 @@ func rateLimitMiddleware(rpm int) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Exempt telemetry, health, and auth status from rate limiting —
-			// these are high-frequency or monitoring endpoints.
+			// Exempt health and auth-status probes — they are called by monitoring
+			// systems and must never be throttled. Telemetry is NOT exempt:
+			// each write causes a synchronous fsync, so rate-limiting prevents I/O amplification.
 			switch r.URL.Path {
-			case "/api/telemetry", "/api/health", "/api/auth/status", "/api/models":
+			case "/api/health", "/api/auth/status", "/api/models":
 				next.ServeHTTP(w, r)
 				return
 			}

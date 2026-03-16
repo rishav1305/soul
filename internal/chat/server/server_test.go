@@ -1212,7 +1212,7 @@ func TestAuthMiddleware_EmitsAuthFailEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := authMiddleware("test-token", logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authMiddleware("test-token", logger, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -1262,4 +1262,82 @@ func readMetricsFile(t *testing.T, dir string) []metrics.Event {
 		}
 	}
 	return events
+}
+
+func TestWSTicket_ExpiredTicketRejected(t *testing.T) {
+	srv := New(WithAuthToken("secret"))
+
+	// Store a ticket that has already expired.
+	srv.wsTickets.Store("expiredticket", time.Now().Add(-1*time.Second))
+
+	if srv.consumeWSTicket("expiredticket") {
+		t.Error("expired ticket should be rejected")
+	}
+}
+
+func TestWSTicket_AcceptedOnWSRoute(t *testing.T) {
+	hub := ws.NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	srv := New(WithAuthToken("secret"), WithHub(hub))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	// Get a ticket via the API (with Authorization header).
+	req, _ := http.NewRequest("GET", ts.URL+"/api/ws-ticket", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from /api/ws-ticket, got %d", resp.StatusCode)
+	}
+	var body map[string]string
+	json.NewDecoder(resp.Body).Decode(&body)
+	ticket := body["ticket"]
+	if ticket == "" {
+		t.Fatal("expected ticket in response")
+	}
+
+	// Use the ticket to upgrade WebSocket — should pass auth (not 401).
+	wsReq, _ := http.NewRequest("GET", ts.URL+"/ws?ticket="+ticket, nil)
+	wsReq.Header.Set("Upgrade", "websocket")
+	wsReq.Header.Set("Connection", "Upgrade")
+	wsReq.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	wsReq.Header.Set("Sec-WebSocket-Version", "13")
+	wsReq.Header.Set("Origin", ts.URL)
+	wsResp, err := http.DefaultClient.Do(wsReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wsResp.StatusCode == http.StatusUnauthorized {
+		t.Error("ticket-based WS auth should not return 401")
+	}
+}
+
+func TestTelemetryRateLimited(t *testing.T) {
+	srv := New(WithAuthToken(""))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	// Exhaust the per-IP rate limit (60 rpm = 60 requests).
+	for i := 0; i < 60; i++ {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/telemetry", strings.NewReader(`{"type":"frontend.error","data":{}}`))
+		req.Header.Set("Content-Type", "application/json")
+		http.DefaultClient.Do(req) //nolint:errcheck
+	}
+
+	// The 61st request should be rate-limited (503 or 429).
+	req, _ := http.NewRequest("POST", ts.URL+"/api/telemetry", strings.NewReader(`{"type":"frontend.error","data":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("expected 429 after rate limit, got %d", resp.StatusCode)
+	}
 }

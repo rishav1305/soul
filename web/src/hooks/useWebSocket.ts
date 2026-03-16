@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ConnectionState, OutboundMessageType } from '../lib/types';
-import { getWebSocketURL } from '../lib/ws';
+import { getWebSocketURL, fetchWSTicket } from '../lib/ws';
 import { reportError, reportDisconnect, reportReconnect } from '../lib/telemetry';
 
 function classifyCloseCode(code: number): string {
@@ -39,7 +39,7 @@ function backoffDelay(attempt: number): number {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { url = getWebSocketURL(), onMessage } = options;
+  const { onMessage } = options;
 
   const [status, setStatus] = useState<ConnectionState>('disconnected');
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -65,94 +65,98 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (unmountedRef.current) return;
 
     clearReconnectTimer();
-
     setStatus('connecting');
 
-    const socket = new WebSocket(url);
-    wsRef.current = socket;
+    // Fetch a short-lived ticket so the real token is never sent in the WS URL.
+    // Falls back to the raw token if the ticket endpoint is unavailable.
+    fetchWSTicket().then((ticket) => {
+      if (unmountedRef.current) return;
+      const socket = new WebSocket(getWebSocketURL(ticket));
+      wsRef.current = socket;
 
-    socket.onopen = () => {
-      // Status transitions to 'connected' only when we receive
-      // the connection.ready message from the server.
-    };
+      socket.onopen = () => {
+        // Status transitions to 'connected' only when we receive
+        // the connection.ready message from the server.
+      };
 
-    socket.onmessage = (event: MessageEvent) => {
-      try {
-        const parsed = JSON.parse(event.data as string) as {
-          type: string;
-          data?: unknown;
-          sessionId?: string;
-        };
+      socket.onmessage = (event: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(event.data as string) as {
+            type: string;
+            data?: unknown;
+            sessionId?: string;
+          };
 
-        // Transition to 'connected' when we get connection.ready.
-        if (parsed.type === 'connection.ready') {
-          setStatus('connected');
-          connectTimeRef.current = Date.now();
+          // Transition to 'connected' when we get connection.ready.
+          if (parsed.type === 'connection.ready') {
+            setStatus('connected');
+            connectTimeRef.current = Date.now();
 
-          // Report successful reconnect if this is a reconnection
-          if (attemptRef.current > 0) {
-            reportReconnect({
-              attempt: attemptRef.current,
-              backoffMs: 0,
-              success: true,
-              totalDowntimeMs: disconnectTimeRef.current
-                ? Date.now() - disconnectTimeRef.current
-                : undefined,
-            });
+            // Report successful reconnect if this is a reconnection.
+            if (attemptRef.current > 0) {
+              reportReconnect({
+                attempt: attemptRef.current,
+                backoffMs: 0,
+                success: true,
+                totalDowntimeMs: disconnectTimeRef.current
+                  ? Date.now() - disconnectTimeRef.current
+                  : undefined,
+              });
+            }
+
+            // Reset backoff on successful connection.
+            attemptRef.current = 0;
+            setReconnectAttempt(0);
           }
 
-          // Reset backoff on successful connection.
-          attemptRef.current = 0;
-          setReconnectAttempt(0);
+          if (onMessageRef.current) {
+            onMessageRef.current(
+              parsed.type as OutboundMessageType,
+              parsed.data,
+              parsed.sessionId ?? '',
+            );
+          }
+        } catch (err) {
+          reportError('useWebSocket.parse', err);
         }
+      };
 
-        if (onMessageRef.current) {
-          onMessageRef.current(
-            parsed.type as OutboundMessageType,
-            parsed.data,
-            parsed.sessionId ?? '',
-          );
+      socket.onclose = (event: CloseEvent) => {
+        wsRef.current = null;
+        if (!unmountedRef.current) {
+          const reasonClass = classifyCloseCode(event.code);
+          disconnectTimeRef.current = Date.now();
+
+          reportDisconnect({
+            closeCode: event.code,
+            reasonClass,
+            connectionDurationMs: connectTimeRef.current
+              ? Date.now() - connectTimeRef.current
+              : undefined,
+          });
+
+          setStatus('disconnected');
+          const delay = backoffDelay(attemptRef.current);
+          attemptRef.current++;
+          setReconnectAttempt(attemptRef.current);
+          reportReconnect({
+            attempt: attemptRef.current,
+            backoffMs: delay,
+            success: false,
+          });
+          reconnectTimerRef.current = setTimeout(connect, delay);
         }
-      } catch (err) {
-        reportError('useWebSocket.parse', err);
-      }
-    };
+      };
 
-    socket.onclose = (event: CloseEvent) => {
-      wsRef.current = null;
-      if (!unmountedRef.current) {
-        const reasonClass = classifyCloseCode(event.code);
-        disconnectTimeRef.current = Date.now();
-
-        reportDisconnect({
-          closeCode: event.code,
-          reasonClass,
-          connectionDurationMs: connectTimeRef.current
-            ? Date.now() - connectTimeRef.current
-            : undefined,
-        });
-
-        setStatus('disconnected');
-        const delay = backoffDelay(attemptRef.current);
-        attemptRef.current++;
-        setReconnectAttempt(attemptRef.current);
-        reportReconnect({
-          attempt: attemptRef.current,
-          backoffMs: delay,
-          success: false,
-        });
-        reconnectTimerRef.current = setTimeout(connect, delay);
-      }
-    };
-
-    socket.onerror = () => {
-      // The error event is always followed by close, so we set 'error'
-      // briefly — the close handler will then schedule reconnection.
-      if (!unmountedRef.current) {
-        setStatus('error');
-      }
-    };
-  }, [url, clearReconnectTimer]);
+      socket.onerror = () => {
+        // The error event is always followed by close, so we set 'error'
+        // briefly — the close handler will then schedule reconnection.
+        if (!unmountedRef.current) {
+          setStatus('error');
+        }
+      };
+    });
+  }, [clearReconnectTimer]);
 
   useEffect(() => {
     unmountedRef.current = false;
