@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import { useChatContext } from '../contexts/ChatContext';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
@@ -14,6 +15,7 @@ const SESSIONS_KEY = 'soul-v2-sessions-open';
 
 export function ChatPage() {
   usePerformance('ChatPage');
+  const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => { reportUsage('page.view', { page: 'chat' }); }, []);
   const {
     messages,
@@ -35,6 +37,16 @@ export function ChatPage() {
   } = useChatContext();
 
   const inputRef = useRef<ChatInputHandle>(null);
+
+  // Auto-select product from ?product= query param (sidebar chat-only links)
+  useEffect(() => {
+    const product = searchParams.get('product');
+    if (product && product !== activeProduct) {
+      setProduct(product);
+      // Clear the query param to keep URL clean
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, activeProduct, setProduct, setSearchParams]);
 
   const [sessionsOpen, setSessionsOpen] = useState(() => {
     const stored = localStorage.getItem(SESSIONS_KEY);
