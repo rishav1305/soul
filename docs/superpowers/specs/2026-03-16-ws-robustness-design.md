@@ -114,7 +114,7 @@ The aggregator changes are minimal: add grouping/counting for the new `reason` a
 
 ~4-6 new metric events per connection lifecycle (upgrade, connect, open, close, ticket_fetch, error). Under normal operation, this is negligible I/O.
 
-**Reconnect storm behavior:** During reconnect storms, the frontend can generate bursts of lifecycle telemetry. The `/api/telemetry` endpoint is rate-limited at 60 RPM per IP (`server.go:945`) and intentionally NOT exempt (each write causes a synchronous fsync). To avoid dropping diagnostics during the incidents when they matter most, the frontend should batch lifecycle events client-side: accumulate events in an array and flush in a single `POST /api/telemetry` with a `batch: [event1, event2, ...]` payload every 5 seconds (or on page unload via `navigator.sendBeacon`). This requires a small backend change to accept batched payloads in `handleTelemetry`.
+**Reconnect storm behavior:** During reconnect storms, the frontend can generate bursts of lifecycle telemetry. The `/api/telemetry` endpoint is rate-limited at 60 RPM per IP (`server.go:945`) and intentionally NOT exempt (each write causes a synchronous fsync). To avoid dropping diagnostics during the incidents when they matter most, the frontend should batch lifecycle events client-side: accumulate events in an array and flush in a single `POST /api/telemetry` with a `batch: [event1, event2, ...]` payload every 5 seconds, or on page unload via `fetch(..., {keepalive: true})` (not `sendBeacon`, which cannot set `Authorization` headers). This requires a small backend change to accept batched payloads in `handleTelemetry`.
 
 ## Layer 2: Reconnect State Recovery
 
@@ -162,14 +162,17 @@ When a client disconnects, `OnClientDisconnect` (line 999) cancels the agent con
 
 Note: the agent context is derived from `context.Background()` (line 305), not the client context — so normal client disconnection does NOT cancel the stream. Only `OnClientDisconnect`'s explicit `entry.cancel()` does.
 
-Fix: handle cancellation and timeout separately from real errors. `context.Canceled` is expected control flow (fired by `chat.stop`, superseded streams, and `OnClientDisconnect`) — it should complete the session silently, not emit a user-facing error:
+Fix: `context.Canceled` fires for three distinct reasons — `chat.stop`, superseded streams (new message in same session), and `OnClientDisconnect`. Each requires different session lifecycle handling. But `runStream` cannot distinguish them because all three cancel the same `agentCtx`.
+
+**Solution: move session lifecycle to the callers, not `runStream`.** The callers know WHY the cancel happened:
+
+In `runStream` — do NOT call `completeSession` for `context.Canceled`. Just return silently:
 
 ```go
 if err != nil {
     if errors.Is(err, context.Canceled) {
         // Expected: chat.stop, superseded stream, or client disconnect.
-        // Complete session silently — no user-facing error.
-        h.completeSession(client, sessionID)
+        // Caller handles session lifecycle — they know the intent.
         return
     }
     if errors.Is(err, context.DeadlineExceeded) {
@@ -185,6 +188,12 @@ if err != nil {
     return
 }
 ```
+
+In the callers, after `<-entry.done`:
+
+- **`handleChatStop`** (line 966): after `<-entry.done`, call `h.completeSession(client, msg.SessionID)`. User intentionally stopped — session should complete.
+- **`handleChatSend` superseded** (line 298): after `<-existing.done`, call `h.sessionStore.UpdateSessionStatus(sessionID, session.StatusRunning)`. The old stream is gone; the new one is taking over — session should stay/return to running.
+- **`OnClientDisconnect`** (line 1019): after `<-entry.done`, call `h.completeSession(client, sessionID)`. Client is gone — session should complete so it's not stuck in running.
 
 ### Streaming During Disconnect
 
@@ -423,12 +432,13 @@ interface ToolCallData {
 | `web/src/hooks/useWebSocket.ts` | Emit lifecycle telemetry events |
 | `web/src/lib/telemetry.ts` | Add `reportWSLifecycle` helper; add client-side telemetry batching (5s flush / sendBeacon on unload) |
 | `internal/observe/server/handlers.go` | Extend resilient pillar to consume disconnect reason taxonomy and upgrade outcomes |
+| `internal/chat/metrics/aggregator.go` | Add grouping/counting for `reason` field in `ws.disconnect` and `outcome` field in `ws.upgrade` |
 
 ### Layer 2 (Reconnect Recovery)
 | File | Change |
 |------|--------|
 | `web/src/hooks/useChat.ts` | Re-send `session.switch` on reconnect, reset `isStreaming` |
-| `internal/chat/ws/handler.go` | Call `completeSession` on stream context cancellation |
+| `internal/chat/ws/handler.go` | `runStream`: return silently on `context.Canceled`; `handleChatStop`: call `completeSession` after done; `handleChatSend` superseded: re-set status to running after done; `OnClientDisconnect`: call `completeSession` after done |
 
 ### Layer 3 (Connection Resilience)
 | File | Change |
