@@ -45,8 +45,10 @@ type MessageHandler struct {
 	dispatcher   *prodctx.Dispatcher
 	builtin      *BuiltinExecutor
 
-	sessionsMu sync.Mutex
-	sessions   map[*Client]*chatSession
+	sessionsMu  sync.Mutex
+	sessions    map[*Client]*chatSession
+	seenMessages map[string]time.Time // messageId → first seen time
+	seenMu       sync.Mutex
 }
 
 // NewMessageHandler creates a new MessageHandler with the given dependencies.
@@ -58,10 +60,25 @@ func NewMessageHandler(hub *Hub, store session.StoreInterface, mel *metrics.Even
 		sessionStore: store,
 		metrics:      mel,
 		sessions:     make(map[*Client]*chatSession),
+		seenMessages: make(map[string]time.Time),
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			h.seenMu.Lock()
+			cutoff := time.Now().Add(-5 * time.Minute)
+			for id, ts := range h.seenMessages {
+				if ts.Before(cutoff) {
+					delete(h.seenMessages, id)
+				}
+			}
+			h.seenMu.Unlock()
+		}
+	}()
 	return h
 }
 
@@ -154,6 +171,17 @@ func (h *MessageHandler) handleSessionSetProduct(client *Client, msg *InboundMes
 // stores the user message, builds conversation history, and streams the response
 // from the Claude API back to the client as chat.token events.
 func (h *MessageHandler) handleChatSend(client *Client, msg *InboundMessage) {
+	if msg.MessageID != "" {
+		h.seenMu.Lock()
+		if _, seen := h.seenMessages[msg.MessageID]; seen {
+			h.seenMu.Unlock()
+			log.Printf("ws: dedup — skipping already-seen message %s", msg.MessageID)
+			return
+		}
+		h.seenMessages[msg.MessageID] = time.Now()
+		h.seenMu.Unlock()
+	}
+
 	if msg.SessionID == "" {
 		h.sendError(client, "", "session ID required")
 		return
