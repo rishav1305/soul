@@ -17,7 +17,7 @@
 - **Cost:** 1 API credit per job returned
 - **Free tier:** 200 credits/month
 - **Dedup:** TheirStack deduplicates the same job across platforms upstream
-- **Incremental polling:** `discovered_at_gte` filter fetches only new jobs since last sweep
+- **Incremental polling:** `discovered_at_gte` filter with cursor advanced by +1 second past last `discovered_at` to avoid boundary re-fetch (see §3 cursor logic)
 - **Pagination:** Up to 500 per page, offset-based
 
 ### TheirStack response → Lead mapping
@@ -28,13 +28,20 @@ The `leads` table is redesigned from scratch to match TheirStack's response sche
 
 ### Migration strategy
 
-No data exists in the current leads table. The migration drops and recreates:
+The migration checks the existing leads table and drops it only if empty:
 
-```sql
-DROP TABLE IF EXISTS leads;
+```go
+var count int
+err := db.QueryRow("SELECT COUNT(*) FROM leads").Scan(&count)
+if err == nil && count > 0 {
+    log.Fatalf("scout: leads table has %d rows — refusing destructive migration. "+
+        "Back up scout.db and delete it manually to proceed.", count)
+}
+// Safe to drop — table is empty or doesn't exist
+db.Exec("DROP TABLE IF EXISTS leads")
 ```
 
-Then creates the new schema below. This is a one-time destructive migration — acceptable because the table is empty. Future schema changes must use `ALTER TABLE ADD COLUMN`.
+Then creates the new schema below. Future schema changes must use `ALTER TABLE ADD COLUMN`.
 
 ### New leads table schema
 
@@ -118,10 +125,16 @@ CREATE INDEX idx_leads_date_posted ON leads(date_posted);
 **Dedup:** Partial unique index on `theirstack_id WHERE NOT NULL` — `INSERT OR IGNORE` prevents re-importing the same TheirStack job. Manual leads have `theirstack_id` NULL (unlimited NULLs allowed since partial index excludes them).
 
 **Pipeline inference from `employment_statuses`:**
-- `["full_time"]` → pipeline `"job"`
-- `["contract"]` → pipeline `"contract"`
-- `["temporary"]`, `["part_time"]` → pipeline `"freelance"`
-- Manual override always possible
+
+Deterministic rules applied in order, first match wins:
+
+1. Array contains `"contract"` → pipeline `"contract"`
+2. Array contains `"full_time"` → pipeline `"job"`
+3. Array contains `"part_time"` or `"temporary"` → pipeline `"freelance"`
+4. Array contains `"internship"` → pipeline `"job"`
+5. Empty array or unknown values → pipeline `"job"` (safe default — most TheirStack results are job postings)
+
+This handles mixed arrays like `["full_time", "contract"]` (→ `"contract"`, since contract check is first) and empty arrays (→ `"job"`). Manual override via `PATCH /api/leads/{id}` always possible.
 
 **Metadata JSON blob** stores rarely-queried fields: latitude, longitude, postal_code, long_location, state_code, company.founded_year, company.annual_revenue_usd, company.long_description, company.seo_description, company.alexa_ranking, company.publicly_traded_symbol, company.investors, company.yc_batch, matching_phrases, matching_words, reposted, date_reposted, full hiring_team array beyond [0]. (Note: `short_location`, `normalized_title`, and `company_logo` have dedicated columns — they are NOT stored in metadata.)
 
@@ -141,7 +154,7 @@ internal/scout/sweep/
 
 ### Sweep config
 
-Stored at `~/.soul-v2/scout/sweep-config.json`:
+Stored at `$SOUL_V2_DATA_DIR/scout/sweep-config.json` (resolves to `~/.soul-v2/scout/sweep-config.json` by default). All references to this path use `filepath.Join(dataDir, "scout", "sweep-config.json")` — never a hardcoded `~/` path.
 
 ```go
 type SweepConfig struct {
@@ -175,10 +188,12 @@ type SweepConfig struct {
   "posted_at_max_age_days": 7,
   "limit": 50,
   "interval_hours": 24,
-  "credit_budget": 200,
+  "credit_budget": 50,
   "auto_score_threshold": 70
 }
 ```
+
+**Credit budget rationale:** Default 50 credits/sweep × daily = 50/day. Free tier (200 credits/month) supports ~4 days of sweeps before exhaustion. For sustained free-tier use, set `credit_budget: 7` (200 ÷ 30 days ≈ 7/day). Paid tier ($59/mo) has much higher limits — raise `credit_budget` accordingly. The `GET /api/sweep/status` endpoint reports remaining credits so the user can tune this.
 
 ---
 
@@ -287,9 +302,9 @@ type Scheduler struct {
 
 - `Start()` — launches goroutine, runs sweep immediately on first start, then on interval
 - `Stop()` — signals goroutine to exit
-- `RunNow()` — triggers an immediate sweep (for `POST /api/sweep/now`)
+- `RunNow() (SweepResult, error)` — triggers an immediate sweep, blocks until complete
 - Stores last run timestamp in `sync_meta` (key: `sweep_last_run`)
-- Stores last TheirStack `discovered_at` in `sync_meta` (key: `theirstack_cursor`)
+- Stores cursor in `sync_meta` (key: `theirstack_cursor`) — stored as `max(discovered_at) + 1 second` to avoid boundary re-fetch on `>=` filter (see cursor logic below)
 
 ### Sweep flow per run
 
@@ -322,15 +337,19 @@ Phase 2 — Auto-score (after all pages fetched):
      c. If ResumeMatch fails: log error, continue (don't abort scoring)
 
 Phase 3 — Finalize:
-  7. Update theirstack_cursor to max(discovered_at) ONLY if Phase 1 had no errors
-  8. Update sweep_last_run timestamp
-  9. Build and store digest in sync_meta (sweep_last_digest)
-  10. Return SweepResult: {new_leads, duplicates, scored, high_matches, errors}
+  7. Compute newCursor = max(discovered_at from all fetched jobs) + 1 second
+     (the +1s ensures discovered_at_gte on next run excludes the boundary row)
+  8. Update theirstack_cursor to newCursor ONLY if Phase 1 had no errors
+  9. Update sweep_last_run timestamp
+  10. Build and store digest in sync_meta (sweep_last_digest)
+  11. Return SweepResult: {new_leads, duplicates, scored, high_matches, errors}
 ```
 
-**Pagination:** TheirStack returns up to 500 per page. Stop when returned count < limit or credit budget exceeded (default 200 credits per sweep = 200 jobs).
+**Cursor boundary logic:** TheirStack only supports `discovered_at_gte` (>=), not strict `>`. Storing `max + 1s` as the cursor converts >= into effective >. The 1-second granularity matches TheirStack's timestamp precision. Without this, every sweep re-fetches and re-charges for the boundary row(s).
 
-**Error handling:** Cursor is only advanced on successful completion. On partial failure (e.g. page 2 of 4 returns 429), leads from pages 1-2 are kept but the cursor stays at the pre-sweep position — next sweep re-fetches from the same point, dedup via `INSERT OR IGNORE` prevents duplicates.
+**Pagination:** TheirStack returns up to 500 per page. Stop when returned count < limit or credit budget exceeded (default 50 credits per sweep).
+
+**Error handling:** Cursor is only advanced on successful completion of all pages. On partial failure (e.g. page 2 of 4 returns 429), leads from pages 1-2 are kept but the cursor stays at the pre-sweep position — next sweep re-fetches from the same point, dedup via `INSERT OR IGNORE` prevents duplicate DB inserts (but credits are re-consumed). This is the safe tradeoff: no data loss at the cost of some redundant credits on retry.
 
 **Auto-score latency:** For 50 leads at ~1-2s per Claude call, scoring takes ~1-2 minutes. This runs in the background scheduler goroutine — not blocking any HTTP handler. The sweep result is stored in `sync_meta` and retrieved via `GET /api/sweep/digest`.
 
@@ -358,7 +377,34 @@ Stored in `sync_meta` as `sweep_last_digest` (JSON blob), updated after each swe
 
 ### `POST /api/sweep/now` semantics
 
-Synchronous — the handler calls `scheduler.RunNow()` which blocks until the sweep completes (fetch + score), then returns the `SweepResult` as the HTTP response. HTTP timeout: 5 minutes (covers worst case of 200 jobs × 2s scoring). If the scheduler is already running a sweep, returns `409 Conflict` with `{"error": "sweep already in progress"}`.
+**Async with run tracking.** The handler calls `scheduler.RunNow()` which:
+1. If already running, returns `409 Conflict` with `{"error": "sweep already in progress"}`
+2. Otherwise, starts the sweep in a background goroutine
+3. Returns immediately with `202 Accepted` and `{"run_id": 42, "status": "running"}`
+4. Client polls `GET /api/sweep/status` to check completion, or waits for digest
+
+This avoids the chat dispatch 10s timeout problem. The sweep runs in the scheduler goroutine regardless of how it was triggered (cron or manual).
+
+### Long-running tool execution model
+
+**Problem:** Chat tool dispatch enforces a ~10s request timeout. AI tools (resume_match ~2s, referral_finder ~120s) and sweep/now (minutes) exceed this.
+
+**Solution:** Two execution models based on expected latency:
+
+| Tool | Expected latency | Model |
+|---|---|---|
+| resume_match | ~2s | Synchronous (fits in 10s) |
+| proposal_gen | ~3s | Synchronous |
+| cover_letter | ~3s | Synchronous |
+| salary_lookup | ~2s | Synchronous |
+| cold_outreach | ~3s | Synchronous |
+| referral_finder | ~60-120s | **Async** — returns `{run_id, status: "running"}`, poll `GET /api/agent/status` |
+| company_pitch | ~60-120s | **Async** — returns `{run_id, status: "running"}`, poll `GET /api/agent/status` |
+| sweep_now | ~minutes | **Async** — returns `{run_id, status: "running"}`, poll `GET /api/sweep/status` |
+
+Async tools use the existing `agent_runs` table for tracking. The chat context tool descriptions include a note: "This tool runs asynchronously. Poll agent_status to check completion."
+
+Synchronous in-process tools (Tier 1-2) complete well within the 10s dispatch timeout. No change needed to `dispatch.go` timeouts for these.
 
 ---
 
@@ -453,6 +499,8 @@ WithTheirStackKey(key string) Option
 ```
 
 Remove: `cdpURL` field, `cdpClient` field, `WithCdpURL` option.
+
+**CORS update:** Add `PUT` to allowed methods in `corsMiddleware` (currently allows `GET, POST, PATCH, OPTIONS`). Required for `PUT /api/sweep/config` to work from browser/frontend.
 
 ### New REST endpoints (9 new, 32 total)
 
@@ -578,7 +626,7 @@ if tsClient != nil {
 | `internal/scout/store/store_test.go` | Tests rewritten for new Lead struct. Same coverage: CRUD, scoring, analytics, dedup. |
 | `internal/scout/sweep/sweep.go` | Complete rewrite. `Sweep()` calls TheirStack, creates leads, triggers auto-scoring. |
 | `internal/scout/agent/launcher.go` | Rewrite stub to actual subprocess launcher using `os/exec`. |
-| `internal/scout/server/server.go` | Add AI + scheduler fields, 9 new endpoints, remove CDP references. |
+| `internal/scout/server/server.go` | Add AI + scheduler fields, 9 new endpoints, remove CDP references. Add `PUT` to CORS allowed methods. |
 | `cmd/scout/main.go` | Add stream.Client, TheirStack key, scheduler startup. Remove CDP. |
 | `internal/chat/context/scout.go` | Add 7 new tool definitions (28 total). All 21 existing tools preserved unchanged. New AI tools use dedicated `/api/ai/*` paths (not `/api/tools/{name}/execute`). |
 | `internal/chat/context/dispatch.go` | Add 7 new dispatch routes for AI tools. Existing 21 routes unchanged. |
