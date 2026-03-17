@@ -53,7 +53,24 @@ func LoadConfig(path string) (*SweepConfig, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	cfg.backfillDefaults()
 	return &cfg, nil
+}
+
+// backfillDefaults ensures critical fields have safe values.
+func (c *SweepConfig) backfillDefaults() {
+	if c.IntervalHours <= 0 {
+		c.IntervalHours = 24
+	}
+	if c.Limit <= 0 {
+		c.Limit = 50
+	}
+	if c.CreditBudget <= 0 {
+		c.CreditBudget = 50
+	}
+	if c.PostedAtMaxAgeDays <= 0 {
+		c.PostedAtMaxAgeDays = 7
+	}
 }
 
 func SaveConfig(path string, cfg *SweepConfig) error {

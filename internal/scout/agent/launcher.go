@@ -28,10 +28,10 @@ type LaunchResult struct {
 	Error      string
 }
 
-// Launch spawns a Claude CLI subprocess and tracks the run in agent_runs.
-// SAFETY: Uses exec.Command directly — never shell invocation.
-func Launch(ctx context.Context, st *store.Store, cfg LaunchConfig) (*LaunchResult, error) {
-	// Create agent_runs record
+// LaunchAsync creates an agent_runs record and spawns the Claude subprocess
+// in a background goroutine. Returns the run_id immediately — callers poll
+// GET /api/agent/status for completion.
+func LaunchAsync(st *store.Store, cfg LaunchConfig) (int64, error) {
 	run := store.AgentRun{
 		Platform:  "claude",
 		Mode:      cfg.Mode,
@@ -41,43 +41,38 @@ func Launch(ctx context.Context, st *store.Store, cfg LaunchConfig) (*LaunchResu
 	}
 	runID, err := st.AddAgentRun(run)
 	if err != nil {
-		return nil, fmt.Errorf("create agent run: %w", err)
+		return 0, fmt.Errorf("create agent run: %w", err)
 	}
 
-	// 120s timeout
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
+	// Run subprocess in background goroutine — does not block caller
+	go runSubprocess(st, runID, cfg.Prompt)
 
-	start := time.Now()
+	return runID, nil
+}
+
+// runSubprocess executes the Claude CLI and updates agent_runs on completion.
+func runSubprocess(st *store.Store, runID int64, prompt string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
 
 	// SAFETY: exec.Command directly, never shell
 	cmd := exec.CommandContext(ctx, "claude", "--print", "--model", "claude-sonnet-4-6", "--max-turns", "5")
-	cmd.Stdin = strings.NewReader(cfg.Prompt)
+	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err = cmd.Run()
-	duration := time.Since(start)
-
-	result := &LaunchResult{
-		RunID:    runID,
-		Duration: duration,
-	}
+	err := cmd.Run()
 
 	if ctx.Err() == context.DeadlineExceeded {
-		result.Error = "timeout after 120s"
-		st.UpdateAgentRun(runID, "timeout", fmt.Sprintf(`{"error":%q}`, result.Error))
-		return result, nil
+		st.UpdateAgentRun(runID, "timeout", fmt.Sprintf(`{"error":"timeout after 120s"}`))
+		return
 	}
 	if err != nil {
-		result.Error = fmt.Sprintf("exec: %v — stderr: %s", err, stderr.String())
-		st.UpdateAgentRun(runID, "failed", fmt.Sprintf(`{"error":%q}`, result.Error))
-		return result, nil
+		errMsg := fmt.Sprintf("exec: %v — stderr: %s", err, stderr.String())
+		st.UpdateAgentRun(runID, "failed", fmt.Sprintf(`{"error":%q}`, errMsg))
+		return
 	}
 
-	result.Output = stdout.String()
-	st.UpdateAgentRun(runID, "completed", result.Output)
-
-	return result, nil
+	st.UpdateAgentRun(runID, "completed", stdout.String())
 }

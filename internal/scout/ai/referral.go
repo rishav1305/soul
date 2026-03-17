@@ -32,9 +32,9 @@ Return JSON: {"connections": [{"name": "...", "role": "...", "relationship": "..
 		DataDir: s.dataDir,
 	}
 
-	result, err := agent.Launch(ctx, s.store, cfg)
+	runID, err := agent.LaunchAsync(s.store, cfg)
 	if err != nil {
 		return 0, err
 	}
-	return result.RunID, nil
+	return runID, nil
 }

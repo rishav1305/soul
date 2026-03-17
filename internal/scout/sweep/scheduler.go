@@ -24,9 +24,15 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new sweep scheduler.
+// Enforces minimum 1-hour interval to prevent ticker panics and API abuse.
 func NewScheduler(cfg *SweepConfig, st *store.Store, scorer Scorer, client *TheirStackClient) *Scheduler {
+	interval := time.Duration(cfg.IntervalHours) * time.Hour
+	if interval <= 0 {
+		interval = 24 * time.Hour
+		log.Printf("scout: invalid interval_hours %d, defaulting to 24h", cfg.IntervalHours)
+	}
 	return &Scheduler{
-		interval: time.Duration(cfg.IntervalHours) * time.Hour,
+		interval: interval,
 		config:   cfg,
 		store:    st,
 		scorer:   scorer,

@@ -103,7 +103,10 @@ func runServe() {
 		server.WithAIService(aiSvc),
 		server.WithConfigPath(configPath),
 	}
-	if pgURL := os.Getenv("SOUL_SCOUT_PG_URL"); pgURL != "" {
+	if pdb != nil {
+		opts = append(opts, server.WithProfileDB(pdb))
+	} else if pgURL := os.Getenv("SOUL_SCOUT_PG_URL"); pgURL != "" {
+		// Fallback: let server create its own profiledb connection
 		opts = append(opts, server.WithPgURL(pgURL))
 	}
 

@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"log"
+
 	"strings"
 	"time"
 
@@ -177,20 +177,25 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate() error {
-	// Safety check: refuse to drop leads table if it has data.
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM leads").Scan(&count)
-	if err == nil && count > 0 {
-		log.Fatalf("scout: migrate: leads table has %d rows — refusing to drop non-empty table", count)
-	}
+	// Check if leads table exists with the new schema (theirstack_id column).
+	var colCount int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('leads') WHERE name = 'theirstack_id'").Scan(&colCount)
 
-	// Drop and recreate leads table with new schema.
-	if _, err := s.db.Exec("DROP TABLE IF EXISTS leads"); err != nil {
-		return fmt.Errorf("scout: migrate: drop leads: %w", err)
+	if colCount == 0 {
+		// Old or missing schema — check if table has data before dropping.
+		var rowCount int
+		err := s.db.QueryRow("SELECT COUNT(*) FROM leads").Scan(&rowCount)
+		if err == nil && rowCount > 0 {
+			return fmt.Errorf("scout: leads table has %d rows with old schema — back up scout.db and delete it to proceed", rowCount)
+		}
+		// Safe to drop — table is empty or doesn't exist.
+		if _, err := s.db.Exec("DROP TABLE IF EXISTS leads"); err != nil {
+			return fmt.Errorf("scout: migrate: drop leads: %w", err)
+		}
 	}
 
 	const leadsSchema = `
-CREATE TABLE leads (
+CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL DEFAULT 'theirstack',
     pipeline TEXT NOT NULL DEFAULT '',
@@ -239,15 +244,15 @@ CREATE TABLE leads (
     hiring_manager_linkedin TEXT NOT NULL DEFAULT '',
     metadata TEXT NOT NULL DEFAULT '{}'
 );
-CREATE UNIQUE INDEX idx_leads_theirstack_id ON leads(theirstack_id) WHERE theirstack_id IS NOT NULL;
-CREATE INDEX idx_leads_stage ON leads(stage);
-CREATE INDEX idx_leads_match_score ON leads(match_score);
-CREATE INDEX idx_leads_country_code ON leads(country_code);
-CREATE INDEX idx_leads_seniority ON leads(seniority);
-CREATE INDEX idx_leads_remote ON leads(remote);
-CREATE INDEX idx_leads_pipeline ON leads(pipeline);
-CREATE INDEX idx_leads_company_domain ON leads(company_domain);
-CREATE INDEX idx_leads_date_posted ON leads(date_posted);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_theirstack_id ON leads(theirstack_id) WHERE theirstack_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);
+CREATE INDEX IF NOT EXISTS idx_leads_match_score ON leads(match_score);
+CREATE INDEX IF NOT EXISTS idx_leads_country_code ON leads(country_code);
+CREATE INDEX IF NOT EXISTS idx_leads_seniority ON leads(seniority);
+CREATE INDEX IF NOT EXISTS idx_leads_remote ON leads(remote);
+CREATE INDEX IF NOT EXISTS idx_leads_pipeline ON leads(pipeline);
+CREATE INDEX IF NOT EXISTS idx_leads_company_domain ON leads(company_domain);
+CREATE INDEX IF NOT EXISTS idx_leads_date_posted ON leads(date_posted);
 `
 
 	if _, err := s.db.Exec(leadsSchema); err != nil {

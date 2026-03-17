@@ -54,6 +54,9 @@ func WithStore(st *store.Store) Option { return func(s *Server) { s.store = st }
 // WithAIService sets the AI service for AI-powered tool handlers.
 func WithAIService(svc *ai.Service) Option { return func(s *Server) { s.aiService = svc } }
 
+// WithProfileDB sets the profiledb client (avoids server creating a duplicate).
+func WithProfileDB(pdb *profiledb.Client) Option { return func(s *Server) { s.profileDB = pdb } }
+
 // WithScheduler sets the sweep scheduler.
 func WithScheduler(sch *sweep.Scheduler) Option { return func(s *Server) { s.scheduler = sch } }
 
@@ -86,8 +89,8 @@ func (s *Server) Start() error {
 		s.store = st
 	}
 
-	// Optional: connect to profile PostgreSQL.
-	if s.pgURL != "" {
+	// Optional: connect to profile PostgreSQL (skip if already injected via main).
+	if s.profileDB == nil && s.pgURL != "" {
 		client, err := profiledb.New(s.pgURL)
 		if err != nil {
 			log.Printf("scout: profiledb unavailable: %v", err)
@@ -478,22 +481,17 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 // --- Sweep ---
 
 func (s *Server) handleSweep(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Platforms []string `json:"platforms"`
-	}
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	// Use scheduler for real TheirStack sweep if available
+	if s.scheduler != nil {
+		runID, started := s.scheduler.RunNow()
+		if started {
+			writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "started"})
+		} else {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"status": "already_running"})
+		}
 		return
 	}
-	if len(body.Platforms) == 0 {
-		body.Platforms = []string{"linkedin", "indeed", "upwork", "toptal", "wellfound"}
-	}
-	results, err := sweep.Sweep(body.Platforms, s.store)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, results)
+	writeError(w, http.StatusServiceUnavailable, "scheduler not configured — set SOUL_SCOUT_THEIRSTACK_KEY")
 }
 
 func (s *Server) handleSweepNow(w http.ResponseWriter, r *http.Request) {
@@ -957,7 +955,7 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch name {
-	case "list_leads":
+	case "lead_list":
 		pipelineFilter, _ := input["pipeline"].(string)
 		activeOnly, _ := input["active_only"].(bool)
 		leads, err := s.store.ListLeads(pipelineFilter, activeOnly)
@@ -970,8 +968,8 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"leads": leads})
 
-	case "get_lead":
-		idFloat, _ := input["id"].(float64)
+	case "lead_get":
+		idFloat, _ := input["lead_id"].(float64)
 		lead, err := s.store.GetLead(int64(idFloat))
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
@@ -979,7 +977,7 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, lead)
 
-	case "add_lead":
+	case "lead_add":
 		data, _ := json.Marshal(input)
 		var lead store.Lead
 		json.Unmarshal(data, &lead)
@@ -990,6 +988,33 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 
+	case "lead_update":
+		idFloat, _ := input["lead_id"].(float64)
+		delete(input, "lead_id")
+		if err := s.store.UpdateLead(int64(idFloat), input); err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		lead, _ := s.store.GetLead(int64(idFloat))
+		writeJSON(w, http.StatusOK, lead)
+
+	case "lead_action":
+		idFloat, _ := input["lead_id"].(float64)
+		action, _ := input["action"].(string)
+		notes, _ := input["notes"].(string)
+		leadID := int64(idFloat)
+		lead, err := s.store.GetLead(leadID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if action != "" && action != lead.Stage {
+			s.store.RecordStageHistory(leadID, lead.Stage, action, notes)
+			s.store.UpdateLead(leadID, map[string]interface{}{"stage": action})
+		}
+		updated, _ := s.store.GetLead(leadID)
+		writeJSON(w, http.StatusOK, updated)
+
 	case "analytics":
 		pipelineFilter, _ := input["pipeline"].(string)
 		analytics, err := s.store.GetAnalytics(pipelineFilter)
@@ -999,8 +1024,125 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, analytics)
 
+	case "sync":
+		platform, _ := input["platform"].(string)
+		id, _ := s.store.AddSyncResult(store.SyncResult{Platform: platform, Status: "checked"})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"id": id, "status": "checked"})
+
+	case "sweep", "sweep_now":
+		if s.scheduler != nil {
+			runID, started := s.scheduler.RunNow()
+			if started {
+				writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "started"})
+			} else {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{"status": "already_running"})
+			}
+		} else {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"status": "scheduler not configured"})
+		}
+
 	case "sweep_status":
-		writeJSON(w, http.StatusOK, sweep.SweepStatus())
+		if s.scheduler != nil {
+			writeJSON(w, http.StatusOK, s.scheduler.Status())
+		} else {
+			writeJSON(w, http.StatusOK, sweep.SweepStatus())
+		}
+
+	case "sweep_digest":
+		digestJSON, _ := s.store.GetSyncMeta("sweep_last_digest")
+		if digestJSON != "" {
+			var digest map[string]interface{}
+			json.Unmarshal([]byte(digestJSON), &digest)
+			writeJSON(w, http.StatusOK, digest)
+		} else {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"last_run": "", "new_leads": 0, "high_matches": 0, "high_match_leads": []interface{}{}})
+		}
+
+	case "profile":
+		if s.profileDB == nil {
+			writeError(w, http.StatusServiceUnavailable, "profiledb not configured")
+			return
+		}
+		section, _ := input["section"].(string)
+		if section != "" {
+			data, err := s.profileDB.GetSection(section)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, data)
+		} else {
+			raw, err := s.profileDB.GetFullProfile()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, transformProfile(raw))
+		}
+
+	case "profile_pull":
+		if s.profileDB == nil {
+			writeError(w, http.StatusServiceUnavailable, "profiledb not configured")
+			return
+		}
+		profile, err := s.profileDB.GetFullProfile()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "pulled", "profile": profile})
+
+	case "profile_push":
+		writeJSON(w, http.StatusOK, map[string]string{"status": "push deferred"})
+
+	case "optimization_add":
+		data, _ := json.Marshal(input)
+		var opt store.Optimization
+		json.Unmarshal(data, &opt)
+		id, err := s.store.AddOptimization(opt)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
+
+	case "optimization_list":
+		opts, err := s.store.ListOptimizations()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if opts == nil {
+			opts = []store.Optimization{}
+		}
+		writeJSON(w, http.StatusOK, opts)
+
+	case "optimize_profile":
+		writeJSON(w, http.StatusOK, map[string]string{"status": "optimizer launch deferred — use AI tools instead"})
+
+	case "optimize_apply":
+		writeJSON(w, http.StatusOK, map[string]string{"status": "apply deferred"})
+
+	case "agent_status":
+		idFloat, _ := input["run_id"].(float64)
+		run, err := s.store.GetAgentRun(int64(idFloat))
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, run)
+
+	case "agent_history":
+		platform, _ := input["platform"].(string)
+		runs, err := s.store.ListAgentRuns(platform)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if runs == nil {
+			runs = []store.AgentRun{}
+		}
+		writeJSON(w, http.StatusOK, runs)
 
 	case "scored_leads":
 		limit := 20
