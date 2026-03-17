@@ -104,12 +104,12 @@ Help users manage their job search efficiently, find high-quality leads, and opt
 			{
 				Name:        "lead_action",
 				Description: "Take an action on a job lead (apply, follow-up, archive, reject, etc.).",
-				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"string","description":"ID of the lead"},"action":{"type":"string","description":"Action to take (e.g., apply, follow_up, archive, reject)"},"date":{"type":"string","description":"Date for the action (ISO 8601)"},"notes":{"type":"string","description":"Notes about the action"}},"required":["lead_id","action"]}`),
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"},"action":{"type":"string","description":"Action to take (e.g., apply, follow_up, archive, reject)"},"notes":{"type":"string","description":"Notes about the action"}},"required":["lead_id","action"]}`),
 			},
 			{
 				Name:        "agent_status",
 				Description: "Check the status of autonomous agent runs.",
-				InputSchema: mustJSON(`{"type":"object","properties":{"run_id":{"type":"string","description":"Specific run ID to check (omit for latest)"}}}`),
+				InputSchema: mustJSON(`{"type":"object","properties":{"run_id":{"type":"integer","description":"Specific run ID to check (omit for latest)"}}}`),
 			},
 			{
 				Name:        "agent_history",

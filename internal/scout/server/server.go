@@ -119,17 +119,19 @@ func (s *Server) Start() error {
 }
 
 // Shutdown gracefully stops the server and closes resources.
+// Stops HTTP server first (drains in-flight requests), then closes DB/profiledb.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var err error
+	if s.httpServer != nil {
+		err = s.httpServer.Shutdown(ctx) // drains in-flight requests
+	}
 	if s.profileDB != nil {
 		s.profileDB.Close()
 	}
 	if s.store != nil {
 		s.store.Close()
 	}
-	if s.httpServer != nil {
-		return s.httpServer.Shutdown(ctx)
-	}
-	return nil
+	return err
 }
 
 // ServeHTTP implements http.Handler for testing.
@@ -524,10 +526,11 @@ func (s *Server) handleSweepDigest(w http.ResponseWriter, r *http.Request) {
 	val, err := s.store.GetSyncMeta("sweep_last_digest")
 	if err != nil || val == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"period":    "",
-			"newLeads":  0,
-			"applied":   0,
-			"responses": 0,
+			"last_run":         "",
+			"new_leads":        0,
+			"duplicates":       0,
+			"high_matches":     0,
+			"high_match_leads": []interface{}{},
 		})
 		return
 	}
@@ -962,9 +965,14 @@ func (s *Server) handleAIPitch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var input map[string]interface{}
-	if err := decodeBody(r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decodeBody(r, &input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+	}
+	if input == nil {
+		input = map[string]interface{}{}
 	}
 
 	switch name {
@@ -1022,10 +1030,20 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action != "" && action != lead.Stage {
-			s.store.RecordStageHistory(leadID, lead.Stage, action, notes)
-			s.store.UpdateLead(leadID, map[string]interface{}{"stage": action})
+			if err := s.store.RecordStageHistory(leadID, lead.Stage, action, notes); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if err := s.store.UpdateLead(leadID, map[string]interface{}{"stage": action}); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
-		updated, _ := s.store.GetLead(leadID)
+		updated, err := s.store.GetLead(leadID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, updated)
 
 	case "analytics":

@@ -90,19 +90,32 @@ func RunSweep(client *TheirStackClient, st *store.Store, cfg *SweepConfig, score
 		}
 	}
 
-	// Phase 3: Finalize
+	// Phase 3: Finalize — log errors but don't fail the sweep result
 	if !hadError && maxDiscoveredAt != "" {
 		t, err := time.Parse(time.RFC3339, maxDiscoveredAt)
-		if err == nil {
+		if err != nil {
+			log.Printf("scout: parse discovered_at %q: %v", maxDiscoveredAt, err)
+		} else {
 			newCursor := t.Add(1 * time.Second).Format(time.RFC3339)
-			st.SetSyncMeta("theirstack_cursor", newCursor)
+			if err := st.SetSyncMeta("theirstack_cursor", newCursor); err != nil {
+				log.Printf("scout: save cursor: %v", err)
+				result.Errors = append(result.Errors, "failed to save cursor: "+err.Error())
+			}
 		}
 	}
-	st.SetSyncMeta("sweep_last_run", time.Now().UTC().Format(time.RFC3339))
+	if err := st.SetSyncMeta("sweep_last_run", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		log.Printf("scout: save last_run: %v", err)
+	}
 
 	digest := BuildDigest(result, st, cfg)
-	digestBytes, _ := json.Marshal(digest)
-	st.SetSyncMeta("sweep_last_digest", string(digestBytes))
+	digestBytes, err := json.Marshal(digest)
+	if err != nil {
+		log.Printf("scout: marshal digest: %v", err)
+	} else {
+		if err := st.SetSyncMeta("sweep_last_digest", string(digestBytes)); err != nil {
+			log.Printf("scout: save digest: %v", err)
+		}
+	}
 
 	return result, nil
 }

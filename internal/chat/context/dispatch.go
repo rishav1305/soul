@@ -15,9 +15,10 @@ import (
 
 // ToolRoute maps a tool name to an HTTP endpoint on a product server.
 type ToolRoute struct {
-	Method  string // GET, POST, PATCH, DELETE
-	Path    string // e.g., "/api/tasks/{task_id}"
-	Product string // tasks, tutor, projects, observe
+	Method  string        // GET, POST, PATCH, DELETE
+	Path    string        // e.g., "/api/tasks/{task_id}"
+	Product string        // tasks, tutor, projects, observe
+	Timeout time.Duration // per-route timeout override; 0 = use default (10s)
 }
 
 // Dispatcher routes tool calls to product server REST APIs.
@@ -148,11 +149,13 @@ func NewDispatcher() *Dispatcher {
 			"agent_history":     {Method: "POST", Path: "/api/tools/agent_history/execute", Product: "scout"},
 			"scored_leads":      {Method: "POST", Path: "/api/tools/scored_leads/execute", Product: "scout"},
 			// Scout AI tools
-			"resume_match":    {Method: "POST", Path: "/api/ai/match", Product: "scout"},
-			"proposal_gen":    {Method: "POST", Path: "/api/ai/proposal", Product: "scout"},
-			"cover_letter":    {Method: "POST", Path: "/api/ai/cover-letter", Product: "scout"},
-			"cold_outreach":   {Method: "POST", Path: "/api/ai/outreach", Product: "scout"},
-			"salary_lookup":   {Method: "POST", Path: "/api/ai/salary", Product: "scout"},
+			// Scout AI tools — 30s timeout (Claude API calls are slower than DB ops)
+			"resume_match":    {Method: "POST", Path: "/api/ai/match", Product: "scout", Timeout: 30 * time.Second},
+			"proposal_gen":    {Method: "POST", Path: "/api/ai/proposal", Product: "scout", Timeout: 30 * time.Second},
+			"cover_letter":    {Method: "POST", Path: "/api/ai/cover-letter", Product: "scout", Timeout: 30 * time.Second},
+			"cold_outreach":   {Method: "POST", Path: "/api/ai/outreach", Product: "scout", Timeout: 30 * time.Second},
+			"salary_lookup":   {Method: "POST", Path: "/api/ai/salary", Product: "scout", Timeout: 30 * time.Second},
+			// Async tools — 10s is fine, they return immediately with run_id
 			"referral_finder": {Method: "POST", Path: "/api/ai/referral", Product: "scout"},
 			"company_pitch":   {Method: "POST", Path: "/api/ai/pitch", Product: "scout"},
 		},
@@ -223,8 +226,12 @@ func (d *Dispatcher) Execute(ctx context.Context, toolName string, input json.Ra
 		}
 	}
 
-	// Create request with per-request timeout.
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Create request with per-request timeout (route can override default 10s).
+	timeout := 10 * time.Second
+	if route.Timeout > 0 {
+		timeout = route.Timeout
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, route.Method, fullURL, body)

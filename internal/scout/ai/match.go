@@ -48,7 +48,9 @@ func (s *Service) ResumeMatch(ctx context.Context, leadID int64) (*MatchResult, 
 		return nil, fmt.Errorf("parse match result: %w (raw: %s)", err, text)
 	}
 
-	s.store.UpdateLead(leadID, map[string]interface{}{"match_score": float64(result.Score)})
+	if err := s.store.UpdateLead(leadID, map[string]interface{}{"match_score": float64(result.Score)}); err != nil {
+		return &result, fmt.Errorf("scored %d but failed to persist: %w", result.Score, err)
+	}
 
 	return &result, nil
 }
