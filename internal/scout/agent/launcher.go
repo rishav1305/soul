@@ -28,10 +28,21 @@ type LaunchResult struct {
 	Error      string
 }
 
+// maxConcurrentLaunches limits concurrent subprocess spawns to prevent resource exhaustion.
+var launchSem = make(chan struct{}, 3)
+
 // LaunchAsync creates an agent_runs record and spawns the Claude subprocess
 // in a background goroutine. Returns the run_id immediately — callers poll
-// GET /api/agent/status for completion.
+// GET /api/agent/status for completion. At most 3 subprocesses run concurrently.
 func LaunchAsync(st *store.Store, cfg LaunchConfig) (int64, error) {
+	// Non-blocking check: reject if at capacity
+	select {
+	case launchSem <- struct{}{}:
+		// acquired slot
+	default:
+		return 0, fmt.Errorf("agent launch queue full (max 3 concurrent) — try again later")
+	}
+
 	run := store.AgentRun{
 		Platform:  "claude",
 		Mode:      cfg.Mode,
@@ -41,11 +52,15 @@ func LaunchAsync(st *store.Store, cfg LaunchConfig) (int64, error) {
 	}
 	runID, err := st.AddAgentRun(run)
 	if err != nil {
+		<-launchSem // release slot on failure
 		return 0, fmt.Errorf("create agent run: %w", err)
 	}
 
-	// Run subprocess in background goroutine — does not block caller
-	go runSubprocess(st, runID, cfg.Prompt)
+	// Run subprocess in background goroutine — releases semaphore on completion
+	go func() {
+		defer func() { <-launchSem }()
+		runSubprocess(st, runID, cfg.Prompt)
+	}()
 
 	return runID, nil
 }

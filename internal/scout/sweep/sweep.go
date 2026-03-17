@@ -26,6 +26,15 @@ type Scorer interface {
 
 // RunSweep executes a 3-phase sweep: fetch → score → finalize.
 func RunSweep(client *TheirStackClient, st *store.Store, cfg *SweepConfig, scorer Scorer) (*SweepResult, error) {
+	if client == nil {
+		return nil, fmt.Errorf("sweep: TheirStack client is nil")
+	}
+	if st == nil {
+		return nil, fmt.Errorf("sweep: store is nil")
+	}
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
 	result := &SweepResult{}
 
 	// Load cursor (empty on first run = fetch all)

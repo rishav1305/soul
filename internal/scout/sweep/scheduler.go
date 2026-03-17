@@ -17,6 +17,7 @@ type Scheduler struct {
 	client     *TheirStackClient
 	stopCh     chan struct{}
 	mu         sync.Mutex
+	started    bool
 	running    bool
 	lastRun    time.Time
 	lastResult *SweepResult
@@ -25,7 +26,14 @@ type Scheduler struct {
 
 // NewScheduler creates a new sweep scheduler.
 // Enforces minimum 1-hour interval to prevent ticker panics and API abuse.
+// cfg and client must not be nil.
 func NewScheduler(cfg *SweepConfig, st *store.Store, scorer Scorer, client *TheirStackClient) *Scheduler {
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	if client == nil || st == nil {
+		log.Printf("scout: NewScheduler called with nil client or store — sweep will be disabled")
+	}
 	interval := time.Duration(cfg.IntervalHours) * time.Hour
 	if interval <= 0 {
 		interval = 24 * time.Hour
@@ -42,7 +50,19 @@ func NewScheduler(cfg *SweepConfig, st *store.Store, scorer Scorer, client *Thei
 }
 
 // Start launches the scheduler goroutine. It runs a sweep immediately, then on interval.
+// Safe to call only once — subsequent calls are no-ops.
 func (s *Scheduler) Start() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-s.stopCh:
+		return // already stopped
+	default:
+	}
+	if s.started {
+		return // already running
+	}
+	s.started = true
 	go s.loop()
 }
 
