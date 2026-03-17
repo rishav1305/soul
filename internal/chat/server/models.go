@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,11 +41,12 @@ var currentGenPrefixes = []string{"claude-opus-4", "claude-sonnet-4", "claude-ha
 
 var defaultThinkingTypes = []string{"disabled", "adaptive", "enabled"}
 
-// fallbackModels is returned when the Claude API is unreachable (e.g., OAuth doesn't support /v1/models).
+// fallbackModels is returned when the Claude API is unreachable.
+// Haiku is listed first as it's the model reliably accessible via Claude Code OAuth tokens.
 var fallbackModels = []ModelInfo{
-	{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", MaxTokens: 64000},
-	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxTokens: 64000},
 	{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", MaxTokens: 64000},
+	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxTokens: 64000},
+	{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", MaxTokens: 64000},
 }
 
 func maxTokensForModel(modelID string) int {
@@ -90,6 +93,7 @@ func (s *Server) fetchModels() ([]ModelInfo, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -123,6 +127,78 @@ func (s *Server) fetchModels() ([]ModelInfo, error) {
 	return models, nil
 }
 
+// probeModel tests whether inference works for a given model ID by sending a
+// minimal 1-token request. Returns true if the model responds with HTTP 200.
+// This is used to filter out models the OAuth token can't access.
+func (s *Server) probeModel(modelID string) bool {
+	if s.auth == nil {
+		return false
+	}
+	token, err := s.auth.Token()
+	if err != nil {
+		return false
+	}
+
+	probeBody := map[string]interface{}{
+		"model":      modelID,
+		"max_tokens": 1,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": []map[string]interface{}{
+				{"type": "text", "text": "hi"},
+			}},
+		},
+	}
+	bodyBytes, err := json.Marshal(probeBody)
+	if err != nil {
+		return false
+	}
+
+	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	ok := resp.StatusCode == http.StatusOK
+	if !ok {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("models: probe rejected model %q (status=%d, body=%s)", modelID, resp.StatusCode, truncateBody(body, 200))
+	}
+	return ok
+}
+
+// probeModels filters the model list to only those that can successfully
+// perform inference with the current OAuth token. Results are NOT cached —
+// this should only be called when refreshing the model cache.
+func (s *Server) probeModels(models []ModelInfo) []ModelInfo {
+	var working []ModelInfo
+	for _, m := range models {
+		if s.probeModel(m.ID) {
+			working = append(working, m)
+			log.Printf("models: probe OK for %q", m.ID)
+		}
+	}
+	return working
+}
+
+// truncateBody returns up to maxLen bytes of body as a string.
+func truncateBody(b []byte, maxLen int) string {
+	if len(b) <= maxLen {
+		return string(b)
+	}
+	return string(b[:maxLen]) + "...(truncated)"
+}
+
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	s.modelCache.mu.RLock()
 	cached := s.modelCache.models
@@ -140,15 +216,24 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, modelsResponse{Models: cached, ThinkingTypes: defaultThinkingTypes})
 			return
 		}
-		// API unreachable (OAuth doesn't support /v1/models) — use fallback
+		// API unreachable — use fallback (haiku-first order).
 		writeJSON(w, http.StatusOK, modelsResponse{Models: fallbackModels, ThinkingTypes: defaultThinkingTypes})
 		return
 	}
 
+	// Probe each model to filter out ones the OAuth token can't access.
+	// This handles the case where /v1/models lists models the account can't use
+	// for inference (e.g., Claude Code OAuth tokens may only allow Haiku).
+	working := s.probeModels(models)
+	if len(working) == 0 {
+		log.Printf("models: probe found no working models — using fallback list")
+		working = fallbackModels
+	}
+
 	s.modelCache.mu.Lock()
-	s.modelCache.models = models
+	s.modelCache.models = working
 	s.modelCache.fetchedAt = time.Now()
 	s.modelCache.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, modelsResponse{Models: models, ThinkingTypes: defaultThinkingTypes})
+	writeJSON(w, http.StatusOK, modelsResponse{Models: working, ThinkingTypes: defaultThinkingTypes})
 }

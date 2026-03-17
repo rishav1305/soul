@@ -541,24 +541,36 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 	// Tool loop: stream, check for tool_use, dispatch, repeat.
 	for round := 0; round <= maxToolRounds; round++ {
 		roundStart := time.Now()
-		log.Printf("ws: stream round %d for session %s (model=%s, system=%d chars, messages=%d, tools=%d, thinking=%v)",
-			round, sessionID, req.Model, len(req.System), len(req.Messages), len(req.Tools),
-			req.Thinking != nil)
+		thinkingType := "disabled"
+		if req.Thinking != nil {
+			thinkingType = req.Thinking.Type
+		}
+		log.Printf("ws: stream round %d for session %s (model=%s, thinking=%s, system=%d chars, messages=%d, tools=%d)",
+			round, sessionID, req.Model, thinkingType, len(req.System), len(req.Messages), len(req.Tools))
 
 		ch, err := h.streamClient.Stream(ctx, req)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				// Expected: chat.stop, superseded stream, or client disconnect.
-				// Caller handles session lifecycle — they know the intent.
 				return
 			}
-			log.Printf("ws: stream error after %v for session %s round %d: %v",
-				time.Since(roundStart).Round(time.Millisecond), sessionID, round, err)
+			elapsed := time.Since(roundStart).Round(time.Millisecond)
 			var authErr *stream.AuthError
-			if errors.As(err, &authErr) {
-				log.Printf("ws: AUTH FAILURE for session %s: %v (check OAuth beta header and token expiry)", sessionID, err)
-			} else {
-				log.Printf("ws: stream error for session %s: %v", sessionID, err)
+			var rateLimitErr *stream.RateLimitError
+			var apiErr *stream.APIError
+			switch {
+			case errors.As(err, &authErr):
+				log.Printf("ws: AUTH FAILURE for session %s after %v (check OAuth beta header and token expiry): %v",
+					sessionID, elapsed, err)
+			case errors.As(err, &rateLimitErr):
+				log.Printf("ws: RATE LIMITED for session %s after %v (retry_after=%v): %v",
+					sessionID, elapsed, rateLimitErr.RetryAfter, err)
+			case errors.As(err, &apiErr):
+				log.Printf("ws: API ERROR %d for session %s after %v (model=%s): %v",
+					apiErr.StatusCode, sessionID, elapsed, req.Model, err)
+			default:
+				log.Printf("ws: stream error for session %s after %v (model=%s): %v",
+					sessionID, elapsed, req.Model, err)
 			}
 			if errors.Is(err, context.DeadlineExceeded) {
 				h.completeSession(client, sessionID)

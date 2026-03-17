@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,7 +14,10 @@ import (
 
 const (
 	// DefaultModel is the default Claude model used for API requests.
-	DefaultModel = "claude-sonnet-4-6"
+	// Uses claude-haiku-4-5-20251001 because claude-sonnet-4-6 and other
+	// higher-tier models return invalid_request_error via Claude Code OAuth tokens.
+	// Only Haiku models are accessible via the OAuth beta for this client.
+	DefaultModel = "claude-haiku-4-5-20251001"
 
 	// DefaultBaseURL is the default Claude API base URL.
 	DefaultBaseURL = "https://api.anthropic.com"
@@ -142,7 +146,7 @@ func (c *Client) Stream(ctx context.Context, req *Request) (<-chan SSEEvent, err
 
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		return nil, c.handleErrorResponse(resp)
+		return nil, c.handleErrorResponse(resp, httpReq)
 	}
 
 	ch := make(chan SSEEvent, 64)
@@ -212,7 +216,7 @@ func (c *Client) Send(ctx context.Context, req *Request) (*Response, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleErrorResponse(resp)
+		return nil, c.handleErrorResponse(resp, httpReq)
 	}
 
 	var result Response
@@ -224,14 +228,19 @@ func (c *Client) Send(ctx context.Context, req *Request) (*Response, error) {
 }
 
 // handleErrorResponse converts an HTTP error response into the appropriate error type.
-func (c *Client) handleErrorResponse(resp *http.Response) error {
+func (c *Client) handleErrorResponse(resp *http.Response, _ *http.Request) error {
+	requestID := resp.Header.Get("Request-Id")
+
+	// Read the full body for logging and parsing.
+	rawBody, _ := io.ReadAll(resp.Body)
+
 	// Claude API errors have the format: {"type": "error", "error": {"type": "...", "message": "..."}}
 	var wrapper struct {
 		Type  string   `json:"type"`
 		Error APIError `json:"error"`
 	}
 	var apiErr APIError
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.Unmarshal(rawBody, &wrapper); err != nil {
 		apiErr = APIError{Type: "unknown", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	} else if wrapper.Error.Type != "" {
 		apiErr = wrapper.Error
@@ -240,6 +249,11 @@ func (c *Client) handleErrorResponse(resp *http.Response) error {
 		apiErr = APIError{Type: wrapper.Type, Message: fmt.Sprintf("HTTP %d (no error detail)", resp.StatusCode)}
 	}
 	apiErr.StatusCode = resp.StatusCode
+
+	// Diagnostic log — includes request_id so errors can be correlated with Anthropic support.
+	// The full body is logged to expose cryptic "Error" messages from the API.
+	log.Printf("stream: Claude API error %d %s: %s (request_id=%s, body=%s)",
+		resp.StatusCode, apiErr.Type, apiErr.Message, requestID, truncateBody(rawBody, 400))
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
@@ -257,4 +271,12 @@ func (c *Client) handleErrorResponse(resp *http.Response) error {
 	default:
 		return &apiErr
 	}
+}
+
+// truncateBody returns up to maxLen bytes of body as a string.
+func truncateBody(b []byte, maxLen int) string {
+	if len(b) <= maxLen {
+		return string(b)
+	}
+	return string(b[:maxLen]) + "...(truncated)"
 }
