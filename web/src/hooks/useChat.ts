@@ -3,6 +3,7 @@ import type { Message, Session, OutboundMessageType, ConnectionState, ToolCallDa
 import { useWebSocket } from './useWebSocket';
 import { reportError, reportWSLatency, reportUsage, reportAuthFailure } from '../lib/telemetry';
 import { SendQueue } from '../lib/sendQueue';
+import { getToken } from '../components/AuthGate';
 
 interface UseChatReturn {
   messages: Message[];

@@ -37,6 +37,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
+  const reconnectingRef = useRef(false); // true while reconnect() owns the transition
   const onMessageRef = useRef(onMessage);
   const urlRef = useRef(options.url);
   const attemptRef = useRef(0);
@@ -59,6 +60,46 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (unmountedRef.current) return;
     clearReconnectTimer();
     setStatus('connecting');
+
+    // If a custom URL is provided (e.g. for tests), skip ticket fetch.
+    if (urlRef.current) {
+      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: false });
+      const socket = new WebSocket(urlRef.current);
+      wsRef.current = socket;
+      socket.onopen = () => {
+        openTimeRef.current = performance.now();
+        reportWSLifecycle('open', { attempt: attemptRef.current });
+      };
+      socket.onmessage = (event: MessageEvent) => {
+        try {
+          const raw = JSON.parse(event.data as string) as unknown;
+          const messages = Array.isArray(raw) ? raw : [raw];
+          for (const parsed of messages) {
+            const msg = parsed as { type: string; data?: unknown; sessionId?: string; messageId?: string };
+            if (msg.type === 'connection.ready') {
+              setStatus('connected');
+              attemptRef.current = 0;
+              setReconnectAttempt(0);
+            }
+            if (onMessageRef.current) {
+              onMessageRef.current(msg.type as OutboundMessageType, msg.data, msg.sessionId ?? '', msg.messageId);
+            }
+          }
+        } catch (err) {
+          reportError('useWebSocket.parse', err);
+        }
+      };
+      socket.onclose = (event: CloseEvent) => {
+        if (wsRef.current === socket) wsRef.current = null;
+        if (reconnectingRef.current) { reconnectingRef.current = false; return; }
+        if (!unmountedRef.current) setStatus('disconnected');
+      };
+      socket.onerror = () => {
+        reportWSLifecycle('error', { attempt: attemptRef.current });
+        if (!unmountedRef.current) setStatus('error');
+      };
+      return;
+    }
 
     fetchWSTicket().then(({ ticket, status: ticketStatus }) => {
       if (unmountedRef.current) return;
@@ -101,7 +142,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           const raw = JSON.parse(event.data as string) as unknown;
           const messages = Array.isArray(raw) ? raw : [raw];
           for (const parsed of messages) {
-            const msg = parsed as { type: string; data?: unknown; sessionId?: string };
+            const msg = parsed as { type: string; data?: unknown; sessionId?: string; messageId?: string };
             if (msg.type === 'connection.ready') {
               setStatus('connected');
               attemptRef.current = 0;
@@ -112,6 +153,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
                 msg.type as OutboundMessageType,
                 msg.data,
                 msg.sessionId ?? '',
+                msg.messageId,
               );
             }
           }
@@ -128,7 +170,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           wasClean: event.wasClean,
           duration_ms: Math.round(duration),
         });
-        wsRef.current = null;
+        // Only clear wsRef if this socket is still the current one — reconnect()
+        // may have already assigned a new socket before this onclose fires.
+        if (wsRef.current === socket) {
+          wsRef.current = null;
+        }
+        // reconnect() drives its own connect() call; skip auto-scheduling.
+        if (reconnectingRef.current) {
+          reconnectingRef.current = false;
+          return;
+        }
         if (!unmountedRef.current) {
           setStatus('disconnected');
           if (authErrorRef.current) {
@@ -137,6 +188,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           }
           if (attemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
             setStatus('error');
+            return;
+          }
+          // Don't schedule timed reconnects when the tab is hidden — the
+          // visibilitychange handler will reconnect when the user returns.
+          if (document.visibilityState === 'hidden') {
             return;
           }
           const delay = backoffDelay(attemptRef.current);
@@ -169,11 +225,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     consecutiveAuthFailuresRef.current = 0;
     attemptRef.current = 0;
     setReconnectAttempt(0);
+    clearReconnectTimer();
     if (wsRef.current) {
+      reconnectingRef.current = true;
       wsRef.current.close();
       wsRef.current = null;
     }
-    clearReconnectTimer();
     connect();
   }, [connect, clearReconnectTimer]);
 
