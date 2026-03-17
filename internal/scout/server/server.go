@@ -239,8 +239,8 @@ func (s *Server) handleAddLead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	if lead.Title == "" || lead.Type == "" {
-		writeError(w, http.StatusBadRequest, "title and type are required")
+	if lead.JobTitle == "" && lead.Company == "" {
+		writeError(w, http.StatusBadRequest, "job_title or company is required")
 		return
 	}
 	id, err := s.store.AddLead(lead)
@@ -257,9 +257,9 @@ func (s *Server) handleAddLead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListLeads(w http.ResponseWriter, r *http.Request) {
-	typeFilter := r.URL.Query().Get("type")
+	pipelineFilter := r.URL.Query().Get("pipeline")
 	activeOnly := r.URL.Query().Get("active_only") == "true"
-	leads, err := s.store.ListLeads(typeFilter, activeOnly)
+	leads, err := s.store.ListLeads(pipelineFilter, activeOnly)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -365,13 +365,72 @@ func (s *Server) handleRecordAction(w http.ResponseWriter, r *http.Request) {
 // --- Analytics ---
 
 func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
-	typeFilter := r.URL.Query().Get("type")
-	analytics, err := s.store.GetAnalytics(typeFilter)
+	pipelineFilter := r.URL.Query().Get("pipeline")
+	analytics, err := s.store.GetAnalytics(pipelineFilter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, analytics)
+
+	// Transform to match frontend ScoutAnalytics shape.
+	var totalLeads int
+	for _, c := range analytics.Stats.ByType {
+		totalLeads += c
+	}
+
+	// Flatten conversion funnels into [{stage, count, rate}].
+	var conversion []map[string]interface{}
+	for _, f := range analytics.Conversion.Funnels {
+		for _, step := range f.Steps {
+			rate := 0.0
+			if totalLeads > 0 {
+				rate = float64(step.Count) / float64(totalLeads) * 100
+			}
+			conversion = append(conversion, map[string]interface{}{
+				"stage": step.Stage,
+				"count": step.Count,
+				"rate":  rate,
+			})
+		}
+	}
+	if conversion == nil {
+		conversion = []map[string]interface{}{}
+	}
+
+	// Build weekly_trend from stage_history (last 8 weeks).
+	weeklyTrend := s.buildWeeklyTrend()
+
+	resp := map[string]interface{}{
+		"by_type":      analytics.Stats.ByType,
+		"by_source":    analytics.Stats.BySource,
+		"by_stage":     analytics.Stats.ByStage,
+		"total_leads":  totalLeads,
+		"active_leads": analytics.Stats.Active,
+		"conversion":   conversion,
+		"weekly_trend": weeklyTrend,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// buildWeeklyTrend returns lead creation counts per week for the last 8 weeks.
+func (s *Server) buildWeeklyTrend() []map[string]interface{} {
+	var trend []map[string]interface{}
+	now := time.Now().UTC()
+	for i := 7; i >= 0; i-- {
+		weekStart := now.AddDate(0, 0, -7*i)
+		weekEnd := weekStart.AddDate(0, 0, 7)
+		label := weekStart.Format("Jan 2")
+		var count int
+		_ = s.store.DB().QueryRow(
+			"SELECT COUNT(*) FROM leads WHERE created_at >= ? AND created_at < ?",
+			weekStart.Format(time.RFC3339), weekEnd.Format(time.RFC3339),
+		).Scan(&count)
+		trend = append(trend, map[string]interface{}{
+			"week":  label,
+			"count": count,
+		})
+	}
+	return trend
 }
 
 // --- Sync ---
@@ -463,13 +522,108 @@ func (s *Server) handleGetProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, data)
 		return
 	}
-	profile, err := s.profileDB.GetFullProfile()
+	raw, err := s.profileDB.GetFullProfile()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, profile)
+
+	// Transform raw profiledb rows into frontend ScoutProfile shape.
+	writeJSON(w, http.StatusOK, transformProfile(raw))
 }
+
+// transformProfile reshapes raw profiledb data into the frontend ScoutProfile type.
+func transformProfile(raw map[string]interface{}) map[string]interface{} {
+	profile := map[string]interface{}{
+		"experience":     []interface{}{},
+		"projects":       []interface{}{},
+		"skills":         []string{},
+		"education":      []interface{}{},
+		"certifications": []interface{}{},
+	}
+
+	// Experience: role→title, company→company, period→duration.
+	if rows, ok := raw["experience"].([]map[string]interface{}); ok {
+		var out []map[string]string
+		for _, r := range rows {
+			out = append(out, map[string]string{
+				"title":       strVal(r, "role"),
+				"company":     strVal(r, "company"),
+				"duration":    strVal(r, "period"),
+				"description": strVal(r, "description"),
+			})
+		}
+		profile["experience"] = out
+	}
+
+	// Projects: title→name, short_description→description, link→url.
+	if rows, ok := raw["projects"].([]map[string]interface{}); ok {
+		var out []map[string]string
+		for _, r := range rows {
+			out = append(out, map[string]string{
+				"name":        strVal(r, "title"),
+				"description": strVal(r, "short_description"),
+				"url":         strVal(r, "link"),
+			})
+		}
+		profile["projects"] = out
+	}
+
+	// Skills: flatten skill_categories into a string slice.
+	// Each row has a "skills" field that pgx parses as []interface{} of maps with "name" and "level".
+	if rows, ok := raw["skill_categories"].([]map[string]interface{}); ok {
+		var skills []string
+		for _, r := range rows {
+			if arr, ok := r["skills"].([]interface{}); ok {
+				for _, item := range arr {
+					if m, ok := item.(map[string]interface{}); ok {
+						if name := strVal(m, "name"); name != "" {
+							skills = append(skills, name)
+						}
+					}
+				}
+			}
+		}
+		profile["skills"] = skills
+	}
+
+	// Education: degree, institution, period→year.
+	if rows, ok := raw["education"].([]map[string]interface{}); ok {
+		var out []map[string]string
+		for _, r := range rows {
+			out = append(out, map[string]string{
+				"degree":      strVal(r, "degree"),
+				"institution": strVal(r, "institution"),
+				"year":        strVal(r, "period"),
+			})
+		}
+		profile["education"] = out
+	}
+
+	// Certifications: skip if error object from missing table.
+	if rows, ok := raw["certifications"].([]map[string]interface{}); ok {
+		var out []map[string]string
+		for _, r := range rows {
+			out = append(out, map[string]string{
+				"name":   strVal(r, "name"),
+				"issuer": strVal(r, "issuer"),
+				"year":   strVal(r, "year"),
+			})
+		}
+		profile["certifications"] = out
+	}
+
+	return profile
+}
+
+// strVal safely extracts a string from a map value.
+func strVal(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok && v != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
 
 func (s *Server) handleProfilePull(w http.ResponseWriter, r *http.Request) {
 	if s.profileDB == nil {
@@ -597,9 +751,9 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 
 	switch name {
 	case "list_leads":
-		typeFilter, _ := input["type"].(string)
+		pipelineFilter, _ := input["pipeline"].(string)
 		activeOnly, _ := input["active_only"].(bool)
-		leads, err := s.store.ListLeads(typeFilter, activeOnly)
+		leads, err := s.store.ListLeads(pipelineFilter, activeOnly)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -630,8 +784,8 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 
 	case "analytics":
-		typeFilter, _ := input["type"].(string)
-		analytics, err := s.store.GetAnalytics(typeFilter)
+		pipelineFilter, _ := input["pipeline"].(string)
+		analytics, err := s.store.GetAnalytics(pipelineFilter)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

@@ -14,17 +14,71 @@ func (s *Store) AddLead(lead Lead) (int64, error) {
 	if lead.UpdatedAt == "" {
 		lead.UpdatedAt = ts
 	}
+	if lead.Source == "" {
+		lead.Source = "theirstack"
+	}
+	if lead.Stage == "" {
+		lead.Stage = "discovered"
+	}
+	if lead.NextAction == "" {
+		lead.NextAction = "review"
+	}
+	if lead.EmploymentStatuses == "" {
+		lead.EmploymentStatuses = "[]"
+	}
+	if lead.TechnologySlugs == "" {
+		lead.TechnologySlugs = "[]"
+	}
+	if lead.KeywordSlugs == "" {
+		lead.KeywordSlugs = "[]"
+	}
+	if lead.Metadata == "" {
+		lead.Metadata = "{}"
+	}
 
 	res, err := s.db.Exec(`
-		INSERT INTO leads (title, company, type, source, source_url, pipeline, stage,
-			compensation, currency, contact, location, tags, notes, metadata, variant,
-			next_action, next_date, created_at, updated_at, closed_at, match_score, job_description)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		lead.Title, lead.Company, lead.Type, lead.Source, lead.SourceURL,
-		lead.Pipeline, lead.Stage, lead.Compensation, lead.Currency, lead.Contact,
-		lead.Location, lead.Tags, lead.Notes, lead.Metadata, lead.Variant,
-		lead.NextAction, lead.NextDate, lead.CreatedAt, lead.UpdatedAt,
-		lead.ClosedAt, lead.MatchScore, lead.JobDescription,
+		INSERT INTO leads (
+			source, pipeline, stage, match_score,
+			next_action, next_date, notes, created_at, updated_at, closed_at,
+			theirstack_id,
+			job_title, url, final_url, source_url,
+			date_posted, discovered_at, description, normalized_title,
+			location, short_location, country, country_code, remote, hybrid,
+			salary_string, min_annual_salary_usd, max_annual_salary_usd, salary_currency,
+			seniority, employment_statuses, easy_apply, technology_slugs, keyword_slugs,
+			company, company_domain, company_industry, company_employee_count,
+			company_linkedin_url, company_total_funding_usd, company_funding_stage,
+			company_logo, company_country,
+			hiring_manager, hiring_manager_linkedin,
+			metadata
+		) VALUES (
+			?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?,
+			?,
+			?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?,
+			?, ?,
+			?, ?,
+			?
+		)`,
+		lead.Source, lead.Pipeline, lead.Stage, lead.MatchScore,
+		lead.NextAction, lead.NextDate, lead.Notes, lead.CreatedAt, lead.UpdatedAt, lead.ClosedAt,
+		lead.TheirStackID,
+		lead.JobTitle, lead.URL, lead.FinalURL, lead.SourceURL,
+		lead.DatePosted, lead.DiscoveredAt, lead.Description, lead.NormalizedTitle,
+		lead.Location, lead.ShortLocation, lead.Country, lead.CountryCode, lead.Remote, lead.Hybrid,
+		lead.SalaryString, lead.MinAnnualSalaryUSD, lead.MaxAnnualSalaryUSD, lead.SalaryCurrency,
+		lead.Seniority, lead.EmploymentStatuses, lead.EasyApply, lead.TechnologySlugs, lead.KeywordSlugs,
+		lead.Company, lead.CompanyDomain, lead.CompanyIndustry, lead.CompanyEmployeeCount,
+		lead.CompanyLinkedInURL, lead.CompanyTotalFundingUSD, lead.CompanyFundingStage,
+		lead.CompanyLogo, lead.CompanyCountry,
+		lead.HiringManager, lead.HiringManagerLinkedIn,
+		lead.Metadata,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("scout: add lead: %w", err)
@@ -46,16 +100,16 @@ func (s *Store) GetLead(id int64) (*Lead, error) {
 	return l, nil
 }
 
-// ListLeads returns leads, optionally filtered by type and/or active-only.
+// ListLeads returns leads, optionally filtered by pipeline and/or active-only.
 // Active means closed_at is empty.
-func (s *Store) ListLeads(typeFilter string, activeOnly bool) ([]Lead, error) {
+func (s *Store) ListLeads(pipelineFilter string, activeOnly bool) ([]Lead, error) {
 	query := "SELECT " + leadColumns + " FROM leads"
 	var conditions []string
 	var args []interface{}
 
-	if typeFilter != "" {
-		conditions = append(conditions, "type = ?")
-		args = append(args, typeFilter)
+	if pipelineFilter != "" {
+		conditions = append(conditions, "pipeline = ?")
+		args = append(args, pipelineFilter)
 	}
 	if activeOnly {
 		conditions = append(conditions, "closed_at = ''")
