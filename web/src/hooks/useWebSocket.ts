@@ -37,7 +37,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
-  const reconnectingRef = useRef(false); // true while reconnect() owns the transition
+  // Tracks the specific socket closed by reconnect() so its onclose fires
+  // the early-return path rather than triggering a duplicate reconnect schedule.
+  const manuallyClosedSocketRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
   const urlRef = useRef(options.url);
   const attemptRef = useRef(0);
@@ -61,75 +63,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     clearReconnectTimer();
     setStatus('connecting');
 
-    // If a custom URL is provided (e.g. for tests), skip ticket fetch.
-    if (urlRef.current) {
-      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: false });
-      const socket = new WebSocket(urlRef.current);
-      wsRef.current = socket;
-      socket.onopen = () => {
-        openTimeRef.current = performance.now();
-        reportWSLifecycle('open', { attempt: attemptRef.current });
-      };
-      socket.onmessage = (event: MessageEvent) => {
-        try {
-          const raw = JSON.parse(event.data as string) as unknown;
-          const messages = Array.isArray(raw) ? raw : [raw];
-          for (const parsed of messages) {
-            const msg = parsed as { type: string; data?: unknown; sessionId?: string; messageId?: string };
-            if (msg.type === 'connection.ready') {
-              setStatus('connected');
-              attemptRef.current = 0;
-              setReconnectAttempt(0);
-            }
-            if (onMessageRef.current) {
-              onMessageRef.current(msg.type as OutboundMessageType, msg.data, msg.sessionId ?? '', msg.messageId);
-            }
-          }
-        } catch (err) {
-          reportError('useWebSocket.parse', err);
-        }
-      };
-      socket.onclose = (event: CloseEvent) => {
-        if (wsRef.current === socket) wsRef.current = null;
-        if (reconnectingRef.current) { reconnectingRef.current = false; return; }
-        if (!unmountedRef.current) setStatus('disconnected');
-      };
-      socket.onerror = () => {
-        reportWSLifecycle('error', { attempt: attemptRef.current });
-        if (!unmountedRef.current) setStatus('error');
-      };
-      return;
-    }
-
-    fetchWSTicket().then(({ ticket, status: ticketStatus }) => {
-      if (unmountedRef.current) return;
-
-      reportWSLifecycle('ticket_fetch', {
-        status: ticketStatus,
-        fallback: ticket === null && ticketStatus !== 401,
-      });
-
-      // Auth circuit breaker: two consecutive 401s mean auth is broken.
-      if (ticketStatus === 401) {
-        consecutiveAuthFailuresRef.current++;
-        if (consecutiveAuthFailuresRef.current >= 2) {
-          authErrorRef.current = true;
-          setAuthError(true);
-          setStatus('error');
-          return;
-        }
-        setStatus('disconnected');
-        const delay = backoffDelay(attemptRef.current);
-        attemptRef.current++;
-        setReconnectAttempt(attemptRef.current);
-        reconnectTimerRef.current = setTimeout(connect, delay);
-        return;
-      }
-      consecutiveAuthFailuresRef.current = 0;
-
-      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: !!ticket });
-
-      const socket = new WebSocket(getWebSocketURL(ticket));
+    // Attach all event handlers to a socket. Shared by both the custom-URL
+    // path and the ticket path so retry/backoff/visibility logic is identical.
+    function setupSocket(socket: WebSocket) {
       wsRef.current = socket;
 
       socket.onopen = () => {
@@ -175,9 +111,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         if (wsRef.current === socket) {
           wsRef.current = null;
         }
-        // reconnect() drives its own connect() call; skip auto-scheduling.
-        if (reconnectingRef.current) {
-          reconnectingRef.current = false;
+        // If reconnect() explicitly closed this exact socket, skip auto-scheduling.
+        // Using a socket reference (not a global flag) prevents a new socket's
+        // onclose from consuming the flag before the old socket's onclose fires.
+        if (manuallyClosedSocketRef.current === socket) {
+          manuallyClosedSocketRef.current = null;
           return;
         }
         if (!unmountedRef.current) {
@@ -198,7 +136,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           const delay = backoffDelay(attemptRef.current);
           attemptRef.current++;
           setReconnectAttempt(attemptRef.current);
-
           reconnectTimerRef.current = setTimeout(connect, delay);
         }
       };
@@ -209,6 +146,44 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           setStatus('error');
         }
       };
+    }
+
+    // If a custom URL is provided (e.g. for tests), skip ticket fetch.
+    if (urlRef.current) {
+      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: false });
+      setupSocket(new WebSocket(urlRef.current));
+      return;
+    }
+
+    fetchWSTicket().then(({ ticket, status: ticketStatus }) => {
+      if (unmountedRef.current) return;
+
+      reportWSLifecycle('ticket_fetch', {
+        status: ticketStatus,
+        fallback: ticket === null && ticketStatus !== 401,
+      });
+
+      // Auth circuit breaker: two consecutive 401s mean auth is broken.
+      if (ticketStatus === 401) {
+        consecutiveAuthFailuresRef.current++;
+        if (consecutiveAuthFailuresRef.current >= 2) {
+          authErrorRef.current = true;
+          setAuthError(true);
+          setStatus('error');
+          return;
+        }
+        setStatus('disconnected');
+        const delay = backoffDelay(attemptRef.current);
+        attemptRef.current++;
+        setReconnectAttempt(attemptRef.current);
+        reconnectTimerRef.current = setTimeout(connect, delay);
+        return;
+      }
+      consecutiveAuthFailuresRef.current = 0;
+
+      reportWSLifecycle('connect_attempt', { attempt: attemptRef.current, ticketUsed: !!ticket });
+
+      setupSocket(new WebSocket(getWebSocketURL(ticket)));
     });
   }, [clearReconnectTimer]);
 
@@ -227,7 +202,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     setReconnectAttempt(0);
     clearReconnectTimer();
     if (wsRef.current) {
-      reconnectingRef.current = true;
+      // Record which socket we're closing so its onclose skips auto-scheduling.
+      manuallyClosedSocketRef.current = wsRef.current;
       wsRef.current.close();
       wsRef.current = null;
     }
