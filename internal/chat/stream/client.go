@@ -13,7 +13,7 @@ import (
 
 const (
 	// DefaultModel is the default Claude model used for API requests.
-	DefaultModel = "claude-sonnet-4-20250514"
+	DefaultModel = "claude-sonnet-4-6"
 
 	// DefaultBaseURL is the default Claude API base URL.
 	DefaultBaseURL = "https://api.anthropic.com"
