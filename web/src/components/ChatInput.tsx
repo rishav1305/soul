@@ -6,6 +6,21 @@ import type { SlashCommand } from './CommandPalette';
 import { ThinkingToggle } from './ThinkingToggle';
 import { useModels } from '../hooks/useModels';
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 640);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return mobile;
+}
+
+function shortModelName(name: string): string {
+  return name.replace(/^Claude\s+/i, '');
+}
+
 function fileToAttachment(file: File): Promise<ChatAttachment> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -121,23 +136,33 @@ interface SpeechRecognitionInstance {
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(function ChatInput({ onSend, onStop, disabled, isStreaming, activeProduct, onSetProduct }, ref) {
   const [value, setValue] = useState('');
   const { models } = useModels();
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('soul-model') || 'claude-sonnet-4-6');
+  const isMobile = useIsMobile();
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
-  // If stored model isn't in the available list, switch to first available
+  // API list is authoritative: use stored preference only if it is still valid,
+  // otherwise fall back to the first model the server advertises.
   useEffect(() => {
-    if (models.length > 0 && !models.some(m => m.id === selectedModel)) {
-      const fallback = models[0].id;
-      setSelectedModel(fallback);
-      localStorage.setItem('soul-model', fallback);
-    }
-  }, [models, selectedModel]);
+    if (models.length === 0) return;
+    const stored = localStorage.getItem('soul-model');
+    const resolved = stored && models.some(m => m.id === stored) ? stored : models[0].id;
+    setSelectedModel(resolved);
+    localStorage.setItem('soul-model', resolved);
+  }, [models]);
   const [thinkingType, setThinkingType] = useState<ThinkingType>('adaptive');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [chatMode, setChatMode] = useState<ChatMode>('chat');
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [codeSnippet, setCodeSnippet] = useState('');
+  const [showModeMenu, setShowModeMenu] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
+  const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const productMenuRef = useRef<HTMLDivElement>(null);
+  const modeMenuRef = useRef<HTMLDivElement>(null);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,14 +176,50 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   // Close product menu on outside click.
   useEffect(() => {
     if (!showProductMenu) return;
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       if (productMenuRef.current && !productMenuRef.current.contains(e.target as Node)) {
         setShowProductMenu(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
   }, [showProductMenu]);
+
+  // Close mobile mode menu on outside click.
+  useEffect(() => {
+    if (!showModeMenu) return;
+    const handler = (e: PointerEvent) => {
+      if (modeMenuRef.current && !modeMenuRef.current.contains(e.target as Node)) {
+        setShowModeMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showModeMenu]);
+
+  // Close model/thinking menu on outside click.
+  useEffect(() => {
+    if (!showModelMenu) return;
+    const handler = (e: PointerEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setShowModelMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showModelMenu]);
+
+  // Close settings menu on outside click.
+  useEffect(() => {
+    if (!showSettingsMenu) return;
+    const handler = (e: PointerEvent) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showSettingsMenu]);
 
   // Focus textarea on mount.
   useEffect(() => {
@@ -279,7 +340,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed && attachments.length === 0) return;
+    const codeTrimmed = codeSnippet.trim();
+    if (!trimmed && !codeTrimmed && attachments.length === 0) return;
     if (disabled) return;
     const opts: { model?: string; thinking?: ThinkingConfig; attachments?: ChatAttachment[] } = {};
     if (selectedModel) opts.model = selectedModel;
@@ -292,18 +354,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
       };
     }
     if (attachments.length > 0) opts.attachments = attachments;
-    const content = chatMode !== 'chat' ? `/${chatMode} ${trimmed || '(attached image)'}` : (trimmed || '(attached image)');
+    let body = trimmed || '(attached image)';
+    if (codeTrimmed) {
+      body = body === '(attached image)' ? `\`\`\`python\n${codeTrimmed}\n\`\`\`` : `${body}\n\n\`\`\`python\n${codeTrimmed}\n\`\`\``;
+    }
+    const content = chatMode !== 'chat' ? `/${chatMode} ${body}` : body;
     onSend(content, Object.keys(opts).length > 0 ? opts : undefined);
     setValue('');
+    setCodeSnippet('');
+    setShowCodeInput(false);
     setAttachments([]);
-    // Reset textarea height after clearing.
     requestAnimationFrame(() => {
       const ta = textareaRef.current;
       if (ta) {
         ta.style.height = 'auto';
       }
     });
-  }, [value, disabled, onSend, selectedModel, thinkingType, models, attachments]);
+  }, [value, codeSnippet, disabled, onSend, selectedModel, thinkingType, models, attachments, chatMode]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -327,7 +394,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
 
   return (
     <div
-      className={`relative px-3 md:px-5 py-3 md:py-4 ${isDragging ? 'ring-2 ring-soul/50 bg-soul/5 rounded-xl' : ''}`}
+      className={`relative px-3 md:px-5 py-3 md:py-4 safe-bottom ${isDragging ? 'ring-2 ring-soul/50 bg-soul/5 rounded-xl' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -388,6 +455,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
             disabled={disabled}
           />
 
+          {/* Code snippet area */}
+          {showCodeInput && (
+            <div className="mx-3 mb-1 rounded-lg border border-border-subtle bg-deep overflow-hidden">
+              <div className="flex items-center justify-between px-2.5 py-1 bg-surface/50 border-b border-border-subtle">
+                <span className="text-[10px] font-mono text-fg-muted uppercase tracking-wider">Python</span>
+                <button
+                  type="button"
+                  onClick={() => { setShowCodeInput(false); setCodeSnippet(''); }}
+                  className="text-fg-muted hover:text-fg cursor-pointer"
+                  aria-label="Remove code snippet"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
+                  </svg>
+                </button>
+              </div>
+              <textarea
+                data-testid="code-snippet-input"
+                className="w-full bg-transparent px-3 py-2 text-[12px] sm:text-[13px] font-mono text-fg placeholder:text-fg-muted/50 resize-none focus:outline-none"
+                placeholder="Paste or type Python code..."
+                rows={4}
+                value={codeSnippet}
+                onChange={(e) => setCodeSnippet(e.target.value)}
+                spellCheck={false}
+              />
+            </div>
+          )}
+
           {/* Hidden file inputs */}
           <input
             ref={fileInputRef}
@@ -415,7 +510,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
           />
 
           {/* Toolbar */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border-subtle">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 border-t border-border-subtle">
             {/* Product selector */}
             <div ref={productMenuRef} className="relative">
               <button
@@ -466,7 +561,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                         activeProduct === p.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
                       }`}
                     >
-                      <span className="w-4 text-center">{p.icon}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeProduct === p.id ? 'bg-soul' : 'bg-fg-muted/40'}`} />
                       <span>{p.name}</span>
                     </button>
                   ))}
@@ -474,42 +569,107 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               )}
             </div>
 
-            {/* Chat mode selector */}
-            <div data-testid="chat-mode-selector" className="relative flex items-center h-8 bg-surface rounded-lg px-0.5">
-              {CHAT_MODES.map((mode, idx) => (
-                <button
-                  key={mode.id}
-                  data-testid={`chat-mode-${mode.id}`}
-                  type="button"
-                  onClick={() => setChatMode(mode.id)}
-                  className={`relative z-10 h-7 px-2.5 text-xs font-mono rounded-md transition-colors cursor-pointer ${
-                    chatMode === mode.id
-                      ? 'text-fg font-semibold'
-                      : 'text-fg-muted hover:text-fg'
-                  }`}
-                >
-                  {chatMode === mode.id && (
-                    <span className="absolute inset-0 bg-elevated shadow-sm rounded-md -z-10" />
-                  )}
-                  {mode.label}
-                </button>
-              ))}
+            {/* Desktop: chat mode buttons + model select + thinking toggle */}
+            <div className="hidden sm:contents">
+              <div data-testid="chat-mode-selector" className="flex relative items-center h-8 bg-surface rounded-lg px-0.5">
+                {CHAT_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    data-testid={`chat-mode-${mode.id}`}
+                    type="button"
+                    onClick={() => setChatMode(mode.id)}
+                    className={`relative z-10 h-7 px-2.5 text-xs font-mono rounded-md transition-colors cursor-pointer ${
+                      chatMode === mode.id ? 'text-fg font-semibold' : 'text-fg-muted hover:text-fg'
+                    }`}
+                  >
+                    {chatMode === mode.id && <span className="absolute inset-0 bg-elevated shadow-sm rounded-md -z-10" />}
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+              <select
+                data-testid="model-selector"
+                value={selectedModel}
+                onChange={handleModelChange}
+                className="soul-select"
+              >
+                {models.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <ThinkingToggle value={thinkingType} onChange={setThinkingType} />
             </div>
 
-            {/* Model selector */}
-            <select
-              data-testid="model-selector"
-              value={selectedModel}
-              onChange={handleModelChange}
-              className="soul-select"
-            >
-              {models.map(m => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-
-            {/* Thinking toggle */}
-            <ThinkingToggle value={thinkingType} onChange={setThinkingType} />
+            {/* Mobile: single settings gear → popover with mode + model + thinking */}
+            <div ref={settingsMenuRef} className="sm:hidden relative">
+              <button
+                data-testid="settings-btn"
+                type="button"
+                onClick={() => setShowSettingsMenu(prev => !prev)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-surface text-fg-muted hover:text-fg transition-colors cursor-pointer"
+                title="Chat settings"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="8" cy="8" r="2" />
+                  <path d="M6.6 1.2l-.3 1.5a5 5 0 00-1.6.9L3.3 3 1.9 4.5l1 1.3a5 5 0 000 1.8l-1 1.3L3.3 10.4l1.4-.6a5 5 0 001.6.9l.3 1.5h2.8l.3-1.5a5 5 0 001.6-.9l1.4.6 1.4-1.4-1-1.3a5 5 0 000-1.8l1-1.3L13.7 3l-1.4.6a5 5 0 00-1.6-.9l-.3-1.5z" />
+                </svg>
+              </button>
+              {showSettingsMenu && (
+                <div className="absolute bottom-full mb-1 left-0 z-50 bg-elevated border border-border-default rounded-xl shadow-xl shadow-black/30 py-1 min-w-[160px]">
+                  <div className="px-3 pt-1.5 pb-1 text-[10px] text-fg-muted uppercase tracking-wider font-medium">Mode</div>
+                  {CHAT_MODES.map(m => (
+                    <button
+                      key={m.id}
+                      data-testid={`chat-mode-option-${m.id}`}
+                      type="button"
+                      onClick={() => setChatMode(m.id)}
+                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-colors cursor-pointer ${
+                        chatMode === m.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${chatMode === m.id ? 'bg-soul' : 'bg-fg-muted/40'}`} />
+                      <span>{m.label}</span>
+                    </button>
+                  ))}
+                  <div className="border-t border-border-subtle my-1" />
+                  <div className="px-3 pt-1 pb-1 text-[10px] text-fg-muted uppercase tracking-wider font-medium">Model</div>
+                  {models.map(m => (
+                    <button
+                      key={m.id}
+                      data-testid={`model-option-${m.id}`}
+                      type="button"
+                      onClick={() => { setSelectedModel(m.id); localStorage.setItem('soul-model', m.id); }}
+                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-colors cursor-pointer ${
+                        selectedModel === m.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${selectedModel === m.id ? 'bg-soul' : 'bg-fg-muted/40'}`} />
+                      <span>{shortModelName(m.name)}</span>
+                    </button>
+                  ))}
+                  <div className="border-t border-border-subtle my-1" />
+                  <div className="px-3 pt-1 pb-1 text-[10px] text-fg-muted uppercase tracking-wider font-medium">Thinking</div>
+                  {([
+                    { type: 'disabled' as ThinkingType, label: 'Off' },
+                    { type: 'adaptive' as ThinkingType, label: 'Auto' },
+                    { type: 'enabled' as ThinkingType, label: 'Max' },
+                  ]).map(t => (
+                    <button
+                      key={t.type}
+                      data-testid={`thinking-option-${t.type}`}
+                      type="button"
+                      onClick={() => setThinkingType(t.type)}
+                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-colors cursor-pointer ${
+                        thinkingType === t.type ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${thinkingType === t.type ? 'bg-soul' : 'bg-fg-muted/40'}`} />
+                      <span>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Attach button */}
             <button
@@ -523,15 +683,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
               <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
                 <path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span className="text-xs">Attach</span>
+              <span className="hidden sm:inline text-xs">Attach</span>
             </button>
 
-            {/* Camera button */}
+            {/* Code snippet button */}
+            <button
+              data-testid="code-snippet-button"
+              type="button"
+              onClick={() => setShowCodeInput(prev => !prev)}
+              className={`h-8 flex items-center gap-1.5 px-2 rounded-lg transition-colors cursor-pointer ${
+                showCodeInput ? 'text-soul bg-soul/15' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
+              }`}
+              aria-label="Add code snippet"
+              title="Add code snippet"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4,4 1,8 4,12" />
+                <polyline points="12,4 15,8 12,12" />
+                <line x1="10" y1="3" x2="6" y2="13" />
+              </svg>
+            </button>
+
+            {/* Camera button — hidden on mobile (merged into attach) */}
             <button
               data-testid="camera-button"
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="h-8 flex items-center gap-1.5 px-2 rounded-lg text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
+              className="hidden sm:flex h-8 items-center gap-1.5 px-2 rounded-lg text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer"
               aria-label="Take photo"
               title="Take photo"
             >
@@ -583,7 +761,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                 data-testid="send-button"
                 onClick={handleSend}
                 disabled={disabled || (!value.trim() && attachments.length === 0)}
-                className="w-8 h-8 bg-soul text-deep rounded-full flex items-center justify-center hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
+                className="w-10 h-10 sm:w-8 sm:h-8 bg-soul text-deep rounded-full flex items-center justify-center hover:bg-soul/85 disabled:opacity-20 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
                 title="Send"
                 type="button"
               >
