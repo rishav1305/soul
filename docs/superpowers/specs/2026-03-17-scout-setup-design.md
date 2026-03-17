@@ -123,7 +123,7 @@ CREATE INDEX idx_leads_date_posted ON leads(date_posted);
 - `["temporary"]`, `["part_time"]` → pipeline `"freelance"`
 - Manual override always possible
 
-**Metadata JSON blob** stores rarely-queried fields: latitude, longitude, postal_code, short_location, long_location, state_code, company.logo, company.founded_year, company.annual_revenue_usd, company.long_description, company.seo_description, company.alexa_ranking, company.publicly_traded_symbol, company.investors, company.yc_batch, matching_phrases, matching_words, normalized_title, reposted, date_reposted, full hiring_team array beyond [0].
+**Metadata JSON blob** stores rarely-queried fields: latitude, longitude, postal_code, long_location, state_code, company.founded_year, company.annual_revenue_usd, company.long_description, company.seo_description, company.alexa_ranking, company.publicly_traded_symbol, company.investors, company.yc_batch, matching_phrases, matching_words, reposted, date_reposted, full hiring_team array beyond [0]. (Note: `short_location`, `normalized_title`, and `company_logo` have dedicated columns — they are NOT stored in metadata.)
 
 ### Sweep package structure
 
@@ -196,7 +196,7 @@ All tools that score or tailor content fetch the user's profile from `profiledb.
 
 ```
 internal/scout/ai/
-  ai.go           — Service struct (store, profiledb, stream.Client), shared helpers
+  ai.go           — Service struct (store, profiledb, Sender interface), shared helpers
   match.go        — resume_match
   proposal.go     — proposal_gen
   cover.go        — cover_letter
@@ -504,9 +504,15 @@ srv := server.New(
     // ... existing options ...
 )
 
-// 7. Start scheduler (only if TheirStack key configured)
+// 7. Create TheirStack client (injectable http.Client for testability)
+var tsClient *sweep.TheirStackClient
 if theirStackKey != "" {
-    scheduler := sweep.NewScheduler(sweepCfg, st, aiSvc, theirStackKey)
+    tsClient = sweep.NewTheirStackClient(theirStackKey, http.DefaultClient)
+}
+
+// 8. Start scheduler (only if TheirStack client configured)
+if tsClient != nil {
+    scheduler := sweep.NewScheduler(sweepCfg, st, aiSvc, tsClient)
     scheduler.Start()
     defer scheduler.Stop()
 }
