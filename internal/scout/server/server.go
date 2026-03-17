@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/scout/agent"
+	"github.com/rishav1305/soul-v2/internal/scout/ai"
 	"github.com/rishav1305/soul-v2/internal/scout/profiledb"
 	"github.com/rishav1305/soul-v2/internal/scout/store"
 	"github.com/rishav1305/soul-v2/internal/scout/sweep"
@@ -25,11 +25,12 @@ type Server struct {
 	port       int
 	dataDir    string
 	pgURL      string
-	cdpURL     string
 	startTime  time.Time
 	store      *store.Store
 	profileDB  *profiledb.Client
-	cdpClient  *sweep.CDPClient
+	aiService  *ai.Service
+	scheduler  *sweep.Scheduler
+	configPath string
 }
 
 // Option configures the Server.
@@ -47,8 +48,17 @@ func WithDataDir(d string) Option { return func(s *Server) { s.dataDir = d } }
 // WithPgURL sets the PostgreSQL connection string for profiledb.
 func WithPgURL(u string) Option { return func(s *Server) { s.pgURL = u } }
 
-// WithCdpURL sets the Chrome DevTools Protocol endpoint.
-func WithCdpURL(u string) Option { return func(s *Server) { s.cdpURL = u } }
+// WithStore sets an existing store instance (skips opening in Start).
+func WithStore(st *store.Store) Option { return func(s *Server) { s.store = st } }
+
+// WithAIService sets the AI service for AI-powered tool handlers.
+func WithAIService(svc *ai.Service) Option { return func(s *Server) { s.aiService = svc } }
+
+// WithScheduler sets the sweep scheduler.
+func WithScheduler(sch *sweep.Scheduler) Option { return func(s *Server) { s.scheduler = sch } }
+
+// WithConfigPath sets the path to the sweep config file.
+func WithConfigPath(p string) Option { return func(s *Server) { s.configPath = p } }
 
 // New creates a new scout Server.
 func New(opts ...Option) *Server {
@@ -66,13 +76,15 @@ func New(opts ...Option) *Server {
 
 // Start initializes the store, optional services, and begins listening.
 func (s *Server) Start() error {
-	// Open SQLite store.
-	dbPath := filepath.Join(s.dataDir, "scout.db")
-	st, err := store.Open(dbPath)
-	if err != nil {
-		return fmt.Errorf("scout server: open store: %w", err)
+	// Open SQLite store if not already provided via WithStore.
+	if s.store == nil {
+		dbPath := filepath.Join(s.dataDir, "scout.db")
+		st, err := store.Open(dbPath)
+		if err != nil {
+			return fmt.Errorf("scout server: open store: %w", err)
+		}
+		s.store = st
 	}
-	s.store = st
 
 	// Optional: connect to profile PostgreSQL.
 	if s.pgURL != "" {
@@ -82,16 +94,6 @@ func (s *Server) Start() error {
 		} else {
 			s.profileDB = client
 			log.Printf("scout: profiledb connected")
-		}
-	}
-
-	// Optional: set up CDP client.
-	if s.cdpURL != "" {
-		s.cdpClient = sweep.NewCDPClient(s.cdpURL)
-		if s.cdpClient.Available() {
-			log.Printf("scout: CDP available at %s", s.cdpURL)
-		} else {
-			log.Printf("scout: CDP not reachable at %s", s.cdpURL)
 		}
 	}
 
@@ -156,6 +158,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/sweep/status", s.handleSweepStatus)
 	s.mux.HandleFunc("GET /api/sweep/digest", s.handleSweepDigest)
 
+	// Sweep config.
+	s.mux.HandleFunc("GET /api/sweep/config", s.handleGetSweepConfig)
+	s.mux.HandleFunc("PUT /api/sweep/config", s.handlePutSweepConfig)
+
 	// Profile.
 	s.mux.HandleFunc("GET /api/profile", s.handleGetProfile)
 	s.mux.HandleFunc("POST /api/profile/pull", s.handleProfilePull)
@@ -170,6 +176,15 @@ func (s *Server) registerRoutes() {
 	// Agent.
 	s.mux.HandleFunc("GET /api/agent/status", s.handleAgentStatus)
 	s.mux.HandleFunc("GET /api/agent/history", s.handleAgentHistory)
+
+	// AI tools.
+	s.mux.HandleFunc("POST /api/ai/match", s.handleAIMatch)
+	s.mux.HandleFunc("POST /api/ai/proposal", s.handleAIProposal)
+	s.mux.HandleFunc("POST /api/ai/cover-letter", s.handleAICoverLetter)
+	s.mux.HandleFunc("POST /api/ai/outreach", s.handleAIOutreach)
+	s.mux.HandleFunc("POST /api/ai/salary", s.handleAISalary)
+	s.mux.HandleFunc("POST /api/ai/referral", s.handleAIReferral)
+	s.mux.HandleFunc("POST /api/ai/pitch", s.handleAIPitch)
 
 	// Tool dispatch.
 	s.mux.HandleFunc("POST /api/tools/{name}/execute", s.handleToolExecute)
@@ -192,7 +207,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://127.0.0.1:3002")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -227,7 +242,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service":   "soul-scout",
 		"uptime":    time.Since(s.startTime).String(),
 		"profiledb": s.profileDB != nil,
-		"cdp":       s.cdpClient != nil && s.cdpClient.Available(),
+		"scheduler": s.scheduler != nil,
 	})
 }
 
@@ -482,27 +497,80 @@ func (s *Server) handleSweep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSweepNow(w http.ResponseWriter, r *http.Request) {
-	platforms := []string{"linkedin", "indeed", "upwork", "toptal", "wellfound"}
-	results, err := sweep.Sweep(platforms, s.store)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if s.scheduler != nil {
+		runID, started := s.scheduler.RunNow()
+		if started {
+			writeJSON(w, http.StatusAccepted, map[string]interface{}{
+				"run_id": runID,
+				"status": "started",
+			})
+		} else {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"status": "already_running",
+			})
+		}
 		return
 	}
-	writeJSON(w, http.StatusOK, results)
+	writeError(w, http.StatusServiceUnavailable, "scheduler not configured")
 }
 
 func (s *Server) handleSweepStatus(w http.ResponseWriter, r *http.Request) {
+	if s.scheduler != nil {
+		writeJSON(w, http.StatusOK, s.scheduler.Status())
+		return
+	}
 	writeJSON(w, http.StatusOK, sweep.SweepStatus())
 }
 
 func (s *Server) handleSweepDigest(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"period":    "weekly",
-		"newLeads":  0,
-		"applied":   0,
-		"responses": 0,
-		"note":      "digest generation deferred — requires sweep history",
-	})
+	val, err := s.store.GetSyncMeta("sweep_last_digest")
+	if err != nil || val == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"period":    "",
+			"newLeads":  0,
+			"applied":   0,
+			"responses": 0,
+		})
+		return
+	}
+	var digest map[string]interface{}
+	if err := json.Unmarshal([]byte(val), &digest); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse digest: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, digest)
+}
+
+// --- Sweep Config ---
+
+func (s *Server) handleGetSweepConfig(w http.ResponseWriter, r *http.Request) {
+	if s.configPath == "" {
+		writeError(w, http.StatusServiceUnavailable, "sweep config path not set")
+		return
+	}
+	cfg, err := sweep.LoadConfig(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) handlePutSweepConfig(w http.ResponseWriter, r *http.Request) {
+	if s.configPath == "" {
+		writeError(w, http.StatusServiceUnavailable, "sweep config path not set")
+		return
+	}
+	var cfg sweep.SweepConfig
+	if err := decodeBody(r, &cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := sweep.SaveConfig(s.configPath, &cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
 // --- Profile ---
@@ -542,7 +610,7 @@ func transformProfile(raw map[string]interface{}) map[string]interface{} {
 		"certifications": []interface{}{},
 	}
 
-	// Experience: role→title, company→company, period→duration.
+	// Experience: role->title, company->company, period->duration.
 	if rows, ok := raw["experience"].([]map[string]interface{}); ok {
 		var out []map[string]string
 		for _, r := range rows {
@@ -556,7 +624,7 @@ func transformProfile(raw map[string]interface{}) map[string]interface{} {
 		profile["experience"] = out
 	}
 
-	// Projects: title→name, short_description→description, link→url.
+	// Projects: title->name, short_description->description, link->url.
 	if rows, ok := raw["projects"].([]map[string]interface{}); ok {
 		var out []map[string]string
 		for _, r := range rows {
@@ -587,7 +655,7 @@ func transformProfile(raw map[string]interface{}) map[string]interface{} {
 		profile["skills"] = skills
 	}
 
-	// Education: degree, institution, period→year.
+	// Education: degree, institution, period->year.
 	if rows, ok := raw["education"].([]map[string]interface{}); ok {
 		var out []map[string]string
 		for _, r := range rows {
@@ -623,7 +691,6 @@ func strVal(m map[string]interface{}, key string) string {
 	}
 	return ""
 }
-
 
 func (s *Server) handleProfilePull(w http.ResponseWriter, r *http.Request) {
 	if s.profileDB == nil {
@@ -684,19 +751,16 @@ func (s *Server) handleLaunchOptimizer(w http.ResponseWriter, r *http.Request) {
 		Platform string `json:"platform"`
 	}
 	if err := decodeBody(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if body.Platform == "" {
 		writeError(w, http.StatusBadRequest, "platform is required")
 		return
 	}
-	run, err := agent.LaunchOptimizer(body.Platform, s.store)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, run)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "optimizer launch deferred — use AI tools instead",
+	})
 }
 
 func (s *Server) handleApplyOptimization(w http.ResponseWriter, r *http.Request) {
@@ -737,6 +801,149 @@ func (s *Server) handleAgentHistory(w http.ResponseWriter, r *http.Request) {
 		runs = []store.AgentRun{}
 	}
 	writeJSON(w, http.StatusOK, runs)
+}
+
+// --- AI Tools ---
+
+func (s *Server) handleAIMatch(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ResumeMatch(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIProposal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID   int64  `json:"lead_id"`
+		Platform string `json:"platform"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ProposalGen(r.Context(), body.LeadID, body.Platform)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAICoverLetter(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.CoverLetter(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIOutreach(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ColdOutreach(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAISalary(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.SalaryLookup(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIReferral(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	runID, err := s.aiService.ReferralFinder(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
+}
+
+func (s *Server) handleAIPitch(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	runID, err := s.aiService.CompanyPitch(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
 }
 
 // --- Tool Dispatch ---
