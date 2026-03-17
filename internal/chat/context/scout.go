@@ -121,6 +121,42 @@ Help users manage their job search efficiently, find high-quality leads, and opt
 				Description: "Get leads ranked by match score.",
 				InputSchema: mustJSON(`{"type":"object","properties":{"limit":{"type":"integer","description":"Maximum number of leads to return"}}}`),
 			},
+			// AI Tools
+			{
+				Name:        "resume_match",
+				Description: "Score your resume against a job lead's description. Returns a match score (0-100), strengths, gaps, and suggestions.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead to score against"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "proposal_gen",
+				Description: "Generate a tailored proposal for a freelance/contract lead. Supports platform-specific formatting (upwork, freelancer, general).",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"},"platform":{"type":"string","enum":["upwork","freelancer","general"],"description":"Target platform"}},"required":["lead_id","platform"]}`),
+			},
+			{
+				Name:        "cover_letter",
+				Description: "Generate a tailored cover letter for a job lead, matching your experience to the job description keywords.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "cold_outreach",
+				Description: "Draft a personalized cold outreach email for a company based on the lead's company data and job posting.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "salary_lookup",
+				Description: "Estimate the market salary range for a job lead based on role, seniority, location, and company data.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "referral_finder",
+				Description: "Search for LinkedIn connections at a target company who could provide a referral. This tool runs asynchronously — poll agent_status for results.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "company_pitch",
+				Description: "Generate a team augmentation pitch document for a target company. This tool runs asynchronously — poll agent_status for results.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
+			},
 		},
 	}
 }

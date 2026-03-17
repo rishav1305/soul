@@ -35,6 +35,20 @@ func (s *Store) GetAgentRun(id int64) (*AgentRun, error) {
 	return &r, nil
 }
 
+// UpdateAgentRun updates an agent run's status and result.
+// On failure/timeout, the error is stored in result as JSON: {"error": "..."}.
+func (s *Store) UpdateAgentRun(id int64, status, result string) error {
+	completedAt := ""
+	if status == "completed" || status == "failed" || status == "timeout" {
+		completedAt = now()
+	}
+	_, err := s.db.Exec(
+		"UPDATE agent_runs SET status = ?, result = ?, completed_at = ? WHERE id = ?",
+		status, result, completedAt, id,
+	)
+	return err
+}
+
 // ListAgentRuns returns agent runs, optionally filtered by platform.
 func (s *Store) ListAgentRuns(platform string) ([]AgentRun, error) {
 	query := "SELECT id, platform, mode, lead_id, status, recommendations, approved_changes, result, created_at, completed_at FROM agent_runs"

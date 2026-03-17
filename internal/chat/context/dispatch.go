@@ -147,6 +147,14 @@ func NewDispatcher() *Dispatcher {
 			"agent_status":      {Method: "POST", Path: "/api/tools/agent_status/execute", Product: "scout"},
 			"agent_history":     {Method: "POST", Path: "/api/tools/agent_history/execute", Product: "scout"},
 			"scored_leads":      {Method: "POST", Path: "/api/tools/scored_leads/execute", Product: "scout"},
+			// Scout AI tools
+			"resume_match":    {Method: "POST", Path: "/api/ai/match", Product: "scout"},
+			"proposal_gen":    {Method: "POST", Path: "/api/ai/proposal", Product: "scout"},
+			"cover_letter":    {Method: "POST", Path: "/api/ai/cover-letter", Product: "scout"},
+			"cold_outreach":   {Method: "POST", Path: "/api/ai/outreach", Product: "scout"},
+			"salary_lookup":   {Method: "POST", Path: "/api/ai/salary", Product: "scout"},
+			"referral_finder": {Method: "POST", Path: "/api/ai/referral", Product: "scout"},
+			"company_pitch":   {Method: "POST", Path: "/api/ai/pitch", Product: "scout"},
 		},
 	}
 	return d

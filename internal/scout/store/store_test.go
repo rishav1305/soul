@@ -17,14 +17,75 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+// TestMigration_NewSchema verifies the new leads schema has the theirstack_id column and index.
+func TestMigration_NewSchema(t *testing.T) {
+	s := newTestStore(t)
+
+	// Verify theirstack_id column exists by querying PRAGMA table_info.
+	rows, err := s.db.Query("PRAGMA table_info(leads)")
+	if err != nil {
+		t.Fatalf("PRAGMA table_info: %v", err)
+	}
+	defer rows.Close()
+
+	var foundTherStackID bool
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var dfltValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			t.Fatalf("scan table_info: %v", err)
+		}
+		if name == "theirstack_id" {
+			foundTherStackID = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table_info rows error: %v", err)
+	}
+	if !foundTherStackID {
+		t.Error("leads table missing theirstack_id column")
+	}
+
+	// Verify idx_leads_theirstack_id index exists.
+	indexRows, err := s.db.Query("PRAGMA index_list(leads)")
+	if err != nil {
+		t.Fatalf("PRAGMA index_list: %v", err)
+	}
+	defer indexRows.Close()
+
+	var foundIndex bool
+	for indexRows.Next() {
+		var seq int
+		var name string
+		var unique int
+		var origin string
+		var partial int
+		if err := indexRows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			t.Fatalf("scan index_list: %v", err)
+		}
+		if name == "idx_leads_theirstack_id" {
+			foundIndex = true
+		}
+	}
+	if err := indexRows.Err(); err != nil {
+		t.Fatalf("index_list rows error: %v", err)
+	}
+	if !foundIndex {
+		t.Error("missing index idx_leads_theirstack_id on leads table")
+	}
+}
+
 func TestAddLead(t *testing.T) {
 	s := newTestStore(t)
 	id, err := s.AddLead(Lead{
-		Title:   "Senior Go Developer",
-		Company: "Acme Corp",
-		Type:    "job",
-		Source:  "linkedin",
-		Stage:   "discovered",
+		JobTitle: "Senior Go Developer",
+		Company:  "Acme Corp",
+		Pipeline: "job",
+		Source:   "theirstack",
+		Stage:    "discovered",
 	})
 	if err != nil {
 		t.Fatalf("AddLead: %v", err)
@@ -37,9 +98,9 @@ func TestAddLead(t *testing.T) {
 func TestGetLead(t *testing.T) {
 	s := newTestStore(t)
 	id, err := s.AddLead(Lead{
-		Title:      "Backend Engineer",
+		JobTitle:   "Backend Engineer",
 		Company:    "TechCo",
-		Type:       "job",
+		Pipeline:   "job",
 		Source:     "indeed",
 		Stage:      "applied",
 		MatchScore: 0.85,
@@ -52,8 +113,8 @@ func TestGetLead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLead: %v", err)
 	}
-	if lead.Title != "Backend Engineer" {
-		t.Errorf("Title = %q, want %q", lead.Title, "Backend Engineer")
+	if lead.JobTitle != "Backend Engineer" {
+		t.Errorf("JobTitle = %q, want %q", lead.JobTitle, "Backend Engineer")
 	}
 	if lead.Company != "TechCo" {
 		t.Errorf("Company = %q, want %q", lead.Company, "TechCo")
@@ -72,13 +133,13 @@ func TestGetLead(t *testing.T) {
 func TestUpdateLead(t *testing.T) {
 	s := newTestStore(t)
 	id, _ := s.AddLead(Lead{
-		Title: "Original Title",
-		Type:  "job",
-		Stage: "discovered",
+		JobTitle: "Original Title",
+		Pipeline: "job",
+		Stage:    "discovered",
 	})
 
 	err := s.UpdateLead(id, map[string]interface{}{
-		"title":       "Updated Title",
+		"job_title":   "Updated Title",
 		"stage":       "applied",
 		"match_score": 0.92,
 	})
@@ -87,8 +148,8 @@ func TestUpdateLead(t *testing.T) {
 	}
 
 	lead, _ := s.GetLead(id)
-	if lead.Title != "Updated Title" {
-		t.Errorf("Title = %q, want %q", lead.Title, "Updated Title")
+	if lead.JobTitle != "Updated Title" {
+		t.Errorf("JobTitle = %q, want %q", lead.JobTitle, "Updated Title")
 	}
 	if lead.Stage != "applied" {
 		t.Errorf("Stage = %q, want %q", lead.Stage, "applied")
@@ -98,7 +159,7 @@ func TestUpdateLead(t *testing.T) {
 	}
 
 	// Not found.
-	err = s.UpdateLead(999, map[string]interface{}{"title": "x"})
+	err = s.UpdateLead(999, map[string]interface{}{"job_title": "x"})
 	if err == nil {
 		t.Error("expected error for non-existent lead")
 	}
@@ -106,9 +167,9 @@ func TestUpdateLead(t *testing.T) {
 
 func TestListLeads_Filter(t *testing.T) {
 	s := newTestStore(t)
-	s.AddLead(Lead{Title: "Job 1", Type: "job", Stage: "discovered"})
-	s.AddLead(Lead{Title: "Job 2", Type: "job", Stage: "applied", ClosedAt: "2025-01-01T00:00:00Z"})
-	s.AddLead(Lead{Title: "Freelance 1", Type: "freelance", Stage: "found"})
+	s.AddLead(Lead{JobTitle: "Job 1", Pipeline: "job", Stage: "discovered"})
+	s.AddLead(Lead{JobTitle: "Job 2", Pipeline: "job", Stage: "applied", ClosedAt: "2025-01-01T00:00:00Z"})
+	s.AddLead(Lead{JobTitle: "Freelance 1", Pipeline: "freelance", Stage: "found"})
 
 	// All leads.
 	all, err := s.ListLeads("", false)
@@ -119,7 +180,7 @@ func TestListLeads_Filter(t *testing.T) {
 		t.Errorf("len = %d, want 3", len(all))
 	}
 
-	// Filter by type.
+	// Filter by pipeline.
 	jobs, err := s.ListLeads("job", false)
 	if err != nil {
 		t.Fatalf("ListLeads job: %v", err)
@@ -137,7 +198,7 @@ func TestListLeads_Filter(t *testing.T) {
 		t.Errorf("len = %d, want 2", len(active))
 	}
 
-	// Type + active.
+	// Pipeline + active.
 	jobActive, err := s.ListLeads("job", true)
 	if err != nil {
 		t.Fatalf("ListLeads job active: %v", err)
@@ -149,9 +210,9 @@ func TestListLeads_Filter(t *testing.T) {
 
 func TestScoredLeads(t *testing.T) {
 	s := newTestStore(t)
-	s.AddLead(Lead{Title: "Low", Type: "job", MatchScore: 0.3})
-	s.AddLead(Lead{Title: "High", Type: "job", MatchScore: 0.95})
-	s.AddLead(Lead{Title: "Mid", Type: "job", MatchScore: 0.6})
+	s.AddLead(Lead{JobTitle: "Low", Pipeline: "job", MatchScore: 0.3})
+	s.AddLead(Lead{JobTitle: "High", Pipeline: "job", MatchScore: 0.95})
+	s.AddLead(Lead{JobTitle: "Mid", Pipeline: "job", MatchScore: 0.6})
 
 	leads, err := s.ScoredLeads(2)
 	if err != nil {
@@ -160,17 +221,17 @@ func TestScoredLeads(t *testing.T) {
 	if len(leads) != 2 {
 		t.Fatalf("len = %d, want 2", len(leads))
 	}
-	if leads[0].Title != "High" {
-		t.Errorf("first = %q, want %q", leads[0].Title, "High")
+	if leads[0].JobTitle != "High" {
+		t.Errorf("first = %q, want %q", leads[0].JobTitle, "High")
 	}
-	if leads[1].Title != "Mid" {
-		t.Errorf("second = %q, want %q", leads[1].Title, "Mid")
+	if leads[1].JobTitle != "Mid" {
+		t.Errorf("second = %q, want %q", leads[1].JobTitle, "Mid")
 	}
 }
 
 func TestRecordStageHistory(t *testing.T) {
 	s := newTestStore(t)
-	id, _ := s.AddLead(Lead{Title: "Test", Type: "job", Stage: "discovered"})
+	id, _ := s.AddLead(Lead{JobTitle: "Test", Pipeline: "job", Stage: "discovered"})
 
 	err := s.RecordStageHistory(id, "discovered", "applied", "submitted application")
 	if err != nil {
@@ -198,22 +259,22 @@ func TestRecordStageHistory(t *testing.T) {
 func TestGetAnalytics(t *testing.T) {
 	s := newTestStore(t)
 
-	// Add leads with varying types and statuses.
+	// Add leads with varying pipelines and statuses.
 	staleTime := time.Now().UTC().Add(-10 * 24 * time.Hour).Format(time.RFC3339)
 	freshTime := time.Now().UTC().Format(time.RFC3339)
 	closedTime := time.Now().UTC().Add(-2 * 24 * time.Hour).Format(time.RFC3339)
 
-	s.AddLead(Lead{Title: "Job 1", Type: "job", Source: "linkedin", Stage: "discovered", CreatedAt: staleTime, UpdatedAt: staleTime})
-	s.AddLead(Lead{Title: "Job 2", Type: "job", Source: "indeed", Stage: "applied", CreatedAt: freshTime, UpdatedAt: freshTime, NextDate: "2020-01-01"})
-	s.AddLead(Lead{Title: "Job 3", Type: "job", Source: "linkedin", Stage: "offer", CreatedAt: staleTime, UpdatedAt: closedTime, ClosedAt: closedTime})
-	s.AddLead(Lead{Title: "Freelance 1", Type: "freelance", Source: "upwork", Stage: "found", CreatedAt: freshTime, UpdatedAt: freshTime})
+	s.AddLead(Lead{JobTitle: "Job 1", Pipeline: "job", Source: "linkedin", Stage: "discovered", CreatedAt: staleTime, UpdatedAt: staleTime})
+	s.AddLead(Lead{JobTitle: "Job 2", Pipeline: "job", Source: "indeed", Stage: "applied", CreatedAt: freshTime, UpdatedAt: freshTime, NextDate: "2020-01-01"})
+	s.AddLead(Lead{JobTitle: "Job 3", Pipeline: "job", Source: "linkedin", Stage: "offer", CreatedAt: staleTime, UpdatedAt: closedTime, ClosedAt: closedTime})
+	s.AddLead(Lead{JobTitle: "Freelance 1", Pipeline: "freelance", Source: "upwork", Stage: "found", CreatedAt: freshTime, UpdatedAt: freshTime})
 
 	a, err := s.GetAnalytics("")
 	if err != nil {
 		t.Fatalf("GetAnalytics: %v", err)
 	}
 
-	// Stats.
+	// Stats: ByType is keyed by pipeline in the new schema.
 	if a.Stats.ByType["job"] != 3 {
 		t.Errorf("ByType[job] = %d, want 3", a.Stats.ByType["job"])
 	}

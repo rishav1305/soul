@@ -90,10 +90,11 @@ internal/mesh/
 internal/scout/
   store/                      SQLite (scout.db) — 7 tables (leads, stage_history, sync, optimizations, agents)
   pipelines/                  5 pipeline types (job, freelance, contract, consulting, product-dev)
-  sweep/                      Platform crawler + Chrome DevTools Protocol
+  sweep/                      TheirStack API client, scheduler, sweep orchestrator
+  ai/                         7 Claude-powered tools (match, proposal, cover, outreach, salary, referral, pitch)
   profiledb/                  PostgreSQL client (pgx/v5) for portfolio data
-  agent/                      Claude subprocess for profile optimization
-  server/                     HTTP server — 23 REST endpoints
+  agent/                      Claude CLI subprocess launcher
+  server/                     HTTP server — 32 REST endpoints
 web/src/
   main.tsx                    Entry — RouterProvider with lazy-loaded routes
   router.tsx                  14 routes (/, /chat, /tasks, /tutor, /projects, /observe, /scout, /sentinel, /mesh, /bench)
@@ -140,14 +141,14 @@ Chat sessions can be bound to any of 21 products via the tool selector in ChatIn
 
 Tool counts by product:
 - Core: Tasks (6), Tutor (7), Projects (6), Observe (4)
-- Smart Agents: Scout (21), Sentinel (7), Mesh (4), Bench (4)
+- Smart Agents: Scout (28), Sentinel (7), Mesh (4), Bench (4)
 - Quality: Compliance (4), QA (2), Analytics (2)
 - Infrastructure: DevOps (2), DBA (2), Migrate (2)
 - Data: DataEng (2), CostOps (2), Viz (2)
 - Documentation: Docs (2), API (2)
 - Built-in (all contexts): Memories (4), Custom Tools (3), Subagent (1)
 
-Total: 85 product tools + 8 built-in = 93 tools.
+Total: 92 product tools + 8 built-in = 100 tools.
 
 ## Environment Variables
 
@@ -184,7 +185,7 @@ Total: 85 product tools + 8 built-in = 93 tools.
 | `SOUL_SCOUT_PORT` | `3020` | Scout server port |
 | `SOUL_SCOUT_URL` | `http://127.0.0.1:3020` | Scout server URL (for chat proxy) |
 | `SOUL_SCOUT_PG_URL` | *(none)* | PostgreSQL connection for scout profile DB |
-| `SOUL_SCOUT_CDP_URL` | *(none)* | Chrome DevTools Protocol endpoint for browser automation |
+| `SOUL_SCOUT_THEIRSTACK_KEY` | *(none)* | TheirStack API bearer token for job discovery |
 | `SOUL_SENTINEL_HOST` | `127.0.0.1` | Sentinel server bind address |
 | `SOUL_SENTINEL_PORT` | `3022` | Sentinel server port |
 | `SOUL_SENTINEL_URL` | `http://127.0.0.1:3022` | Sentinel server URL (for chat proxy) |

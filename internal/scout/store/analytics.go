@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// AggregateStats holds counts grouped by type, source, and stage.
+// AggregateStats holds counts grouped by pipeline, source, and stage.
 type AggregateStats struct {
 	ByType   map[string]int `json:"byType"`
 	BySource map[string]int `json:"bySource"`
@@ -21,7 +21,7 @@ type FunnelStep struct {
 	Count int    `json:"count"`
 }
 
-// TypeFunnel holds conversion metrics for a single lead type.
+// TypeFunnel holds conversion metrics for a single pipeline.
 type TypeFunnel struct {
 	Type           string       `json:"type"`
 	Steps          []FunnelStep `json:"steps"`
@@ -29,36 +29,36 @@ type TypeFunnel struct {
 	AvgDaysToClose float64      `json:"avgDaysToClose"`
 }
 
-// ConversionMetrics holds per-type funnel data.
+// ConversionMetrics holds per-pipeline funnel data.
 type ConversionMetrics struct {
 	Funnels []TypeFunnel `json:"funnels"`
 }
 
 // ActionableInsights holds leads requiring attention.
 type ActionableInsights struct {
-	StaleLeads    []Lead `json:"staleLeads"`
-	FollowUpsDue  []Lead `json:"followUpsDue"`
-	PipelineGaps  []string `json:"pipelineGaps"`
+	StaleLeads   []Lead   `json:"staleLeads"`
+	FollowUpsDue []Lead   `json:"followUpsDue"`
+	PipelineGaps []string `json:"pipelineGaps"`
 }
 
 // Analytics combines all three layers of pipeline analytics.
 type Analytics struct {
-	Stats      AggregateStats     `json:"stats"`
-	Conversion ConversionMetrics  `json:"conversion"`
+	Stats      AggregateStats    `json:"stats"`
+	Conversion ConversionMetrics `json:"conversion"`
 	Insights   ActionableInsights `json:"insights"`
 }
 
-// GetAnalytics computes three-layer analytics, optionally filtered by type.
-func (s *Store) GetAnalytics(typeFilter string) (*Analytics, error) {
-	stats, err := s.getAggregateStats(typeFilter)
+// GetAnalytics computes three-layer analytics, optionally filtered by pipeline.
+func (s *Store) GetAnalytics(pipelineFilter string) (*Analytics, error) {
+	stats, err := s.getAggregateStats(pipelineFilter)
 	if err != nil {
 		return nil, err
 	}
-	conversion, err := s.getConversionMetrics(typeFilter)
+	conversion, err := s.getConversionMetrics(pipelineFilter)
 	if err != nil {
 		return nil, err
 	}
-	insights, err := s.getActionableInsights(typeFilter)
+	insights, err := s.getActionableInsights(pipelineFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Store) GetAnalytics(typeFilter string) (*Analytics, error) {
 	}, nil
 }
 
-func (s *Store) getAggregateStats(typeFilter string) (*AggregateStats, error) {
+func (s *Store) getAggregateStats(pipelineFilter string) (*AggregateStats, error) {
 	stats := &AggregateStats{
 		ByType:   make(map[string]int),
 		BySource: make(map[string]int),
@@ -78,22 +78,22 @@ func (s *Store) getAggregateStats(typeFilter string) (*AggregateStats, error) {
 
 	whereClause := ""
 	var args []interface{}
-	if typeFilter != "" {
-		whereClause = " WHERE type = ?"
-		args = append(args, typeFilter)
+	if pipelineFilter != "" {
+		whereClause = " WHERE pipeline = ?"
+		args = append(args, pipelineFilter)
 	}
 
-	// By type.
-	rows, err := s.db.Query("SELECT type, COUNT(*) FROM leads"+whereClause+" GROUP BY type", args...)
+	// By pipeline (mapped to ByType for API compatibility).
+	rows, err := s.db.Query("SELECT pipeline, COUNT(*) FROM leads"+whereClause+" GROUP BY pipeline", args...)
 	if err != nil {
-		return nil, fmt.Errorf("scout: analytics by type: %w", err)
+		return nil, fmt.Errorf("scout: analytics by pipeline: %w", err)
 	}
 	for rows.Next() {
 		var k string
 		var c int
 		if err := rows.Scan(&k, &c); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("scout: scan by type: %w", err)
+			return nil, fmt.Errorf("scout: scan by pipeline: %w", err)
 		}
 		stats.ByType[k] = c
 	}
@@ -135,19 +135,17 @@ func (s *Store) getAggregateStats(typeFilter string) (*AggregateStats, error) {
 	var active, closed, stale int
 	staleThreshold := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
 
-	err = s.db.QueryRow("SELECT COUNT(*) FROM leads"+whereClause+" AND closed_at = ''", args...).Scan(&active)
+	if pipelineFilter != "" {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE pipeline = ? AND closed_at = ''", pipelineFilter).Scan(&active)
+	} else {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE closed_at = ''").Scan(&active)
+	}
 	if err != nil {
-		// If no WHERE clause, we need different SQL.
-		if typeFilter == "" {
-			err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE closed_at = ''").Scan(&active)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("scout: count active: %w", err)
-		}
+		return nil, fmt.Errorf("scout: count active: %w", err)
 	}
 
-	if typeFilter != "" {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE type = ? AND closed_at != ''", typeFilter).Scan(&closed)
+	if pipelineFilter != "" {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE pipeline = ? AND closed_at != ''", pipelineFilter).Scan(&closed)
 	} else {
 		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE closed_at != ''").Scan(&closed)
 	}
@@ -155,8 +153,8 @@ func (s *Store) getAggregateStats(typeFilter string) (*AggregateStats, error) {
 		return nil, fmt.Errorf("scout: count closed: %w", err)
 	}
 
-	if typeFilter != "" {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE type = ? AND closed_at = '' AND updated_at < ?", typeFilter, staleThreshold).Scan(&stale)
+	if pipelineFilter != "" {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE pipeline = ? AND closed_at = '' AND updated_at < ?", pipelineFilter, staleThreshold).Scan(&stale)
 	} else {
 		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE closed_at = '' AND updated_at < ?", staleThreshold).Scan(&stale)
 	}
@@ -171,34 +169,34 @@ func (s *Store) getAggregateStats(typeFilter string) (*AggregateStats, error) {
 	return stats, nil
 }
 
-func (s *Store) getConversionMetrics(typeFilter string) (*ConversionMetrics, error) {
+func (s *Store) getConversionMetrics(pipelineFilter string) (*ConversionMetrics, error) {
 	cm := &ConversionMetrics{}
 
-	// Get distinct types.
-	var typeRows []string
-	if typeFilter != "" {
-		typeRows = []string{typeFilter}
+	// Get distinct pipelines.
+	var pipelines []string
+	if pipelineFilter != "" {
+		pipelines = []string{pipelineFilter}
 	} else {
-		rows, err := s.db.Query("SELECT DISTINCT type FROM leads")
+		rows, err := s.db.Query("SELECT DISTINCT pipeline FROM leads")
 		if err != nil {
-			return nil, fmt.Errorf("scout: conversion types: %w", err)
+			return nil, fmt.Errorf("scout: conversion pipelines: %w", err)
 		}
 		for rows.Next() {
 			var t string
 			if err := rows.Scan(&t); err != nil {
 				rows.Close()
-				return nil, fmt.Errorf("scout: scan type: %w", err)
+				return nil, fmt.Errorf("scout: scan pipeline: %w", err)
 			}
-			typeRows = append(typeRows, t)
+			pipelines = append(pipelines, t)
 		}
 		rows.Close()
 	}
 
-	for _, lt := range typeRows {
-		funnel := TypeFunnel{Type: lt}
+	for _, pl := range pipelines {
+		funnel := TypeFunnel{Type: pl}
 
-		// Stage counts for this type.
-		rows, err := s.db.Query("SELECT stage, COUNT(*) FROM leads WHERE type = ? GROUP BY stage", lt)
+		// Stage counts for this pipeline.
+		rows, err := s.db.Query("SELECT stage, COUNT(*) FROM leads WHERE pipeline = ? GROUP BY stage", pl)
 		if err != nil {
 			return nil, fmt.Errorf("scout: funnel stages: %w", err)
 		}
@@ -216,7 +214,7 @@ func (s *Store) getConversionMetrics(typeFilter string) (*ConversionMetrics, err
 		rows.Close()
 
 		// Win rate: leads with non-empty closed_at / total.
-		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE type = ? AND closed_at != ''", lt).Scan(&closed)
+		err = s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE pipeline = ? AND closed_at != ''", pl).Scan(&closed)
 		if err != nil {
 			return nil, fmt.Errorf("scout: win rate: %w", err)
 		}
@@ -225,7 +223,7 @@ func (s *Store) getConversionMetrics(typeFilter string) (*ConversionMetrics, err
 		}
 
 		// Average days to close.
-		rows2, err := s.db.Query("SELECT created_at, closed_at FROM leads WHERE type = ? AND closed_at != ''", lt)
+		rows2, err := s.db.Query("SELECT created_at, closed_at FROM leads WHERE pipeline = ? AND closed_at != ''", pl)
 		if err != nil {
 			return nil, fmt.Errorf("scout: avg close: %w", err)
 		}
@@ -255,7 +253,7 @@ func (s *Store) getConversionMetrics(typeFilter string) (*ConversionMetrics, err
 	return cm, nil
 }
 
-func (s *Store) getActionableInsights(typeFilter string) (*ActionableInsights, error) {
+func (s *Store) getActionableInsights(pipelineFilter string) (*ActionableInsights, error) {
 	insights := &ActionableInsights{}
 	staleThreshold := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
 	todayStr := time.Now().UTC().Format("2006-01-02")
@@ -263,9 +261,9 @@ func (s *Store) getActionableInsights(typeFilter string) (*ActionableInsights, e
 	// Stale leads: active, no update in 7+ days.
 	staleQuery := "SELECT " + leadColumns + " FROM leads WHERE closed_at = '' AND updated_at < ?"
 	staleArgs := []interface{}{staleThreshold}
-	if typeFilter != "" {
-		staleQuery += " AND type = ?"
-		staleArgs = append(staleArgs, typeFilter)
+	if pipelineFilter != "" {
+		staleQuery += " AND pipeline = ?"
+		staleArgs = append(staleArgs, pipelineFilter)
 	}
 	staleQuery += " ORDER BY updated_at ASC"
 
@@ -286,9 +284,9 @@ func (s *Store) getActionableInsights(typeFilter string) (*ActionableInsights, e
 	// Follow-ups due: next_date <= today.
 	followQuery := "SELECT " + leadColumns + " FROM leads WHERE closed_at = '' AND next_date != '' AND next_date <= ?"
 	followArgs := []interface{}{todayStr}
-	if typeFilter != "" {
-		followQuery += " AND type = ?"
-		followArgs = append(followArgs, typeFilter)
+	if pipelineFilter != "" {
+		followQuery += " AND pipeline = ?"
+		followArgs = append(followArgs, pipelineFilter)
 	}
 	followQuery += " ORDER BY next_date ASC"
 
@@ -306,19 +304,19 @@ func (s *Store) getActionableInsights(typeFilter string) (*ActionableInsights, e
 	}
 	rows.Close()
 
-	// Pipeline gaps: types with zero active leads.
-	knownTypes := []string{"job", "freelance", "contract", "consulting", "product-dev"}
-	for _, kt := range knownTypes {
-		if typeFilter != "" && typeFilter != kt {
+	// Pipeline gaps: pipelines with zero active leads.
+	knownPipelines := []string{"job", "freelance", "contract", "consulting", "product-dev"}
+	for _, kp := range knownPipelines {
+		if pipelineFilter != "" && pipelineFilter != kp {
 			continue
 		}
 		var count int
-		err := s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE type = ? AND closed_at = ''", kt).Scan(&count)
+		err := s.db.QueryRow("SELECT COUNT(*) FROM leads WHERE pipeline = ? AND closed_at = ''", kp).Scan(&count)
 		if err != nil {
 			return nil, fmt.Errorf("scout: pipeline gap check: %w", err)
 		}
 		if count == 0 {
-			insights.PipelineGaps = append(insights.PipelineGaps, kt)
+			insights.PipelineGaps = append(insights.PipelineGaps, kp)
 		}
 	}
 
