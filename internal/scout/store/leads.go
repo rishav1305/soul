@@ -5,6 +5,28 @@ import (
 	"fmt"
 )
 
+// AddLeadIfNotExists inserts a lead if no existing lead has the same theirstack_id.
+// Returns the lead ID, whether it was newly created, and any error.
+// If theirstack_id is nil, it always inserts (no dedup key).
+func (s *Store) AddLeadIfNotExists(lead Lead) (int64, bool, error) {
+	if lead.TheirStackID != nil {
+		var existingID int64
+		err := s.db.QueryRow("SELECT id FROM leads WHERE theirstack_id = ?", *lead.TheirStackID).Scan(&existingID)
+		if err == nil {
+			// Already exists.
+			return existingID, false, nil
+		}
+		if err != sql.ErrNoRows {
+			return 0, false, fmt.Errorf("scout: check lead exists: %w", err)
+		}
+	}
+	id, err := s.AddLead(lead)
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
 // AddLead inserts a new lead and returns its ID.
 func (s *Store) AddLead(lead Lead) (int64, error) {
 	ts := now()
