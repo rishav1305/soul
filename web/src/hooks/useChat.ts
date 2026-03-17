@@ -162,10 +162,13 @@ export function useChat(): UseChatReturn {
   const sessionIDRef = useRef<string | null>(null);
   const sessionsRef = useRef<Session[]>([]);
   const isStreamingRef = useRef(false);
+  const pendingExplicitCreateRef = useRef(false);
   const sendTimeRef = useRef<number>(0);
   const firstTokenTimeRef = useRef<number>(0);
   const sendQueueRef = useRef(new SendQueue());
   const lastMessageIdRef = useRef<string | null>(null);
+  // Remembers the last model/thinking used so retries and edits inherit them.
+  const lastSentOptionsRef = useRef<{ model?: string; thinking?: ThinkingConfig } | null>(null);
 
   // Keep streaming ref in sync.
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -243,12 +246,15 @@ export function useChat(): UseChatReturn {
               setSessions(updated);
             }
 
-            // If we just requested a session creation, switch to it.
-            if (!sessionIDRef.current) {
+            // Switch to the new session if no current session (deferred creation
+            // on first send) OR if the user explicitly clicked New.
+            if (!sessionIDRef.current || pendingExplicitCreateRef.current) {
+              pendingExplicitCreateRef.current = false;
               sessionIDRef.current = newSession.id;
               setCurrentSessionID(newSession.id);
               localStorage.setItem(STORAGE_KEY, newSession.id);
               setMessages([]);
+              setIsStreaming(false);
             }
           }
           break;
@@ -616,9 +622,14 @@ export function useChat(): UseChatReturn {
       setMessages(prev => [...prev, userMessage]);
       setIsStreaming(true);
 
+      // Retries and edits call sendMessage with no options — fall back to the
+      // last options used so model and thinking are preserved across retries.
+      const resolved = options ?? lastSentOptionsRef.current ?? undefined;
+      if (options) lastSentOptionsRef.current = { model: options.model, thinking: options.thinking };
+
       const payload: Record<string, unknown> = { sessionId: sessionIDRef.current, content: trimmed };
-      if (options?.model) payload.model = options.model;
-      if (options?.thinking) payload.thinking = options.thinking;
+      if (resolved?.model) payload.model = resolved.model;
+      if (resolved?.thinking) payload.thinking = resolved.thinking;
       if (options?.attachments?.length) payload.attachments = options.attachments;
       sendTimeRef.current = performance.now();
       firstTokenTimeRef.current = 0;
@@ -668,6 +679,7 @@ export function useChat(): UseChatReturn {
   }, [send]);
 
   const createSession = useCallback(() => {
+    pendingExplicitCreateRef.current = true;
     send('session.create', {});
     reportUsage('session.create');
   }, [send]);
