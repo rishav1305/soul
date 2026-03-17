@@ -26,6 +26,16 @@ The `leads` table is redesigned from scratch to match TheirStack's response sche
 
 **Required filter (at least one):** `posted_at_max_age_days`, `posted_at_gte`, `posted_at_lte`, `company_domain_or`, `company_linkedin_url_or`, `company_name_or`.
 
+### Migration strategy
+
+No data exists in the current leads table. The migration drops and recreates:
+
+```sql
+DROP TABLE IF EXISTS leads;
+```
+
+Then creates the new schema below. This is a one-time destructive migration — acceptable because the table is empty. Future schema changes must use `ALTER TABLE ADD COLUMN`.
+
 ### New leads table schema
 
 ```sql
@@ -44,7 +54,7 @@ CREATE TABLE leads (
     closed_at TEXT NOT NULL DEFAULT '',
 
     -- TheirStack job identity
-    theirstack_id INTEGER UNIQUE,
+    theirstack_id INTEGER,
     job_title TEXT NOT NULL DEFAULT '',
     url TEXT NOT NULL DEFAULT '',
     final_url TEXT NOT NULL DEFAULT '',
@@ -94,7 +104,7 @@ CREATE TABLE leads (
     metadata TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE UNIQUE INDEX idx_leads_theirstack_id ON leads(theirstack_id);
+CREATE UNIQUE INDEX idx_leads_theirstack_id ON leads(theirstack_id) WHERE theirstack_id IS NOT NULL;
 CREATE INDEX idx_leads_stage ON leads(stage);
 CREATE INDEX idx_leads_match_score ON leads(match_score);
 CREATE INDEX idx_leads_country_code ON leads(country_code);
@@ -105,7 +115,7 @@ CREATE INDEX idx_leads_company_domain ON leads(company_domain);
 CREATE INDEX idx_leads_date_posted ON leads(date_posted);
 ```
 
-**Dedup:** `theirstack_id UNIQUE` — `INSERT OR IGNORE` prevents re-importing. Manual leads have `theirstack_id` NULL.
+**Dedup:** Partial unique index on `theirstack_id WHERE NOT NULL` — `INSERT OR IGNORE` prevents re-importing the same TheirStack job. Manual leads have `theirstack_id` NULL (unlimited NULLs allowed since partial index excludes them).
 
 **Pipeline inference from `employment_statuses`:**
 - `["full_time"]` → pipeline `"job"`
@@ -119,11 +129,13 @@ CREATE INDEX idx_leads_date_posted ON leads(date_posted);
 
 ```
 internal/scout/sweep/
-  theirstack.go    — TheirStack HTTP client
+  theirstack.go    — TheirStack HTTP client (accepts http.Client for testability)
   scheduler.go     — Cron-like sweep scheduler
   sweep.go         — Sweep orchestrator (replaces current stub)
   config.go        — Sweep config loading/saving
 ```
+
+**Testability:** `TheirStackClient` accepts an `*http.Client` in its constructor. Tests inject a client with a custom `http.RoundTripper` that returns canned JSON responses — no network calls needed. This follows standard Go HTTP testing patterns.
 
 **Delete:** `cdp.go` — CDP is no longer needed.
 
@@ -176,6 +188,10 @@ Seven Claude-powered tools across three tiers. Quick tools run in-process via `s
 
 All tools that score or tailor content fetch the user's profile from `profiledb.GetFullProfile()` (experience, projects, skills, education, certifications on PostgreSQL/titan-pc) and inject it as context.
 
+**profiledb nil handling:** If `profiledb` is not configured (`SOUL_SCOUT_PG_URL` unset), AI tools that require profile data (resume_match, proposal_gen, cover_letter) return a clear error: `{"error": "profiledb not configured — set SOUL_SCOUT_PG_URL"}`. Tools that only use lead data (cold_outreach, salary_lookup) work without profiledb. Auto-scoring during sweep is skipped when profiledb is nil — leads are created with `match_score = 0`.
+
+**Testability:** `ai.Service` accepts a `Sender` interface (matching `stream.Client`'s Send method) rather than a concrete `*stream.Client`. Tests inject a mock sender that returns canned responses. This follows the same pattern as `internal/sentinel/engine/engine_test.go`.
+
 ### Package structure
 
 ```
@@ -202,6 +218,7 @@ internal/scout/ai/
 
 **`proposal_gen(lead_id, platform)`**
 - Fetches lead + profile
+- `platform` must be one of: `"upwork"`, `"freelancer"`, `"general"`. Server validates and returns 400 for invalid values.
 - Platform-aware: Upwork (short, punchy, mention budget), Freelancer (competitive bid), general (cover letter style)
 - Returns tailored proposal text
 - ~1 Claude call, medium context
@@ -277,24 +294,45 @@ type Scheduler struct {
 ### Sweep flow per run
 
 ```
-1. Load sweep config from ~/.soul-v2/scout/sweep-config.json
-2. Load cursor from sync_meta (theirstack_cursor)
-3. POST TheirStack API with config filters + discovered_at_gte cursor
-4. For each job in response:
-   a. Check theirstack_id uniqueness (INSERT OR IGNORE)
-   b. Infer pipeline from employment_statuses
-   c. Set stage = "discovered", source = "theirstack"
-   d. Insert lead
-5. For each newly inserted lead:
-   a. Call ai.ResumeMatch(lead_id) — in-process
-   b. Update match_score in DB
-6. Update theirstack_cursor to max(discovered_at) from response
-7. Update sweep_last_run timestamp
-8. Paginate if total_results > limit (offset-based)
-9. Return SweepResult: {new_leads, duplicates, scored, high_matches, errors}
+Phase 1 — Fetch all pages:
+  1. Load sweep config from ~/.soul-v2/scout/sweep-config.json
+  2. Load cursor from sync_meta (theirstack_cursor)
+  3. creditsUsed = 0
+  4. Loop:
+     a. POST TheirStack API with config filters + discovered_at_gte cursor + offset
+     b. If HTTP error:
+        - 429 (rate limit): log, stop pagination, DO NOT update cursor
+        - 402 (credits exhausted): log, stop pagination, DO NOT update cursor
+        - 5xx / timeout: log, stop pagination, DO NOT update cursor
+        - Process any jobs already fetched in prior pages normally
+     c. For each job in response:
+        - INSERT OR IGNORE (theirstack_id dedup)
+        - Infer pipeline from employment_statuses
+        - Set stage = "discovered", source = "theirstack"
+        - Track: newLeadIDs[] for successfully inserted leads
+     d. creditsUsed += len(response.data)
+     e. If len(response.data) < limit OR creditsUsed >= credit_budget: stop
+     f. Else: offset += limit, continue loop
+
+Phase 2 — Auto-score (after all pages fetched):
+  5. If profiledb is nil: skip scoring, leave match_score = 0
+  6. For each lead_id in newLeadIDs:
+     a. Call ai.ResumeMatch(lead_id) — in-process
+     b. Update match_score in DB
+     c. If ResumeMatch fails: log error, continue (don't abort scoring)
+
+Phase 3 — Finalize:
+  7. Update theirstack_cursor to max(discovered_at) ONLY if Phase 1 had no errors
+  8. Update sweep_last_run timestamp
+  9. Build and store digest in sync_meta (sweep_last_digest)
+  10. Return SweepResult: {new_leads, duplicates, scored, high_matches, errors}
 ```
 
 **Pagination:** TheirStack returns up to 500 per page. Stop when returned count < limit or credit budget exceeded (default 200 credits per sweep = 200 jobs).
+
+**Error handling:** Cursor is only advanced on successful completion. On partial failure (e.g. page 2 of 4 returns 429), leads from pages 1-2 are kept but the cursor stays at the pre-sweep position — next sweep re-fetches from the same point, dedup via `INSERT OR IGNORE` prevents duplicates.
+
+**Auto-score latency:** For 50 leads at ~1-2s per Claude call, scoring takes ~1-2 minutes. This runs in the background scheduler goroutine — not blocking any HTTP handler. The sweep result is stored in `sync_meta` and retrieved via `GET /api/sweep/digest`.
 
 ### Digest
 
@@ -315,6 +353,12 @@ type Scheduler struct {
 ```
 
 Stored in `sync_meta` as `sweep_last_digest` (JSON blob), updated after each sweep run.
+
+**First-run behavior:** If `sweep_last_digest` key doesn't exist in `sync_meta`, `GET /api/sweep/digest` returns a zero-value response: `{"last_run": "", "next_run": "", "new_leads": 0, "duplicates": 0, "high_matches": 0, "high_match_leads": [], "score_distribution": {}}`.
+
+### `POST /api/sweep/now` semantics
+
+Synchronous — the handler calls `scheduler.RunNow()` which blocks until the sweep completes (fetch + score), then returns the `SweepResult` as the HTTP response. HTTP timeout: 5 minutes (covers worst case of 200 jobs × 2s scoring). If the scheduler is already running a sweep, returns `409 Conflict` with `{"error": "sweep already in progress"}`.
 
 ---
 
@@ -347,17 +391,31 @@ type LaunchResult struct {
 1. `ai/referral.go` or `ai/pitch.go` assembles the full prompt (lead data + profile + instructions)
 2. Calls `agent.Launch(config)` which:
    - Creates an `agent_runs` record with status `"running"`
-   - Spawns `claude` CLI subprocess: `echo "<prompt>" | claude --print --model claude-sonnet-4-6 --max-turns 5`
-   - Captures stdout
+   - Spawns Claude CLI subprocess via `exec.Command` (see safety note below)
+   - Pipes prompt to stdin, captures stdout
    - Updates `agent_runs` with status `"completed"` or `"failed"` + result
    - Returns `LaunchResult`
 3. The calling function parses the output and returns structured JSON
+
+**Subprocess invocation — SAFETY CRITICAL:**
+
+Must use `exec.Command` directly — **never** invoke via shell (`sh -c`):
+
+```go
+cmd := exec.CommandContext(ctx, "claude", "--print", "--model", "claude-sonnet-4-6", "--max-turns", "5")
+cmd.Stdin = strings.NewReader(prompt)  // prompt piped via stdin, not shell interpolation
+var stdout, stderr bytes.Buffer
+cmd.Stdout = &stdout
+cmd.Stderr = &stderr
+```
+
+This avoids command injection from lead data (company names, job titles) that may contain shell metacharacters. The prompt is written to stdin as raw bytes — never passed through shell expansion.
 
 **Subprocess details:**
 - `--print` for non-interactive mode
 - `--max-turns 5` caps tool use loops
 - Claude CLI inherits OAuth credentials from `~/.claude/.credentials.json`
-- Timeout: 120 seconds. Kill process on exceed, mark run as `"timeout"`
+- Timeout: 120 seconds via `context.WithTimeout`. Kill process on exceed, mark run as `"timeout"`
 
 **Why subprocess over stream.Client:** The subprocess gets Claude Code's built-in tools (web search, file operations) that `stream.Client` doesn't have. `referral_finder` needs web search for LinkedIn. `company_pitch` needs web search for company research.
 
@@ -414,18 +472,39 @@ Existing sweep endpoints stay at the same paths, call new TheirStack implementat
 
 ### cmd/scout/main.go changes
 
+**Initialization order** — store is opened in `main()` (not inside `Server.Start()`) so both server and scheduler receive the same store instance:
+
 ```go
+// 1. Open store first
+st, err := store.Open(filepath.Join(dataDir, "scout.db"))
+
+// 2. Connect profiledb (optional — nil if SOUL_SCOUT_PG_URL unset)
+var profileDB *profiledb.Client
+if pgURL != "" {
+    profileDB, err = profiledb.New(pgURL)
+}
+
+// 3. Create stream client for AI tools
 theirStackKey := os.Getenv("SOUL_SCOUT_THEIRSTACK_KEY")
 creds := auth.LoadCredentials()
 streamClient := stream.NewClient(creds)
+
+// 4. Create AI service (profileDB may be nil — service handles gracefully)
 aiSvc := ai.New(st, profileDB, streamClient)
 
+// 5. Load sweep config (creates default if missing)
+sweepCfg, err := sweep.LoadConfig(filepath.Join(dataDir, "scout", "sweep-config.json"))
+
+// 6. Create server with all dependencies
 srv := server.New(
+    server.WithStore(st),
+    server.WithAIService(aiSvc),
     server.WithStreamClient(streamClient),
     server.WithTheirStackKey(theirStackKey),
     // ... existing options ...
 )
 
+// 7. Start scheduler (only if TheirStack key configured)
 if theirStackKey != "" {
     scheduler := sweep.NewScheduler(sweepCfg, st, aiSvc, theirStackKey)
     scheduler.Start()
@@ -488,15 +567,16 @@ if theirStackKey != "" {
 | File | What changes |
 |---|---|
 | `internal/scout/store/store.go` | New `leads` table schema (45 columns). Lead struct rewritten. `scanLead`, `leadColumns`, `allowedLeadFields` updated. Other 6 tables unchanged. |
-| `internal/scout/store/leads.go` | Same API signatures, new columns. Add `AddLeadIfNotExists(theirstack_id)` for dedup insert. |
-| `internal/scout/store/analytics.go` | `AggregateStats` adds group-by seniority, remote, country_code. `ConversionMetrics` and `ActionableInsights` mostly unchanged. |
+| `internal/scout/store/leads.go` | `ListLeads(pipelineFilter, activeOnly)` — `type` filter renamed to `pipeline` filter. `AddLead` validates `pipeline` instead of `type`. Add `AddLeadIfNotExists(theirstack_id)` for dedup insert. All scan functions updated for new columns. |
+| `internal/scout/store/analytics.go` | All `type` column references changed to `pipeline`. `AggregateStats` groups by pipeline, seniority, remote, country_code. `ConversionMetrics` filters by pipeline. `ActionableInsights` unchanged. |
 | `internal/scout/store/store_test.go` | Tests rewritten for new Lead struct. Same coverage: CRUD, scoring, analytics, dedup. |
 | `internal/scout/sweep/sweep.go` | Complete rewrite. `Sweep()` calls TheirStack, creates leads, triggers auto-scoring. |
 | `internal/scout/agent/launcher.go` | Rewrite stub to actual subprocess launcher using `os/exec`. |
 | `internal/scout/server/server.go` | Add AI + scheduler fields, 9 new endpoints, remove CDP references. |
 | `cmd/scout/main.go` | Add stream.Client, TheirStack key, scheduler startup. Remove CDP. |
-| `internal/chat/context/scout.go` | Add 7 new tool definitions (28 total). |
-| `internal/chat/context/dispatch.go` | Add 7 new dispatch routes. |
+| `internal/chat/context/scout.go` | Add 7 new tool definitions (28 total). All 21 existing tools preserved unchanged. New AI tools use dedicated `/api/ai/*` paths (not `/api/tools/{name}/execute`). |
+| `internal/chat/context/dispatch.go` | Add 7 new dispatch routes for AI tools. Existing 21 routes unchanged. |
+| `CLAUDE.md` | Update Scout tool count from 21 to 28. Update total tools from 93 to 100. Add `SOUL_SCOUT_THEIRSTACK_KEY` to env vars table. Remove `SOUL_SCOUT_CDP_URL`. |
 
 ### New files
 
