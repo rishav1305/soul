@@ -564,6 +564,19 @@ func (s *Server) handlePutSweepConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Validate and backfill critical fields before saving
+	if cfg.IntervalHours <= 0 {
+		writeError(w, http.StatusBadRequest, "interval_hours must be > 0")
+		return
+	}
+	if cfg.Limit <= 0 {
+		writeError(w, http.StatusBadRequest, "limit must be > 0")
+		return
+	}
+	if cfg.CreditBudget <= 0 {
+		writeError(w, http.StatusBadRequest, "credit_budget must be > 0")
+		return
+	}
 	if err := sweep.SaveConfig(s.configPath, &cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

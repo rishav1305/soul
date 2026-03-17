@@ -2,10 +2,12 @@ package sweep
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // TheirStackClient is an HTTP client for the TheirStack jobs API.
@@ -161,7 +163,10 @@ func (c *TheirStackClient) Search(cfg *SweepConfig, cursor string, offset int) (
 		return nil, fmt.Errorf("theirstack: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, theirStackEndpoint, bytes.NewReader(encoded))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, theirStackEndpoint, bytes.NewReader(encoded))
 	if err != nil {
 		return nil, fmt.Errorf("theirstack: build request: %w", err)
 	}

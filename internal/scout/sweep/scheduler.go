@@ -46,9 +46,16 @@ func (s *Scheduler) Start() {
 	go s.loop()
 }
 
-// Stop signals the scheduler goroutine to exit.
+// Stop signals the scheduler goroutine to exit. Safe to call multiple times.
 func (s *Scheduler) Stop() {
-	close(s.stopCh)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-s.stopCh:
+		// already closed
+	default:
+		close(s.stopCh)
+	}
 }
 
 func (s *Scheduler) loop() {
@@ -100,18 +107,44 @@ func (s *Scheduler) runSweep() {
 
 // RunNow triggers an immediate sweep in a background goroutine.
 // Returns a run ID and false if a sweep is already in progress.
+// Sets running=true under lock before launching goroutine to prevent races.
 func (s *Scheduler) RunNow() (runID int64, started bool) {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
 		return 0, false
 	}
+	s.running = true // set under lock BEFORE goroutine starts
 	s.runCounter++
 	id := s.runCounter
 	s.mu.Unlock()
 
-	go s.runSweep()
+	go s.runSweepLocked() // caller already set running=true
 	return id, true
+}
+
+// runSweepLocked runs the sweep assuming running=true was already set by caller.
+func (s *Scheduler) runSweepLocked() {
+	defer func() {
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+	}()
+
+	log.Println("scout: starting sweep...")
+	result, err := RunSweep(s.client, s.store, s.config, s.scorer)
+	if err != nil {
+		log.Printf("scout: sweep error: %v", err)
+		return
+	}
+
+	s.mu.Lock()
+	s.lastRun = time.Now()
+	s.lastResult = result
+	s.mu.Unlock()
+
+	log.Printf("scout: sweep complete — %d new, %d dupes, %d scored, %d high matches",
+		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches)
 }
 
 // Status returns the current scheduler state.
