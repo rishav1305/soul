@@ -1076,7 +1076,7 @@ func TestHandleSessionResume_AnchorMissing_NoReplay(t *testing.T) {
 	}
 
 	// No message should arrive within a short window.
-	msgs := drainMessages(t, ctx, conn, 150*time.Millisecond)
+	msgs := drainMessages(t, conn, 150*time.Millisecond)
 	if len(msgs) > 0 {
 		t.Errorf("expected no replay messages, got %d: first type=%v", len(msgs), msgs[0]["type"])
 	}
