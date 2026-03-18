@@ -228,7 +228,11 @@ Per platform: LinkedIn (experience bullet + skills + featured), Portfolio (case 
 **Gate PR1: PROFILE UPDATE REVIEW (as triggered)**
 Scout shows: "Project X completed — 3 profile updates ready"
 Actions: `[Apply]` `[Edit & Apply]` `[Skip]` `[Defer]`
-"Apply" = you copy-paste to LinkedIn/GitHub, or update portfolio app content.
+
+**How "Apply" works per platform:**
+- **LinkedIn:** Manual copy-paste (no API integration in v1). Scout shows the exact text to paste into each LinkedIn section.
+- **GitHub:** Manual copy-paste for profile README. For repo READMEs, could push via git if repo is on GitHub (stretch goal, not v1).
+- **Portfolio:** Automated via `profiledb` (PostgreSQL already integrated in Scout). Scout updates portfolio data directly — case studies, skills, testimonials flow through `profiledb.GetFullProfile()` / push. This is the only platform that CAN be automated in v1.
 
 **Gate PR2: QUARTERLY PROFILE AUDIT (every 3 months)**
 AI audits all three platforms:
@@ -244,7 +248,7 @@ Actions per suggestion: `[Apply]` `[Edit]` `[Dismiss]`
 | `CaseStudyDraft` | Project notes + results | Full case study (exists in contracts spec) | `lead_artifacts` type=`"case_study"` |
 | `LinkedInUpdate` | Trigger event + project data | Experience bullet + skills list + featured update | `lead_artifacts` type=`"profile_update"` |
 | `GitHubREADMEGen` | Repo code + purpose | Polished README with architecture diagram placeholder | `lead_artifacts` type=`"profile_update"` |
-| `ProfileAudit` | All 3 platform states (user-provided) | Quarterly audit with per-platform recommendations | `lead_artifacts` type=`"profile_audit"` |
+| `ProfileAudit` | User provides: LinkedIn headline + skills count + recent post impressions. Portfolio: pageviews + top case study. GitHub: pinned repos list + avg commit days/week. Format: prompted text fields in Scout UI, not free-form. | Quarterly audit with per-platform recommendations | `lead_artifacts` type=`"profile_audit"` |
 | `TestimonialRequest` | Client name + project summary | Polite testimonial request message | `lead_artifacts` type=`"profile_update"` |
 | `PinRecommendation` | All public repos (user-provided list) | Which 6 repos to pin and why | `lead_artifacts` type=`"profile_audit"` |
 
@@ -258,11 +262,30 @@ Actions per suggestion: `[Apply]` `[Edit]` `[Dismiss]`
 
 ---
 
+## Profile Lifecycle (Not a Pipeline)
+
+Profile sync does NOT use `pipelines.go` stages. Like content, profiles are not leads — they are a cross-cutting concern that reacts to completion gates in other pipelines.
+
+Profile update state is tracked via `lead_artifacts` records:
+- `type="profile_update:{platform}"` — e.g., `"profile_update:linkedin"`, `"profile_update:github"`, `"profile_update:portfolio"`, `"profile_update:testimonial"`
+- `type="profile_audit"` — quarterly audit recommendations
+- Each artifact has implicit status based on whether the user actioned it at Gate PR1/PR2
+
+The sub-typed `type` field avoids collision: `WHERE type LIKE 'profile_update:%'` gets all updates, `WHERE type = 'profile_update:linkedin'` gets only LinkedIn updates.
+
+## Error Handling
+
+- AI tool generation failure → artifact not created, surfaced in Actions tab: "Profile update failed for [platform]. Retry or skip."
+- On retry failure → skip and surface at next quarterly audit
+- Quarterly audit failure → surface raw platform stats for manual review
+- Missing trigger data (e.g., no project notes for case study) → skip that platform, generate what's possible from available data
+
 ## Prerequisites
 
 **Blocking:**
 - Pipeline runner (`internal/scout/runner/`) — hooks into completion gates of other pipelines
 - `lead_artifacts` table — stores generated updates and audits
+- `ValidateTransition` enforcement in `server.go` — **CRITICAL.** Profile sync triggers fire when leads reach completion stages (F2, C3, E2). Without stage validation, bogus transitions cause false triggers.
 - `CaseStudyDraft` tool — defined in contracts spec, shared by profile spec
 
 **Non-blocking:**
