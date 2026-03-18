@@ -59,7 +59,7 @@ export function SentinelPage() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${
+            className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize whitespace-nowrap ${
               activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'
             }`}
             data-testid={`tab-${tab}`}
@@ -81,6 +81,7 @@ export function SentinelPage() {
           <ChallengeSession
             challenge={activeChallenge}
             challengeId={activeChallengeId}
+            challengeMeta={challenges.find(c => c.id === activeChallengeId) ?? null}
             attackHistory={attackHistory}
             onAttack={attack}
             onSubmitFlag={submitFlag}

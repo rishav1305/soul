@@ -4,33 +4,30 @@ import { reportError, reportUsage } from '../lib/telemetry';
 
 // --- Types ---
 
-export interface SentinelChallenge {
-  id: number;
-  title: string;
+export interface Challenge {
+  id: string;
   category: string;
-  difficulty: 'easy' | 'medium' | 'hard' | 'expert';
-  points: number;
+  difficulty: string;
+  title: string;
   description: string;
   objective: string;
-  maxTurns: number;
-  hintCount: number;
-  completed: boolean;
-  completedAt?: string;
-}
-
-export interface SentinelProgress {
-  totalPoints: number;
-  challengesCompleted: number;
-  challengesTotal: number;
-  categoryBreakdown: CategoryProgress[];
-}
-
-export interface CategoryProgress {
-  category: string;
-  completed: number;
-  total: number;
   points: number;
-  maxPoints: number;
+  max_turns: number;
+  hints: string[];
+  completed?: boolean;
+}
+
+export interface ChallengeSession {
+  challenge_id: string;
+  turn_count: number;
+  response: string;
+}
+
+export interface Progress {
+  total_points: number;
+  completed: number;
+  total_challenges: number;
+  categories: Record<string, number>;
 }
 
 export interface AttackEntry {
@@ -54,24 +51,9 @@ export interface ScanResult {
   recommendation: string;
 }
 
-export interface ChallengeStartResult {
-  sessionId: string;
-  description: string;
-  objective: string;
-  maxTurns: number;
-  hints: number;
-}
-
-export interface AttackResult {
-  response: string;
-  turnNumber: number;
-  turnsRemaining: number;
-  flagCaptured: boolean;
-}
-
 export interface FlagResult {
   correct: boolean;
-  pointsAwarded: number;
+  points_awarded: number;
   message: string;
 }
 
@@ -80,25 +62,26 @@ export interface FlagResult {
 export type SentinelTab = 'challenges' | 'sandbox' | 'progress';
 
 interface UseSentinelReturn {
-  challenges: SentinelChallenge[];
-  progress: SentinelProgress | null;
-  activeChallenge: ChallengeStartResult | null;
-  activeChallengeId: number | null;
+  challenges: Challenge[];
+  progress: Progress | null;
+  activeChallenge: ChallengeSession | null;
+  activeChallengeId: string | null;
   attackHistory: AttackEntry[];
   sandboxConfig: SandboxConfig;
   sandboxMessages: AttackEntry[];
+  sandboxResponse: string | null;
   scanResults: ScanResult[];
   loading: boolean;
   error: string | null;
   activeTab: SentinelTab;
   setActiveTab: (tab: SentinelTab) => void;
-  startChallenge: (id: number) => Promise<void>;
-  submitFlag: (id: number, flag: string) => Promise<FlagResult | null>;
-  attack: (mode: string, payload: string, challengeId?: number) => Promise<void>;
+  startChallenge: (id: string) => Promise<void>;
+  submitFlag: (id: string, flag: string) => Promise<FlagResult | null>;
+  attack: (payload: string, challengeId?: string) => Promise<void>;
   configureSandbox: (config: SandboxConfig) => Promise<void>;
   scanProduct: (product: string) => Promise<void>;
   sendSandboxMessage: (message: string) => Promise<void>;
-  requestHint: (challengeId: number) => Promise<string | null>;
+  requestHint: (challengeId: string) => Promise<string | null>;
   exitChallenge: () => void;
   refresh: () => void;
 }
@@ -110,14 +93,20 @@ const defaultSandboxConfig: SandboxConfig = {
   weaknessLevel: 'none',
 };
 
+// Helper to call Sentinel tool execution endpoints
+async function toolExec<T>(tool: string, input: Record<string, unknown>): Promise<T> {
+  return api.post<T>(`/api/sentinel/tools/${tool}/execute`, { input });
+}
+
 export function useSentinel(): UseSentinelReturn {
-  const [challenges, setChallenges] = useState<SentinelChallenge[]>([]);
-  const [progress, setProgress] = useState<SentinelProgress | null>(null);
-  const [activeChallenge, setActiveChallenge] = useState<ChallengeStartResult | null>(null);
-  const [activeChallengeId, setActiveChallengeId] = useState<number | null>(null);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [activeChallenge, setActiveChallenge] = useState<ChallengeSession | null>(null);
+  const [activeChallengeId, setActiveChallengeId] = useState<string | null>(null);
   const [attackHistory, setAttackHistory] = useState<AttackEntry[]>([]);
   const [sandboxConfig, setSandboxConfig] = useState<SandboxConfig>(defaultSandboxConfig);
   const [sandboxMessages, setSandboxMessages] = useState<AttackEntry[]>([]);
+  const [sandboxResponse, setSandboxResponse] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,12 +118,12 @@ export function useSentinel(): UseSentinelReturn {
     try {
       switch (tab) {
         case 'challenges': {
-          const data = await api.get<SentinelChallenge[]>('/api/sentinel/challenges');
-          setChallenges(data ?? []);
+          const data = await toolExec<{ challenges: Challenge[] }>('challenge_list', {});
+          setChallenges(data?.challenges ?? []);
           break;
         }
         case 'progress': {
-          const data = await api.get<SentinelProgress>('/api/sentinel/progress');
+          const data = await toolExec<Progress>('progress', {});
           setProgress(data);
           break;
         }
@@ -160,11 +149,11 @@ export function useSentinel(): UseSentinelReturn {
     reportUsage('sentinel.tab', { tab });
   }, []);
 
-  const startChallenge = useCallback(async (id: number) => {
+  const startChallenge = useCallback(async (id: string) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.post<ChallengeStartResult>('/api/sentinel/challenges/start', { challengeId: id });
+      const result = await toolExec<ChallengeSession>('challenge_start', { challenge_id: id });
       setActiveChallenge(result);
       setActiveChallengeId(id);
       setAttackHistory([]);
@@ -178,18 +167,18 @@ export function useSentinel(): UseSentinelReturn {
     }
   }, []);
 
-  const submitFlag = useCallback(async (id: number, flag: string): Promise<FlagResult | null> => {
+  const submitFlag = useCallback(async (id: string, flag: string): Promise<FlagResult | null> => {
     setError(null);
     try {
-      const result = await api.post<FlagResult>('/api/sentinel/challenges/submit', { challengeId: id, flag });
+      const result = await toolExec<FlagResult>('challenge_submit', { challenge_id: id, flag });
       reportUsage('sentinel.challenge.submit', { challengeId: id, correct: result.correct });
       if (result.correct) {
         setActiveChallenge(null);
         setActiveChallengeId(null);
         setAttackHistory([]);
         // Refresh challenges list to update completion status
-        const data = await api.get<SentinelChallenge[]>('/api/sentinel/challenges');
-        setChallenges(data ?? []);
+        const data = await toolExec<{ challenges: Challenge[] }>('challenge_list', {});
+        setChallenges(data?.challenges ?? []);
       }
       return result;
     } catch (err: unknown) {
@@ -200,7 +189,7 @@ export function useSentinel(): UseSentinelReturn {
     }
   }, []);
 
-  const attack = useCallback(async (mode: string, payload: string, challengeId?: number) => {
+  const attack = useCallback(async (payload: string, challengeId?: string) => {
     setError(null);
     const userEntry: AttackEntry = {
       id: `atk-${Date.now()}`,
@@ -210,7 +199,10 @@ export function useSentinel(): UseSentinelReturn {
     };
     setAttackHistory(prev => [...prev, userEntry]);
     try {
-      const result = await api.post<AttackResult>('/api/sentinel/attack', { mode, payload, challengeId });
+      const result = await toolExec<ChallengeSession>('attack', {
+        payload,
+        ...(challengeId ? { challenge_id: challengeId } : {}),
+      });
       const defenderEntry: AttackEntry = {
         id: `def-${Date.now()}`,
         role: 'defender',
@@ -218,19 +210,29 @@ export function useSentinel(): UseSentinelReturn {
         timestamp: new Date().toISOString(),
       };
       setAttackHistory(prev => [...prev, defenderEntry]);
+      // Update turn count on active challenge
+      if (activeChallenge) {
+        setActiveChallenge({ ...activeChallenge, turn_count: result.turn_count });
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       reportError('useSentinel.attack', err);
       setError(message);
     }
-  }, []);
+  }, [activeChallenge]);
 
   const configureSandbox = useCallback(async (config: SandboxConfig) => {
     setError(null);
     try {
-      await api.post('/api/sentinel/sandbox/config', config);
+      await toolExec('sandbox_config', {
+        name: config.name,
+        system_prompt: config.systemPrompt,
+        guardrails: config.guardrails,
+        weakness_level: config.weaknessLevel,
+      });
       setSandboxConfig(config);
       setSandboxMessages([]);
+      setSandboxResponse(null);
       reportUsage('sentinel.sandbox.config', { name: config.name });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -249,7 +251,8 @@ export function useSentinel(): UseSentinelReturn {
     };
     setSandboxMessages(prev => [...prev, userEntry]);
     try {
-      const result = await api.post<{ response: string }>('/api/sentinel/attack', { mode: 'sandbox', payload: message });
+      const result = await toolExec<{ response: string }>('defend', { prompt: message });
+      setSandboxResponse(result.response);
       const defenderEntry: AttackEntry = {
         id: `sbx-def-${Date.now()}`,
         role: 'defender',
@@ -258,9 +261,9 @@ export function useSentinel(): UseSentinelReturn {
       };
       setSandboxMessages(prev => [...prev, defenderEntry]);
     } catch (err: unknown) {
-      const message_str = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : String(err);
       reportError('useSentinel.sandboxMessage', err);
-      setError(message_str);
+      setError(msg);
     }
   }, []);
 
@@ -268,8 +271,8 @@ export function useSentinel(): UseSentinelReturn {
     setLoading(true);
     setError(null);
     try {
-      const results = await api.post<ScanResult[]>('/api/sentinel/scan', { product });
-      setScanResults(results ?? []);
+      const results = await toolExec<{ findings: ScanResult[] }>('scan', { product });
+      setScanResults(results?.findings ?? []);
       reportUsage('sentinel.scan', { product });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -280,9 +283,9 @@ export function useSentinel(): UseSentinelReturn {
     }
   }, []);
 
-  const requestHint = useCallback(async (challengeId: number): Promise<string | null> => {
+  const requestHint = useCallback(async (challengeId: string): Promise<string | null> => {
     try {
-      const result = await api.post<{ hint: string }>('/api/sentinel/challenges/hint', { challengeId });
+      const result = await toolExec<{ hint: string }>('challenge_submit', { challenge_id: challengeId, request_hint: true });
       return result.hint;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -310,6 +313,7 @@ export function useSentinel(): UseSentinelReturn {
     attackHistory,
     sandboxConfig,
     sandboxMessages,
+    sandboxResponse,
     scanResults,
     loading,
     error,

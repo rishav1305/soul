@@ -1,25 +1,26 @@
 import { useState } from 'react';
-import type { SentinelChallenge } from '../../hooks/useSentinel';
+import type { Challenge } from '../../hooks/useSentinel';
 
 const difficultyColor: Record<string, string> = {
-  easy: 'bg-emerald-500/20 text-emerald-400',
-  medium: 'bg-amber-500/20 text-amber-400',
-  hard: 'bg-red-500/20 text-red-400',
-  expert: 'bg-purple-500/20 text-purple-400',
+  beginner: 'bg-emerald-500/20 text-emerald-400',
+  mid: 'bg-amber-500/20 text-amber-400',
+  advanced: 'bg-red-500/20 text-red-400',
 };
 
 const categoryColor: Record<string, string> = {
-  injection: 'bg-blue-500/20 text-blue-400',
-  jailbreak: 'bg-orange-500/20 text-orange-400',
-  exfiltration: 'bg-red-500/20 text-red-400',
-  social: 'bg-pink-500/20 text-pink-400',
+  prompt_injection: 'bg-blue-500/20 text-blue-400',
+  jailbreaking: 'bg-orange-500/20 text-orange-400',
+  data_exfiltration: 'bg-red-500/20 text-red-400',
+  social_engineering: 'bg-pink-500/20 text-pink-400',
   evasion: 'bg-cyan-500/20 text-cyan-400',
+  privilege_escalation: 'bg-purple-500/20 text-purple-400',
+  model_manipulation: 'bg-amber-500/20 text-amber-400',
   default: 'bg-overlay text-fg-secondary',
 };
 
 interface ChallengeListProps {
-  challenges: SentinelChallenge[];
-  onStart: (id: number) => void;
+  challenges: Challenge[];
+  onStart: (id: string) => void;
 }
 
 export function ChallengeList({ challenges, onStart }: ChallengeListProps) {
@@ -88,7 +89,7 @@ export function ChallengeList({ challenges, onStart }: ChallengeListProps) {
                 <span className={`px-2 py-0.5 text-[10px] rounded-full ${categoryColor[challenge.category] ?? categoryColor.default}`}>
                   {challenge.category}
                 </span>
-                <span className={`px-2 py-0.5 text-[10px] rounded-full ${difficultyColor[challenge.difficulty] ?? difficultyColor.easy}`}>
+                <span className={`px-2 py-0.5 text-[10px] rounded-full ${difficultyColor[challenge.difficulty] ?? difficultyColor.beginner}`}>
                   {challenge.difficulty}
                 </span>
               </div>

@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import type { AttackEntry, ChallengeStartResult } from '../../hooks/useSentinel';
+import type { AttackEntry, ChallengeSession as ChallengeSessionType, Challenge, FlagResult } from '../../hooks/useSentinel';
 
 interface ChallengeSessionProps {
-  challenge: ChallengeStartResult;
-  challengeId: number;
+  challenge: ChallengeSessionType;
+  challengeId: string;
+  challengeMeta: Challenge | null;
   attackHistory: AttackEntry[];
-  onAttack: (mode: string, payload: string, challengeId?: number) => Promise<void>;
-  onSubmitFlag: (id: number, flag: string) => Promise<{ correct: boolean; message: string } | null>;
-  onRequestHint: (challengeId: number) => Promise<string | null>;
+  onAttack: (payload: string, challengeId?: string) => Promise<void>;
+  onSubmitFlag: (id: string, flag: string) => Promise<FlagResult | null>;
+  onRequestHint: (challengeId: string) => Promise<string | null>;
   onExit: () => void;
 }
 
 export function ChallengeSession({
   challenge,
   challengeId,
+  challengeMeta,
   attackHistory,
   onAttack,
   onSubmitFlag,
@@ -29,8 +31,11 @@ export function ChallengeSession({
   const [hintLoading, setHintLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const turnCount = attackHistory.filter(e => e.role === 'attacker').length;
-  const maxTurns = challenge.maxTurns;
+  const turnCount = challenge.turn_count;
+  const maxTurns = challengeMeta?.max_turns ?? 10;
+  const totalHints = challengeMeta?.hints?.length ?? 0;
+  const objective = challengeMeta?.objective ?? '';
+  const description = challengeMeta?.description ?? '';
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,7 +47,7 @@ export function ChallengeSession({
     setAttackInput('');
     setSending(true);
     try {
-      await onAttack('challenge', payload, challengeId);
+      await onAttack(payload, challengeId);
     } finally {
       setSending(false);
     }
@@ -105,11 +110,13 @@ export function ChallengeSession({
             </button>
           </div>
         </div>
-        <p className="text-xs text-fg-muted">{challenge.description}</p>
-        <div className="bg-elevated rounded px-3 py-2">
-          <span className="text-xs text-soul font-medium">Objective: </span>
-          <span className="text-xs text-fg">{challenge.objective}</span>
-        </div>
+        <p className="text-xs text-fg-muted">{description}</p>
+        {objective && (
+          <div className="bg-elevated rounded px-3 py-2">
+            <span className="text-xs text-soul font-medium">Objective: </span>
+            <span className="text-xs text-fg">{objective}</span>
+          </div>
+        )}
       </div>
 
       {/* Hints */}
@@ -170,12 +177,12 @@ export function ChallengeSession({
         </div>
         <button
           onClick={handleRequestHint}
-          disabled={hintLoading || hints.length >= challenge.hints}
+          disabled={hintLoading || hints.length >= totalHints}
           className="px-3 py-2 text-xs rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           data-testid="hint-button"
-          title={`${hints.length}/${challenge.hints} hints used`}
+          title={`${hints.length}/${totalHints} hints used`}
         >
-          {hintLoading ? '...' : `Hint (${hints.length}/${challenge.hints})`}
+          {hintLoading ? '...' : `Hint (${hints.length}/${totalHints})`}
         </button>
       </div>
 
