@@ -455,7 +455,11 @@ func (s *Server) handleRecordAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, _ := s.store.GetLead(id)
+	updated, err := s.store.GetLead(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -873,17 +877,12 @@ func (s *Server) handleApplyOptimization(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAgentStatus(w http.ResponseWriter, r *http.Request) {
 	runIDStr := r.URL.Query().Get("run_id")
 	if runIDStr == "" {
-		// No run_id — return latest run
-		runs, err := s.store.ListAgentRuns("")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+		latest, _ := s.store.LatestAgentRun()
+		if latest == nil {
+			writeJSON(w, http.StatusOK, &store.AgentRun{Status: "no_runs"})
 			return
 		}
-		if len(runs) == 0 {
-			writeJSON(w, http.StatusOK, map[string]string{"status": "no runs"})
-			return
-		}
-		writeJSON(w, http.StatusOK, runs[0])
+		writeJSON(w, http.StatusOK, latest)
 		return
 	}
 	runID, err := strconv.ParseInt(runIDStr, 10, 64)
@@ -1316,17 +1315,12 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	case "agent_status":
 		runID := parseID(input, "run_id")
 		if runID == 0 {
-			// No run_id — return latest run
-			runs, err := s.store.ListAgentRuns("")
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+			latest, _ := s.store.LatestAgentRun()
+			if latest == nil {
+				writeJSON(w, http.StatusOK, &store.AgentRun{Status: "no_runs"})
 				return
 			}
-			if len(runs) == 0 {
-				writeJSON(w, http.StatusOK, map[string]string{"status": "no runs"})
-				return
-			}
-			writeJSON(w, http.StatusOK, runs[0])
+			writeJSON(w, http.StatusOK, latest)
 			return
 		}
 		run, err := s.store.GetAgentRun(runID)

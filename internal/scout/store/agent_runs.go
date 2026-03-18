@@ -49,6 +49,18 @@ func (s *Store) UpdateAgentRun(id int64, status, result string) error {
 	return err
 }
 
+// LatestAgentRun returns the most recent agent run, or nil if none exist.
+func (s *Store) LatestAgentRun() (*AgentRun, error) {
+	var r AgentRun
+	err := s.db.QueryRow(
+		"SELECT id, platform, mode, lead_id, status, recommendations, approved_changes, result, created_at, completed_at FROM agent_runs ORDER BY id DESC LIMIT 1",
+	).Scan(&r.ID, &r.Platform, &r.Mode, &r.LeadID, &r.Status, &r.Recommendations, &r.ApprovedChanges, &r.Result, &r.CreatedAt, &r.CompletedAt)
+	if err != nil {
+		return nil, nil // no rows or error — both mean "no latest"
+	}
+	return &r, nil
+}
+
 // ListAgentRuns returns agent runs, optionally filtered by platform.
 func (s *Store) ListAgentRuns(platform string) ([]AgentRun, error) {
 	query := "SELECT id, platform, mode, lead_id, status, recommendations, approved_changes, result, created_at, completed_at FROM agent_runs"
