@@ -57,7 +57,7 @@ func (s *Store) ListAgentRuns(platform string) ([]AgentRun, error) {
 		query += " WHERE platform = ?"
 		args = append(args, platform)
 	}
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY id DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
