@@ -222,11 +222,15 @@ func corsMiddleware(next http.Handler) http.Handler {
 			"http://127.0.0.1:5173": true, // vite dev
 			"http://localhost:5173": true,
 		}
-		if !allowed[origin] {
-			origin = "http://127.0.0.1:3002"
+		w.Header().Set("Vary", "Origin")
+		if origin == "" || !allowed[origin] {
+			// No CORS headers for disallowed/missing origins.
+			// Non-browser clients (curl, server-to-server) are unaffected.
+			// Browsers will block the response due to missing ACAO header.
+			next.ServeHTTP(w, r)
+			return
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -264,6 +268,19 @@ func asyncErrorStatus(err error) int {
 		return http.StatusNotFound // 404 — bad lead_id
 	}
 	return http.StatusInternalServerError
+}
+
+// emptyDigest returns the zero-value digest response shape.
+func emptyDigest() map[string]interface{} {
+	return map[string]interface{}{
+		"last_run":           "",
+		"next_run":           "",
+		"new_leads":          0,
+		"duplicates":         0,
+		"high_matches":       0,
+		"high_match_leads":   []interface{}{},
+		"score_distribution": map[string]int{},
+	}
 }
 
 // aiErrorStatus maps AI service errors to appropriate HTTP status codes.
@@ -589,15 +606,7 @@ func (s *Server) handleSweepDigest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if val == "" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"last_run":           "",
-			"next_run":           "",
-			"new_leads":          0,
-			"duplicates":         0,
-			"high_matches":       0,
-			"high_match_leads":   []interface{}{},
-			"score_distribution": map[string]int{},
-		})
+		writeJSON(w, http.StatusOK, emptyDigest())
 		return
 	}
 	var digest map[string]interface{}
@@ -1233,7 +1242,7 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, http.StatusOK, digest)
 		} else {
-			writeJSON(w, http.StatusOK, map[string]interface{}{"last_run": "", "new_leads": 0, "high_matches": 0, "high_match_leads": []interface{}{}})
+			writeJSON(w, http.StatusOK, emptyDigest())
 		}
 
 	case "profile":

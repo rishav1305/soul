@@ -1,6 +1,10 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
 
 // AddSyncResult inserts a sync result and returns its ID.
 func (s *Store) AddSyncResult(sr SyncResult) (int64, error) {
@@ -19,9 +23,13 @@ func (s *Store) AddSyncResult(sr SyncResult) (int64, error) {
 }
 
 // GetSyncMeta retrieves a sync metadata value by key.
+// Returns ("", nil) if the key does not exist.
 func (s *Store) GetSyncMeta(key string) (string, error) {
 	var val string
 	err := s.db.QueryRow("SELECT value FROM sync_meta WHERE key = ?", key).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("scout: get sync meta %q: %w", key, err)
 	}
