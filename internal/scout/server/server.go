@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rishav1305/soul-v2/internal/scout/ai"
@@ -237,6 +238,35 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func decodeBody(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// asyncErrorStatus returns 503 for capacity errors (retryable), 500 otherwise.
+func asyncErrorStatus(err error) int {
+	if strings.Contains(err.Error(), "queue full") || strings.Contains(err.Error(), "max") {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusInternalServerError
+}
+
+// parseID extracts an integer ID from tool input, handling both float64 (JSON number)
+// and string representations. Returns 0 if key is missing or unparseable.
+func parseID(input map[string]interface{}, key string) int64 {
+	v, ok := input[key]
+	if !ok {
+		return 0
+	}
+	switch val := v.(type) {
+	case float64:
+		return int64(val)
+	case string:
+		id, _ := strconv.ParseInt(val, 10, 64)
+		return id
+	case json.Number:
+		id, _ := val.Int64()
+		return id
+	default:
+		return 0
+	}
 }
 
 // --- Handlers ---
@@ -934,7 +964,7 @@ func (s *Server) handleAIReferral(w http.ResponseWriter, r *http.Request) {
 	}
 	runID, err := s.aiService.ReferralFinder(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, asyncErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
@@ -954,7 +984,7 @@ func (s *Server) handleAIPitch(w http.ResponseWriter, r *http.Request) {
 	}
 	runID, err := s.aiService.CompanyPitch(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, asyncErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
@@ -990,8 +1020,7 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"leads": leads})
 
 	case "lead_get":
-		idFloat, _ := input["lead_id"].(float64)
-		lead, err := s.store.GetLead(int64(idFloat))
+		lead, err := s.store.GetLead(parseID(input, "lead_id"))
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -1010,20 +1039,19 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 
 	case "lead_update":
-		idFloat, _ := input["lead_id"].(float64)
+		leadID := parseID(input, "lead_id")
 		delete(input, "lead_id")
-		if err := s.store.UpdateLead(int64(idFloat), input); err != nil {
+		if err := s.store.UpdateLead(leadID, input); err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		lead, _ := s.store.GetLead(int64(idFloat))
-		writeJSON(w, http.StatusOK, lead)
+		updated, _ := s.store.GetLead(leadID)
+		writeJSON(w, http.StatusOK, updated)
 
 	case "lead_action":
-		idFloat, _ := input["lead_id"].(float64)
+		leadID := parseID(input, "lead_id")
 		action, _ := input["action"].(string)
 		notes, _ := input["notes"].(string)
-		leadID := int64(idFloat)
 		lead, err := s.store.GetLead(leadID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
@@ -1057,7 +1085,11 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 
 	case "sync":
 		platform, _ := input["platform"].(string)
-		id, _ := s.store.AddSyncResult(store.SyncResult{Platform: platform, Status: "checked"})
+		id, err := s.store.AddSyncResult(store.SyncResult{Platform: platform, Status: "checked"})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"id": id, "status": "checked"})
 
 	case "sweep", "sweep_now":
@@ -1155,8 +1187,8 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "apply deferred"})
 
 	case "agent_status":
-		idFloat, _ := input["run_id"].(float64)
-		run, err := s.store.GetAgentRun(int64(idFloat))
+		runID := parseID(input, "run_id")
+		run, err := s.store.GetAgentRun(runID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return

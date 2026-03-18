@@ -101,7 +101,11 @@ func RunSweep(client *TheirStackClient, st *store.Store, cfg *SweepConfig, score
 
 	// Phase 3: Finalize — log errors but don't fail the sweep result
 	if !hadError && maxDiscoveredAt != "" {
-		t, err := time.Parse(time.RFC3339, maxDiscoveredAt)
+		t, err := time.Parse(time.RFC3339Nano, maxDiscoveredAt)
+		if err != nil {
+			// Fallback to RFC3339 without fractional seconds
+			t, err = time.Parse(time.RFC3339, maxDiscoveredAt)
+		}
 		if err != nil {
 			log.Printf("scout: parse discovered_at %q: %v", maxDiscoveredAt, err)
 		} else {
