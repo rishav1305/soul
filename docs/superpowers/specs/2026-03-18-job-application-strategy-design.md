@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-18
 **Status:** Approved
-**Scope:** Section 3 of `docs/scout-strategy.md` — jobs only (freelance/contract/consulting covered separately in Section 6)
+**Scope:** Section 3 of `docs/scout/README.md` — jobs only (freelance/contract/consulting covered separately in Section 5, see `docs/scout/freelance.md`, `docs/scout/contracts.md`, `docs/scout/consulting.md`)
 
 ---
 
