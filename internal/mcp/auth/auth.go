@@ -492,9 +492,10 @@ func (h *OAuthHandler) issueTokens(w http.ResponseWriter, sub string) {
 
 	resp := map[string]interface{}{
 		"access_token":  accessToken,
-		"token_type":    "bearer",
+		"token_type":    "Bearer",
 		"expires_in":    int(accessTokenTTL.Seconds()),
 		"refresh_token": refreshToken,
+		"scope":         "claudeai",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
