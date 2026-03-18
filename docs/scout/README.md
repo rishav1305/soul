@@ -11,6 +11,7 @@
 | [`contracts.md`](contracts.md) | Team/company contract strategy (Clutch, staff aug, direct outreach) | Draft |
 | [`consulting.md`](consulting.md) | Expert consulting strategy (GLG, Guidepoint, AlphaSights, etc.) | Spec'd |
 | [`content.md`](content.md) | Social media & content strategy (LinkedIn, X, Substack, vertical deep-dives) | Detailed |
+| [`profile.md`](profile.md) | Profile & online presence (LinkedIn SEO, portfolio app, GitHub curation, AI sync) | Spec'd |
 
 **Specs:**
 - `docs/superpowers/specs/2026-03-18-job-application-strategy-design.md`
@@ -24,7 +25,7 @@
 4. [Networking & Referral Strategy](#4-networking--referral-strategy-multi-intent-ai-driven) → [`networking.md`](networking.md)
 5. [Freelance, Contract & Consulting Strategy](#5-freelance-contract--consulting-strategy) → [`freelance.md`](freelance.md) [`contracts.md`](contracts.md) [`consulting.md`](consulting.md)
 6. [Social Media & Content Strategy](#6-social-media--content-strategy) → [`content.md`](content.md)
-7. [LinkedIn Profile Optimization](#7-linkedin-profile-optimization)
+7. [Profile & Online Presence](#7-profile--online-presence) → [`profile.md`](profile.md)
 8. [Weekly Schedule](#8-weekly-schedule)
 9. [Task Distribution (30-Day Launch Plan)](#9-task-distribution-30-day-launch-plan)
 10. [Scout AI Tools](#10-scout-ai-tools)
