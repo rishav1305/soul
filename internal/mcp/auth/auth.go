@@ -256,8 +256,17 @@ func (h *OAuthHandler) HandleProtectedResource(w http.ResponseWriter, r *http.Re
 		return
 	}
 	base := h.getBaseURL()
+	// Resource URL must point to the MCP endpoint (where Claude.ai sends tool calls)
+	// Auth server URL points to the base domain (where OAuth endpoints live)
+	resource := base + "/mcp/"
+	if strings.HasSuffix(base, "/mcp") || strings.HasSuffix(base, "/mcp/") {
+		resource = base
+		if !strings.HasSuffix(resource, "/") {
+			resource += "/"
+		}
+	}
 	resp := map[string]interface{}{
-		"resource":              base,
+		"resource":              resource,
 		"authorization_servers": []string{base},
 	}
 	w.Header().Set("Content-Type", "application/json")
