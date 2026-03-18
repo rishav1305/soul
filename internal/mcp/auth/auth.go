@@ -167,14 +167,25 @@ func AuthMiddleware(secret string, skipPaths []string) func(http.Handler) http.H
 
 // OriginMiddleware returns HTTP middleware that validates the Origin header
 // against an allowlist. Requests with no Origin header are allowed (server-to-server).
+// OAuth endpoints (/authorize, /token, /register, /.well-known/) skip validation
+// since they handle their own authentication.
 func OriginMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	allowed := make(map[string]bool, len(allowedOrigins))
 	for _, o := range allowedOrigins {
 		allowed[o] = true
 	}
 
+	oauthPaths := []string{"/authorize", "/token", "/register", "/.well-known/", "/health"}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip origin check for OAuth and discovery endpoints
+			for _, p := range oauthPaths {
+				if strings.HasPrefix(r.URL.Path, p) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
 			origin := r.Header.Get("Origin")
 			if origin == "" {
 				next.ServeHTTP(w, r)
@@ -303,7 +314,7 @@ func (h *OAuthHandler) serveAuthForm(w http.ResponseWriter, r *http.Request) {
 <html><head><title>Soul MCP — Authorize</title></head>
 <body style="font-family:sans-serif;max-width:400px;margin:60px auto">
 <h2>Authorize MCP Client</h2>
-<form method="POST" action="/authorize">
+<form method="POST" action="">
 <input type="hidden" name="client_id" value="%s">
 <input type="hidden" name="redirect_uri" value="%s">
 <input type="hidden" name="state" value="%s">
