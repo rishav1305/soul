@@ -1,12 +1,27 @@
 # Scout: Complete Job Search & Career Strategy
 
-## Table of Contents
+## Detailed Strategy Docs
 
-1. [Subscriptions & Platform Setup](#1-subscriptions--platform-setup)
-2. [Job Discovery Strategy](#2-job-discovery-strategy)
-3. [Job Application Strategy](#3-job-application-strategy-ai-driven-pipeline-with-human-gates)
-4. [Networking & Referral Strategy](#4-networking--referral-strategy-multi-intent-ai-driven)
-5. [Freelance, Contract & Consulting Strategy](#5-freelance-contract--consulting-strategy)
+| Doc | Covers | Status |
+|---|---|---|
+| [`platforms.md`](platforms.md) | All platforms, subscriptions, communities, API services | Active |
+| [`jobs.md`](jobs.md) | Job discovery (TheirStack) + application strategy (3-tier, AI pipeline) | Spec'd |
+| [`networking.md`](networking.md) | Multi-intent networking, warmth scoring, 4-channel playbook | Spec'd |
+| [`freelance.md`](freelance.md) | Individual freelance strategy (Upwork, Contra, Toptal, etc.) | Draft |
+| [`contracts.md`](contracts.md) | Team/company contract strategy (Clutch, staff aug, direct outreach) | Draft |
+| [`consulting.md`](consulting.md) | Expert consulting strategy (GLG, Guidepoint, AlphaSights, etc.) | Draft |
+
+**Specs:**
+- `docs/superpowers/specs/2026-03-18-job-application-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-networking-strategy-design.md`
+
+## Table of Contents (this doc = overview)
+
+1. [Subscriptions & Platform Setup](#1-subscriptions--platform-setup) → [`platforms.md`](platforms.md)
+2. [Job Discovery Strategy](#2-job-discovery-strategy) → [`jobs.md`](jobs.md)
+3. [Job Application Strategy](#3-job-application-strategy-ai-driven-pipeline-with-human-gates) → [`jobs.md`](jobs.md)
+4. [Networking & Referral Strategy](#4-networking--referral-strategy-multi-intent-ai-driven) → [`networking.md`](networking.md)
+5. [Freelance, Contract & Consulting Strategy](#5-freelance-contract--consulting-strategy) → [`freelance.md`](freelance.md) [`contracts.md`](contracts.md) [`consulting.md`](consulting.md)
 6. [Social Media & Content Strategy](#6-social-media--content-strategy)
 7. [LinkedIn Profile Optimization](#7-linkedin-profile-optimization)
 8. [Weekly Schedule](#8-weekly-schedule)
