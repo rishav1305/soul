@@ -142,14 +142,21 @@ func AuthMiddleware(secret string, skipPaths []string) func(http.Handler) http.H
 
 			auth := r.Header.Get("Authorization")
 			if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
-				http.Error(w, `{"error":"missing or invalid authorization header"}`, http.StatusUnauthorized)
+				// Return WWW-Authenticate header per RFC 6750 so clients can discover the OAuth server
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="/.well-known/oauth-protected-resource"`)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"missing or invalid authorization header"}`))
 				return
 			}
 
 			token := strings.TrimPrefix(auth, "Bearer ")
 			_, err := VerifyToken(token, secret)
 			if err != nil {
-				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"invalid token"}`))
 				return
 			}
 
