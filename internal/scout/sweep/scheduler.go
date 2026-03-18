@@ -167,6 +167,17 @@ func (s *Scheduler) runSweepLocked() {
 		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches)
 }
 
+// UpdateConfig replaces the live sweep config. Takes effect on next sweep run.
+func (s *Scheduler) UpdateConfig(cfg *SweepConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config = cfg
+	newInterval := time.Duration(cfg.IntervalHours) * time.Hour
+	if newInterval > 0 {
+		s.interval = newInterval
+	}
+}
+
 // Status returns the current scheduler state.
 func (s *Scheduler) Status() map[string]interface{} {
 	s.mu.Lock()

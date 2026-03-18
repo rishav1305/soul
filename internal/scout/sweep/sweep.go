@@ -67,6 +67,7 @@ func RunSweep(client *TheirStackClient, st *store.Store, cfg *SweepConfig, score
 			id, created, err := st.AddLeadIfNotExists(lead)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("insert job %d: %v", job.ID, err))
+				hadError = true // DB insert failure prevents cursor advancement
 				continue
 			}
 			if created {
@@ -224,12 +225,37 @@ func BuildDigest(result *SweepResult, st *store.Store, cfg *SweepConfig) map[str
 	if highMatchLeads == nil {
 		highMatchLeads = []map[string]interface{}{}
 	}
+	// Compute score distribution from all leads
+	scoreDist := map[string]int{"90+": 0, "80-89": 0, "70-79": 0, "below_70": 0}
+	allLeads, _ := st.ScoredLeads(500)
+	for _, l := range allLeads {
+		switch {
+		case l.MatchScore >= 90:
+			scoreDist["90+"]++
+		case l.MatchScore >= 80:
+			scoreDist["80-89"]++
+		case l.MatchScore >= 70:
+			scoreDist["70-79"]++
+		default:
+			scoreDist["below_70"]++
+		}
+	}
+
+	nextRun := ""
+	if lastRun != "" {
+		if t, err := time.Parse(time.RFC3339, lastRun); err == nil {
+			nextRun = t.Add(time.Duration(cfg.IntervalHours) * time.Hour).Format(time.RFC3339)
+		}
+	}
+
 	return map[string]interface{}{
-		"last_run":         lastRun,
-		"new_leads":        result.NewLeads,
-		"duplicates":       result.Duplicates,
-		"high_matches":     result.HighMatches,
-		"high_match_leads": highMatchLeads,
+		"last_run":           lastRun,
+		"next_run":           nextRun,
+		"new_leads":          result.NewLeads,
+		"duplicates":         result.Duplicates,
+		"high_matches":       result.HighMatches,
+		"high_match_leads":   highMatchLeads,
+		"score_distribution": scoreDist,
 	}
 }
 

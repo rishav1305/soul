@@ -255,6 +255,18 @@ func asyncErrorStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
+// aiErrorStatus maps AI service errors to appropriate HTTP status codes.
+func aiErrorStatus(err error) int {
+	msg := err.Error()
+	if strings.Contains(msg, "not found") || strings.Contains(msg, "no rows") {
+		return http.StatusNotFound
+	}
+	if strings.Contains(msg, "invalid platform") || strings.Contains(msg, "profiledb not configured") {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
 // parseID extracts an integer ID from tool input, handling both float64 (JSON number)
 // and string representations. Returns 0 if key is missing or unparseable.
 func parseID(input map[string]interface{}, key string) int64 {
@@ -563,11 +575,13 @@ func (s *Server) handleSweepDigest(w http.ResponseWriter, r *http.Request) {
 	val, err := s.store.GetSyncMeta("sweep_last_digest")
 	if err != nil || val == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"last_run":         "",
-			"new_leads":        0,
-			"duplicates":       0,
-			"high_matches":     0,
-			"high_match_leads": []interface{}{},
+			"last_run":           "",
+			"next_run":           "",
+			"new_leads":          0,
+			"duplicates":         0,
+			"high_matches":       0,
+			"high_match_leads":   []interface{}{},
+			"score_distribution": map[string]int{},
 		})
 		return
 	}
@@ -617,9 +631,18 @@ func (s *Server) handlePutSweepConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "credit_budget must be > 0")
 		return
 	}
+	// TheirStack requires at least one filter — validate presence
+	if cfg.PostedAtMaxAgeDays <= 0 && len(cfg.JobTitleOr) == 0 {
+		writeError(w, http.StatusBadRequest, "posted_at_max_age_days or job_title_or is required (TheirStack API constraint)")
+		return
+	}
 	if err := sweep.SaveConfig(s.configPath, &cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// Update live scheduler config if running
+	if s.scheduler != nil {
+		s.scheduler.UpdateConfig(&cfg)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
@@ -864,13 +887,17 @@ func (s *Server) handleAIMatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
 	}
 	result, err := s.aiService.ResumeMatch(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, aiErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -885,13 +912,17 @@ func (s *Server) handleAIProposal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
 	}
 	result, err := s.aiService.ProposalGen(r.Context(), body.LeadID, body.Platform)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, aiErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -905,13 +936,17 @@ func (s *Server) handleAICoverLetter(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
 	}
 	result, err := s.aiService.CoverLetter(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, aiErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -925,13 +960,17 @@ func (s *Server) handleAIOutreach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
 	}
 	result, err := s.aiService.ColdOutreach(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, aiErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -945,13 +984,17 @@ func (s *Server) handleAISalary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
 	}
 	result, err := s.aiService.SalaryLookup(r.Context(), body.LeadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, aiErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
