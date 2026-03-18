@@ -110,6 +110,7 @@ func (s *Scheduler) runSweep() {
 		return
 	}
 	s.running = true
+	cfg := s.config // snapshot under lock
 	s.mu.Unlock()
 
 	defer func() {
@@ -119,7 +120,7 @@ func (s *Scheduler) runSweep() {
 	}()
 
 	log.Println("scout: starting sweep...")
-	result, err := RunSweep(s.client, s.store, s.config, s.scorer)
+	result, err := RunSweep(s.client, s.store, cfg, s.scorer)
 	if err != nil {
 		log.Printf("scout: sweep error: %v", err)
 		return
@@ -154,6 +155,10 @@ func (s *Scheduler) RunNow() (runID int64, started bool) {
 
 // runSweepLocked runs the sweep assuming running=true was already set by caller.
 func (s *Scheduler) runSweepLocked() {
+	s.mu.Lock()
+	cfg := s.config // snapshot under lock
+	s.mu.Unlock()
+
 	defer func() {
 		s.mu.Lock()
 		s.running = false
@@ -161,7 +166,7 @@ func (s *Scheduler) runSweepLocked() {
 	}()
 
 	log.Println("scout: starting sweep...")
-	result, err := RunSweep(s.client, s.store, s.config, s.scorer)
+	result, err := RunSweep(s.client, s.store, cfg, s.scorer)
 	if err != nil {
 		log.Printf("scout: sweep error: %v", err)
 		return
