@@ -120,11 +120,14 @@ func (s *Server) Start() error {
 }
 
 // Shutdown gracefully stops the server and closes resources.
-// Stops HTTP server first (drains in-flight requests), then closes DB/profiledb.
+// Stops scheduler, drains HTTP, then closes DB/profiledb.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
 	var err error
 	if s.httpServer != nil {
-		err = s.httpServer.Shutdown(ctx) // drains in-flight requests
+		err = s.httpServer.Shutdown(ctx)
 	}
 	if s.profileDB != nil {
 		s.profileDB.Close()
@@ -240,10 +243,14 @@ func decodeBody(r *http.Request, v interface{}) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
-// asyncErrorStatus returns 503 for capacity errors (retryable), 500 otherwise.
+// asyncErrorStatus maps async launch errors to appropriate HTTP status codes.
 func asyncErrorStatus(err error) int {
-	if strings.Contains(err.Error(), "queue full") || strings.Contains(err.Error(), "max") {
-		return http.StatusServiceUnavailable
+	msg := err.Error()
+	if strings.Contains(msg, "queue full") || strings.Contains(msg, "max 3 concurrent") {
+		return http.StatusServiceUnavailable // 503 — retryable
+	}
+	if strings.Contains(msg, "not found") || strings.Contains(msg, "no rows") {
+		return http.StatusNotFound // 404 — bad lead_id
 	}
 	return http.StatusInternalServerError
 }
@@ -1020,7 +1027,12 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"leads": leads})
 
 	case "lead_get":
-		lead, err := s.store.GetLead(parseID(input, "lead_id"))
+		leadID := parseID(input, "lead_id")
+		if leadID == 0 {
+			writeError(w, http.StatusBadRequest, "lead_id is required")
+			return
+		}
+		lead, err := s.store.GetLead(leadID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -1040,16 +1052,32 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 
 	case "lead_update":
 		leadID := parseID(input, "lead_id")
+		if leadID == 0 {
+			writeError(w, http.StatusBadRequest, "lead_id is required")
+			return
+		}
 		delete(input, "lead_id")
+		if len(input) == 0 {
+			writeError(w, http.StatusBadRequest, "no fields to update")
+			return
+		}
 		if err := s.store.UpdateLead(leadID, input); err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		updated, _ := s.store.GetLead(leadID)
+		updated, err := s.store.GetLead(leadID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, updated)
 
 	case "lead_action":
 		leadID := parseID(input, "lead_id")
+		if leadID == 0 {
+			writeError(w, http.StatusBadRequest, "lead_id is required")
+			return
+		}
 		action, _ := input["action"].(string)
 		notes, _ := input["notes"].(string)
 		lead, err := s.store.GetLead(leadID)
@@ -1188,6 +1216,10 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 
 	case "agent_status":
 		runID := parseID(input, "run_id")
+		if runID == 0 {
+			writeError(w, http.StatusBadRequest, "run_id is required")
+			return
+		}
 		run, err := s.store.GetAgentRun(runID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
