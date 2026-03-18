@@ -129,6 +129,18 @@ Margin: 40-60% per team member + your own billing at full rate.
 
 **Volume:** 3-5 new company outreach sequences/week. AI drafts every message. Review at Gate N1 (Section 4 networking).
 
+**Cadence storage (`next_action` / `next_date` mapping):**
+
+| Event | next_action | next_date |
+|---|---|---|
+| Connection sent | `"check_connection_accepted"` | Day 3 |
+| Accepted | `"send_value_message"` | Day 0 (immediate) |
+| Value message sent | `"send_case_study"` | Day 4 |
+| Case study sent | `"send_pitch"` | Day 3 |
+| Pitch sent | `"send_followup"` | Day 4 |
+| Follow-up sent, no response | `"move_dormant"` | Day 7 |
+| Dormant | `"re_engage"` | Day 30 |
+
 ### Phase 3: B2B Directories + Inbound (Month 6+)
 
 **Goal:** Clients find you.
@@ -168,7 +180,7 @@ Stage mapping to sales process:
 
 ### Human Gates
 
-**Gate C1: CONTRACT REVIEW (weekly, 30-45 min)**
+**Gate C1: CONTRACT REVIEW (Monday, 30-45 min)**
 
 Scout shows contract opportunities: "2 upsell opportunities, 3 outreach targets, 1 inbound inquiry"
 
@@ -200,13 +212,15 @@ Actions: `[Accept]` `[Counter]` `[Walk Away]`
 
 ### New AI Tools
 
-| Tool | Exists? | Input | Output |
-|---|---|---|---|
-| `CompanyPitch` | Yes (`ai/pitch.go`) | Lead data + portfolio | 5-section pitch document |
-| `SOWGenerator` | New | Discovery call notes + lead data | Draft SOW: scope, team, timeline, pricing, terms |
-| `ContractFollowUp` | New | Lead + negotiation stage + last message | Follow-up email appropriate to negotiation phase |
-| `CaseStudyDraft` | New | Completed project notes + results | Case study for Clutch/LinkedIn/portfolio |
-| `UpsellDetector` | New | Active freelance gig data | Flag: upsell opportunity + team proposal draft |
+| Tool | Exists? | Execution | Input | Output | Storage |
+|---|---|---|---|---|---|
+| `CompanyPitch` | Yes (`ai/pitch.go`) | Async (agent) | Lead data + portfolio | 5-section pitch | `lead_artifacts` type=`"pitch"` |
+| `SOWGenerator` | New | Async (agent) — long prompt | Discovery call notes (from `lead_artifacts` type=`"call_notes"`) + lead data | Draft SOW | `lead_artifacts` type=`"sow"` |
+| `ContractFollowUp` | New | Sync | Lead + negotiation stage + last message | Follow-up email | `lead_artifacts` type=`"contract_followup"` |
+| `CaseStudyDraft` | New | Async (agent) | Project notes (from `lead_artifacts` type=`"project_notes"`) + results | Case study | `lead_artifacts` type=`"case_study"` |
+| `UpsellDetector` | New | Sync (per-lead) | Single freelance lead data (notes, messages, scope) | Upsell flag + team proposal draft | `lead_artifacts` type=`"upsell_proposal"` |
+
+**Data input for AI tools:** Discovery call notes and project notes are entered by the user into Scout after calls/project completion. Stored as `lead_artifacts` with types `"call_notes"` and `"project_notes"`. The AI tools consume these artifacts as input.
 
 ### Implementation
 
@@ -264,12 +278,21 @@ Combined with individual freelance: ₹10-20L/month potential by Month 6.
 
 ---
 
-## Prerequisites
+## Prerequisites (Implementation Order)
 
-- Individual freelance strategy implemented (Phase 1 clients are the upsell source)
-- `CompanyPitch` tool already exists in `internal/scout/ai/pitch.go`
-- Pipeline runner from job application spec
-- Networking pipeline from networking spec (contact sources at WARM+)
+**Blocking — must exist before contracts pipeline can run:**
+1. Pipeline runner (`internal/scout/runner/`) — created by job application spec. All four specs share this package.
+2. `ValidateTransition` enforcement in `server.go` `handleRecordAction` and `lead_action` tool dispatch — currently bypassed (job spec calls this out as a bug).
+3. `lead_artifacts` table — created by job application spec. Contracts uses it for SOW, case study, and follow-up storage with type values: `"sow"`, `"case_study"`, `"contract_followup"`, `"upsell_proposal"`.
+4. Individual freelance strategy operational — Phase 1 clients are the upsell source.
+
+**Non-blocking — enhances but doesn't block:**
+- Networking pipeline (`"networking"` in pipelines.go) — Phase 2 uses WARM+ contacts. If not yet implemented, Phase 2 falls back to TheirStack-only targeting (no warmth data, outreach starts cold).
+- `knownPipelines` in `analytics.go` — must include `"networking"` and `"referral"` for complete analytics.
+
+**Already exists:**
+- `CompanyPitch` tool in `internal/scout/ai/pitch.go` (async via `agent.LaunchAsync`)
+- `contract` pipeline in `pipelines.go`
 
 ## Relationship to Other Specs
 
