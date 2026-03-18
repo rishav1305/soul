@@ -215,7 +215,11 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://127.0.0.1:3002")
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "http://127.0.0.1:3002"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -1181,7 +1185,7 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusConflict, map[string]interface{}{"status": "already_running"})
 			}
 		} else {
-			writeJSON(w, http.StatusOK, map[string]interface{}{"status": "scheduler not configured"})
+			writeError(w, http.StatusServiceUnavailable, "scheduler not configured — set SOUL_SCOUT_THEIRSTACK_KEY")
 		}
 
 	case "sweep_status":
@@ -1269,7 +1273,13 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	case "agent_status":
 		runID := parseID(input, "run_id")
 		if runID == 0 {
-			writeError(w, http.StatusBadRequest, "run_id is required")
+			// No run_id — return latest run
+			runs, err := s.store.ListAgentRuns("")
+			if err != nil || len(runs) == 0 {
+				writeJSON(w, http.StatusOK, map[string]string{"status": "no runs"})
+				return
+			}
+			writeJSON(w, http.StatusOK, runs[0])
 			return
 		}
 		run, err := s.store.GetAgentRun(runID)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // MatchResult is the structured output from resume matching.
@@ -56,8 +57,11 @@ func (s *Service) ResumeMatch(ctx context.Context, leadID int64) (*MatchResult, 
 }
 
 // ScoreLead implements sweep.Scorer interface.
+// Uses a 30s timeout to prevent hanging the sweep on a stuck Claude call.
 func (s *Service) ScoreLead(leadID int64) (float64, error) {
-	result, err := s.ResumeMatch(context.Background(), leadID)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := s.ResumeMatch(ctx, leadID)
 	if err != nil {
 		return 0, err
 	}
