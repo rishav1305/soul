@@ -61,26 +61,28 @@ const PRODUCTS: { id: ChatProduct; name: string; icon: string; group?: string }[
   // Core
   { id: 'tasks', name: 'Tasks', icon: '☑', group: 'Core' },
   { id: 'tutor', name: 'Tutor', icon: '🎓', group: 'Core' },
-  { id: 'projects', name: 'Projects', icon: '📋', group: 'Core' },
-  { id: 'observe', name: 'Observe', icon: '👁', group: 'Core' },
+  { id: 'projects', name: 'Projects', icon: '🔧', group: 'Core' },
+  { id: 'observe', name: 'Observe', icon: '📊', group: 'Core' },
   // Smart Agents
-  { id: 'scout', name: 'Scout', icon: '🎯', group: 'Agents' },
-  { id: 'sentinel', name: 'Sentinel', icon: '🛡', group: 'Agents' },
-  { id: 'mesh', name: 'Mesh', icon: '🔗', group: 'Agents' },
-  { id: 'bench', name: 'Bench', icon: '📊', group: 'Agents' },
-  // Quality & Infrastructure
-  { id: 'compliance', name: 'Compliance', icon: '✅', group: 'Quality' },
+  { id: 'scout', name: 'Scout', icon: '🎯', group: 'Smart Agents' },
+  { id: 'sentinel', name: 'Sentinel', icon: '🛡', group: 'Smart Agents' },
+  { id: 'mesh', name: 'Mesh', icon: '🔗', group: 'Smart Agents' },
+  { id: 'bench', name: 'Bench', icon: '📈', group: 'Smart Agents' },
+  // Quality
+  { id: 'compliance', name: 'Compliance', icon: '✓', group: 'Quality' },
   { id: 'qa', name: 'QA', icon: '🔍', group: 'Quality' },
-  { id: 'analytics', name: 'Analytics', icon: '📈', group: 'Quality' },
-  { id: 'devops', name: 'DevOps', icon: '⚙', group: 'Infra' },
-  { id: 'dba', name: 'DBA', icon: '🗄', group: 'Infra' },
-  { id: 'migrate', name: 'Migrate', icon: '🔄', group: 'Infra' },
-  // Data & Docs
-  { id: 'dataeng', name: 'DataEng', icon: '🔧', group: 'Data' },
+  { id: 'analytics', name: 'Analytics', icon: '📉', group: 'Quality' },
+  // Infrastructure
+  { id: 'devops', name: 'DevOps', icon: '⚙', group: 'Infrastructure' },
+  { id: 'dba', name: 'DBA', icon: '🗄', group: 'Infrastructure' },
+  { id: 'migrate', name: 'Migrate', icon: '↗', group: 'Infrastructure' },
+  // Data
+  { id: 'dataeng', name: 'DataEng', icon: '🔄', group: 'Data' },
   { id: 'costops', name: 'CostOps', icon: '💰', group: 'Data' },
-  { id: 'viz', name: 'Viz', icon: '📉', group: 'Data' },
-  { id: 'docs', name: 'Docs', icon: '📄', group: 'Docs' },
-  { id: 'api', name: 'API', icon: '🔌', group: 'Docs' },
+  { id: 'viz', name: 'Viz', icon: '📊', group: 'Data' },
+  // Documentation
+  { id: 'docs', name: 'Docs', icon: '📄', group: 'Documentation' },
+  { id: 'api', name: 'API', icon: '🔌', group: 'Documentation' },
 ];
 
 export interface ChatInputHandle {
@@ -539,7 +541,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                 </span>
               </button>
               {showProductMenu && (
-                <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-elevated border border-border-default rounded-xl shadow-xl shadow-black/30 py-1 min-w-[140px]">
+                <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-elevated border border-border-default rounded-xl shadow-xl shadow-black/30 py-1 min-w-[160px] max-h-[70vh] overflow-y-auto">
                   <button
                     data-testid="product-option-none"
                     type="button"
@@ -551,20 +553,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                     <span className="w-4 text-center">—</span>
                     <span>General</span>
                   </button>
-                  {PRODUCTS.map(p => (
-                    <button
-                      key={p.id}
-                      data-testid={`product-option-${p.id}`}
-                      type="button"
-                      onClick={() => { onSetProduct?.(p.id); setShowProductMenu(false); }}
-                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                        activeProduct === p.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${activeProduct === p.id ? 'bg-soul' : 'bg-fg-muted/40'}`} />
-                      <span>{p.name}</span>
-                    </button>
-                  ))}
+                  {PRODUCTS.map((p, i) => {
+                    const prev = i > 0 ? PRODUCTS[i - 1] : null;
+                    const showGroup = p.group && (!prev || prev.group !== p.group);
+                    return (
+                      <div key={p.id}>
+                        {showGroup && (
+                          <>
+                            <div className="border-t border-border-subtle my-1" />
+                            <div className="px-3 pt-1 pb-0.5 text-[10px] text-fg-muted uppercase tracking-wider font-medium">{p.group}</div>
+                          </>
+                        )}
+                        <button
+                          data-testid={`product-option-${p.id}`}
+                          type="button"
+                          onClick={() => { onSetProduct?.(p.id); setShowProductMenu(false); }}
+                          className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                            activeProduct === p.id ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${activeProduct === p.id ? 'bg-soul' : 'bg-fg-muted/40'}`} />
+                          <span>{p.name}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
