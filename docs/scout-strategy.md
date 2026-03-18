@@ -4,16 +4,15 @@
 
 1. [Subscriptions & Platform Setup](#1-subscriptions--platform-setup)
 2. [Job Discovery Strategy](#2-job-discovery-strategy)
-3. [Job Application Strategy (3-Tier System)](#3-job-application-strategy-3-tier-system)
-4. [Networking & Referral Strategy](#4-networking--referral-strategy)
-5. [The Closed Job Market](#5-the-closed-job-market)
-6. [Freelance, Contract & Consulting Strategy](#6-freelance-contract--consulting-strategy)
-7. [Social Media & Content Strategy](#7-social-media--content-strategy)
-8. [LinkedIn Profile Optimization](#8-linkedin-profile-optimization)
-9. [Weekly Schedule](#9-weekly-schedule)
-10. [Task Distribution (30-Day Launch Plan)](#10-task-distribution-30-day-launch-plan)
-11. [Scout AI Tools](#11-scout-ai-tools)
-12. [Metrics & Tracking](#12-metrics--tracking)
+3. [Job Application Strategy](#3-job-application-strategy-ai-driven-pipeline-with-human-gates)
+4. [Networking & Referral Strategy](#4-networking--referral-strategy-multi-intent-ai-driven)
+5. [Freelance, Contract & Consulting Strategy](#5-freelance-contract--consulting-strategy)
+6. [Social Media & Content Strategy](#6-social-media--content-strategy)
+7. [LinkedIn Profile Optimization](#7-linkedin-profile-optimization)
+8. [Weekly Schedule](#8-weekly-schedule)
+9. [Task Distribution (30-Day Launch Plan)](#9-task-distribution-30-day-launch-plan)
+10. [Scout AI Tools](#10-scout-ai-tools)
+11. [Metrics & Tracking](#11-metrics--tracking)
 
 ---
 
@@ -488,6 +487,15 @@ Lead qualified (score > 70)
 
 **Full spec:** `docs/superpowers/specs/2026-03-18-networking-strategy-design.md`
 
+### Why Networking Is The Strategy
+
+- 60-80% of senior roles are never posted on any job board
+- 85% of positions are filled through referrals and networking
+- Referred candidates are 15x more likely to be hired
+- Success rate: 33-80% (networking) vs 4-10% (job boards)
+
+Section 3 (Job Applications) handles the 20-40% that ARE posted. This section handles the 60-80% that aren't.
+
 ### Core Principle
 
 **Lead with value, discover intent.** Never open with what you want. Build the relationship, understand their needs, then match your offering (job, freelance, contract, consulting, team) to their situation. The same connection could lead to any outcome — don't narrow it prematurely.
@@ -579,52 +587,12 @@ By month 3: ~20 contacts at READY = 20 potential conversion conversations across
 |---|---|
 | Job Application Pipeline (Section 3) | 3.5 hrs |
 | Networking Pipeline (Section 4) | 50 min |
-| Content (Section 7) | 2-3 hrs |
+| Content (Section 6) | 2-3 hrs |
 | **TOTAL** | **~7 hrs/week (~1 hr/day)** |
 
 ---
 
-## 5. The Closed Job Market
-
-### The Reality
-
-- 60-80% of senior roles are never posted on any job board
-- 85% of positions are filled through referrals and networking
-- Referred candidates are 15x more likely to be hired
-- Success rate: 33-80% (networking) vs 4-10% (job boards)
-
-### Channels to Crack It Open
-
-#### Channel 1: Warm Outreach via LinkedIn (highest conversion)
-Already covered in Section 4. Map your network → find connections at target companies → research conversation angle → referral.
-
-#### Channel 2: AI Communities (hidden job channels)
-Latent Space, HuggingFace, MLOps Slack, W&B, AI Tinkerers Delhi all have job channels that never hit public boards. Participate actively — don't just lurk.
-
-Strategy: Contribute to discussions first, build reputation, then job opportunities come naturally.
-
-#### Channel 3: X/Twitter as Job Surface
-Senior AI roles at labs often get filled through Twitter DMs. Researchers post openings casually. Engage with them consistently — they notice repeat engagers.
-
-Strategy: Follow researchers at target companies. Comment thoughtfully on their posts. Share your own technical work. DM opportunities follow.
-
-#### Channel 4: Content → Inbound Pipeline
-Detailed in Section 7. One insightful LinkedIn post about real technical work gets more recruiter DMs than 20 cold applications. Content compounds — invest early.
-
-#### Channel 5: Research Paper → Relationship
-When you publish analysis or research:
-- Cold email authors of papers you cite or reference
-- "I built X referencing your work" opens doors no recruiter can
-- Authentic research relationships convert to job leads
-
-#### Channel 6: Conference & Meetup Networking
-- AI Tinkerers Delhi (local, high-value)
-- Online conferences and webinars (free, low commitment)
-- Speaking opportunities compound credibility massively
-
----
-
-## 6. Freelance, Contract & Consulting Strategy
+## 5. Freelance, Contract & Consulting Strategy
 
 Freelance is a different game from job search. You're not applying — you're being found + doing outreach + writing proposals.
 
@@ -683,7 +651,7 @@ Consulting: lead → discovery-call → proposal-sent → negotiating → engage
 
 ---
 
-## 7. Social Media & Content Strategy
+## 6. Social Media & Content Strategy
 
 ### Platform Priority
 
@@ -825,7 +793,7 @@ Your analysis doesn't need to be peer-reviewed. It needs to be honest, specific,
 
 ---
 
-## 8. LinkedIn Profile Optimization
+## 7. LinkedIn Profile Optimization
 
 Your content drives profile visits. The profile must convert.
 
@@ -854,7 +822,7 @@ Custom image — your name + 3 keywords + one visual element.
 
 ---
 
-## 9. Weekly Schedule
+## 8. Weekly Schedule
 
 ### The Operating Rhythm
 
@@ -915,7 +883,7 @@ Custom image — your name + 3 keywords + one visual element.
 
 ---
 
-## 10. Task Distribution (30-Day Launch Plan)
+## 9. Task Distribution (30-Day Launch Plan)
 
 ### Week 1: Foundation Setup
 
@@ -993,7 +961,7 @@ Custom image — your name + 3 keywords + one visual element.
 
 ---
 
-## 11. Scout AI Tools
+## 10. Scout AI Tools
 
 These tools should be built into Scout to automate and assist the weekly rhythm.
 
@@ -1037,7 +1005,7 @@ inbound:   engaged → conversation → opportunity → interviewing → offer
 
 ---
 
-## 12. Metrics & Tracking
+## 11. Metrics & Tracking
 
 ### Lead Metrics (Scout Pipeline)
 
