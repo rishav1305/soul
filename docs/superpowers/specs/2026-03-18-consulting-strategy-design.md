@@ -153,6 +153,8 @@ Networks match you to opportunities via email. Accept or decline per call.
   - Recently funded (Series A-B) + no AI team lead (have money, need direction)
 - Flagged as advisory/consulting targets
 
+**Implementation note:** TheirStack sweep fetches individual job listings, not company-level aggregations. "AI confusion" detection requires a post-processing phase after sweep ingestion: group leads by `company_domain`, count AI-keyword matches per company, flag companies with 5+ matches. This runs in the runner's IDENTIFY phase, not in the sweep itself.
+
 **Cross-pipeline conversion:**
 - Freelance client asks strategic questions → advisory upsell
 - Contract client needs roadmap before building → project consulting
@@ -180,12 +182,14 @@ Terminal: delivered, lost, declined
 
 | Tool | Execution | Input | Output | Storage |
 |---|---|---|---|---|
-| `ExpertApplication` | Sync | Network name + focus area | Tailored application text | N/A (one-time use) |
+| `ExpertApplication` | Sync | Network name + focus area | Tailored application text | Not lead-attached — applications target networks, not clients. Store in `~/.soul-v2/expert-applications/` as `{network-name}.md` for audit/resubmission. |
 | `CallPrepBrief` | Sync | Lead data (company, topic, context) | Prep brief: company background, likely questions, your relevant experience, key data points | `lead_artifacts` type=`"call_prep"` |
 | `ConsultingFollowUp` | Sync | Lead + call notes | Follow-up email referencing specific discussion points + resources mentioned | `lead_artifacts` type=`"consulting_followup"` |
 | `AdvisoryProposal` | Sync | Lead + call notes + signals | Advisory proposal: problem diagnosis, scope, monthly hours, rate, your experience | `lead_artifacts` type=`"advisory_proposal"` |
 | `ProjectProposal` | Sync | Lead + advisory history + project scope | Project proposal: audit scope, deliverables, timeline, fixed fee | `lead_artifacts` type=`"consulting_proposal"` |
-| `UpsellEvaluator` | Sync | Call notes + lead context | Assessment: is there an upsell to advisory/project/contracts? + draft proposal if yes | `lead_artifacts` type=`"upsell_evaluation"` |
+| `ConsultingUpsellEvaluator` | Sync | Call notes + lead context | Assessment: is there an upsell to advisory/project/contracts? + draft proposal if yes | `lead_artifacts` type=`"upsell_evaluation"` |
+
+**Naming note:** This tool is `ConsultingUpsellEvaluator` (not `UpsellEvaluator`) to avoid confusion with `ContractUpsellDetector` from the contracts spec. Consulting evaluates call-to-advisory-to-project upsells. Contracts detects freelance-to-team upsells. Different scope, different tools.
 
 ### Human Gates
 
@@ -224,8 +228,8 @@ Actions: `[Send Follow-up]` `[Pursue Upsell]` `[Request Testimonial]` `[Skip]`
 | Call completed | `"send_followup"` | Day 0 (immediate) |
 | Follow-up sent | `"evaluate_upsell"` | Day 3 |
 | Upsell flagged, proposal sent | `"check_proposal_response"` | Day 5 |
-| No response to proposal | `"send_reminder"` | Day 10 |
-| No response to reminder | `"move_dormant"` | Day 7 |
+| No response to proposal | `"send_reminder"` | Day 5 (after proposal = Day 10 from call) |
+| No response to reminder | `"move_dormant"` | Day 7 after reminder (= Day 17 from call) |
 | Advisory session completed | `"schedule_next_session"` | Day 25 (monthly cycle) |
 | Project delivered | `"request_testimonial"` | Day 2 |
 | Testimonial received | `"request_referral"` | Day 7 |
@@ -318,9 +322,9 @@ Job search pipeline runs in parallel (~7 hrs/week unpaid). If full-time job is a
 ## Prerequisites
 
 **Blocking:**
-1. Pipeline runner (`internal/scout/runner/`) — created by job application spec
+1. Pipeline runner (`internal/scout/runner/`) — created by job application spec. **All five specs use `internal/scout/runner/`** (not `internal/scout/pipeline/`). Old references in job and networking specs to `internal/scout/pipeline/` are superseded by the freelance spec's explicit resolution.
 2. `lead_artifacts` table — created by job application spec. Consulting uses types: `"call_prep"`, `"consulting_followup"`, `"advisory_proposal"`, `"consulting_proposal"`, `"upsell_evaluation"`
-3. `ValidateTransition` enforcement in server handlers
+3. `ValidateTransition` enforcement in `server.go` `handleRecordAction` (line ~447) and `lead_action` tool dispatch (line ~1176) — **CRITICAL: currently both allow arbitrary stage transitions with zero validation.** All five specs depend on stage integrity. This is the single most important codebase fix.
 
 **Non-blocking:**
 - Networking pipeline — cross-pipeline upsell detection benefits from networking contacts. Falls back to TheirStack-only if not yet implemented.
