@@ -596,20 +596,20 @@ CREATE INDEX idx_content_pillar ON content_posts(pillar);
 
 Content metrics are stored per-post, not in the leads table. Inbound leads reference `content_posts.id` as their source.
 
-**Content backlog:** `~/.soul-v2/content-backlog.json`
-```json
-[
-  {
-    "id": "uuid",
-    "topic": "RAG chunk size impact on retrieval quality",
-    "pillar": "builder",
-    "source": "work",
-    "angle": "Counter-intuitive: smaller chunks aren't always better",
-    "created_at": "2026-03-18",
-    "status": "pending"
-  }
-]
+**Content backlog table** (in scout.db, not a flat file):
+```sql
+CREATE TABLE content_backlog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic TEXT NOT NULL,
+  pillar TEXT NOT NULL,
+  source TEXT NOT NULL,       -- "work", "paper", "trend", "community", "reactive"
+  angle TEXT,
+  status TEXT DEFAULT 'pending',  -- pending, selected, archived
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  archived_at TEXT
+);
 ```
+Auto-archival: items older than 60 days auto-archived by runner.
 
 **Modified:** `internal/scout/runner/` — add content pipeline phases:
 - TOPIC: generate topic suggestions from work + backlog + news

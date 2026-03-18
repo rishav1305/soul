@@ -74,7 +74,8 @@ One analysis per week from real work, split into 3 standalone posts.
 | Day | Part | Format (LinkedIn) | Format (X) |
 |---|---|---|---|
 | Tuesday | Hook Post | 100-150 words, provocative opening | Single punchy tweet |
-| Thursday | Deep Dive | 300-500 words + carousel/chart | Full technical thread (5-10 tweets) |
+| Wednesday | — | — | X thread (technical version of Thursday's deep dive, published 1 day early to warm up engagement) |
+| Thursday | Deep Dive | 300-500 words + carousel/chart (LinkedIn 3000 char limit — split into carousel if exceeds) | — (thread already published Wed) |
 | Saturday | Takeaway/Opinion | 200-300 words + open question | Hot take tweet |
 
 **Part 1 structure:** Provocative finding → 1-line context → 2-3 bullet teaser → "More this week."
@@ -174,7 +175,7 @@ PHASE 4: TRACK & LEARN (automated)
 | `ThreadConverter` | Sync | LinkedIn deep-dive | X thread (5-10 tweets, more technical) | `lead_artifacts` type=`"content_draft"` |
 | `SubstackExpander` | Sync | Best LinkedIn post of month | 1500-3000 word article with SEO title | `lead_artifacts` type=`"content_draft"` |
 | `EngagementReply` | Sync | Comment + post context | Thoughtful reply continuing conversation | Shown at Gate P2 |
-| `ContentMetrics` | Sync | Post performance data | Weekly pulse + monthly retro + quarterly assessment | `lead_artifacts` type=`"content_metrics"` |
+| `ContentMetrics` | Sync | `mode` param ("weekly"/"monthly"/"quarterly") + reads from `content_posts` table directly. Metrics data entered manually by user (paste platform analytics) or via future API integration. | Weekly: top post + engagement summary + lead count. Monthly: ranked posts + pillar comparison + patterns + calendar. Quarterly: vertical assessment + SEO + consulting leads. | `lead_artifacts` type=`"content_metrics"` |
 | `ReactiveContentGen` | Sync | News/paper + your expertise | Hot-take post draft | `lead_artifacts` type=`"content_draft"` |
 
 ---
@@ -237,6 +238,7 @@ CREATE TABLE content_posts (
   platform TEXT NOT NULL,
   pillar TEXT NOT NULL,
   topic TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',  -- draft, scheduled, published, archived
   content TEXT NOT NULL,
   hook TEXT,
   scheduled_date TEXT,
@@ -255,7 +257,35 @@ CREATE INDEX idx_content_platform ON content_posts(platform);
 CREATE INDEX idx_content_pillar ON content_posts(pillar);
 ```
 
-Inbound leads reference `content_posts.id` as source.
+**Content-to-lead tracking:**
+
+Add `source_ref_id INTEGER` column to `leads` table (part of combined migration). When an inbound lead is created from content, `source_ref_id` references `content_posts.id`. This enables per-post ROI calculation:
+```sql
+SELECT cp.topic, cp.pillar, COUNT(l.id) as leads_generated
+FROM content_posts cp
+JOIN leads l ON l.source_ref_id = cp.id
+GROUP BY cp.id
+```
+
+The `content_posts.inbound_leads` column is a denormalized counter — maintained by the runner when new leads are created with `source LIKE 'content-%'`. This avoids JOIN queries for dashboard display. The authoritative count comes from the JOIN above.
+
+**Content backlog table** (replaces flat file for transactional consistency):
+
+```sql
+CREATE TABLE content_backlog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic TEXT NOT NULL,
+  pillar TEXT NOT NULL,
+  source TEXT NOT NULL,       -- "work", "paper", "trend", "community", "reactive"
+  angle TEXT,
+  status TEXT DEFAULT 'pending',  -- pending, selected, archived
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  archived_at TEXT
+);
+```
+
+Auto-archival: items older than 60 days with `status='pending'` move to `status='archived'` by the runner.
+The flat file `~/.soul-v2/content-backlog.json` is no longer used. SQLite gives query capability, transactional consistency, and date filtering.
 
 ### Weekly Pulse (Friday, 5 min — part of Gate N2)
 
@@ -310,19 +340,68 @@ Compounding kicks in week 6-8.
 
 ---
 
+## Error Handling
+
+**AI generation failure:**
+- If `ContentSeriesGen` fails on Sunday/Monday → runner promotes top backlog item and retries on next cycle
+- If retry also fails → surface in Actions tab: "Content generation failed. Manual override: write post or skip this week."
+- After 3 consecutive failures for same topic → auto-archive topic, move to next backlog item
+
+**Metrics data entry:**
+- Platform metrics (impressions, likes, etc.) are entered manually by user after publishing
+- Scout prompts: "Update metrics for Tuesday's post?" in Friday review
+- Missing metrics = zero — doesn't block pipeline, just gaps in reporting
+- Future: LinkedIn/X API integration for automatic metrics fetch (not in v1)
+
+## Content Lifecycle (not a pipeline — separate from lead pipelines)
+
+Content does NOT use `pipelines.go` stages. Content lifecycle is managed via `content_posts.status`:
+
+```
+draft → scheduled → published → archived
+```
+
+The runner manages content phases (TOPIC, GENERATE, ENGAGE, METRICS) independently from lead pipeline phases. This is intentional: content is not a lead — it's a publishing workflow that GENERATES leads.
+
+## Weekly Pulse Timing
+
+The weekly pulse is part of the existing Friday review session but is NOT embedded inside Gate N2. It runs as a separate 5-min block during the same Friday review timeslot:
+
+```
+Friday Review Session (~30 min total):
+  Gate N2: Networking weekly brief (10 min)
+  Gate P-metrics: Content weekly pulse (5 min)
+  Gate 3: Job stale lead decisions (15 min)
+```
+
+Each gate is independent. Content metrics do not depend on networking gate implementation.
+
 ## Prerequisites
 
 **Blocking:**
-1. Pipeline runner (`internal/scout/runner/`) — from job application spec
+1. Pipeline runner (`internal/scout/runner/`) — from job application spec. Content adds its own phases (TOPIC, GENERATE, ENGAGE, METRICS) to the shared runner loop.
 2. `lead_artifacts` table — for storing content drafts
+3. `ValidateTransition` enforcement — content creates inbound leads that enter lead pipelines. Stage integrity required.
 
 **Non-blocking:**
-- Networking pipeline — coordinates engagement timing. Content works standalone without it (just no coordination).
+- Networking pipeline — coordinates engagement timing. Content works standalone without it.
 
 **New infrastructure:**
-- `content_posts` table (defined above)
-- Content backlog file (`~/.soul-v2/content-backlog.json`)
+- `content_posts` table (defined in Section 6.7)
+- `content_backlog` table (defined in Section 6.7 — replaces flat file)
+- `source_ref_id` column on `leads` table (for content-to-lead FK)
 - 8 new AI tools in `internal/scout/ai/`
+
+**Platform constraints for AI tools:**
+- LinkedIn posts: 3000 character limit. Deep dives exceeding this → use carousel (PDF) format.
+- X tweets: 280 character limit per tweet. Threads = chained replies.
+- `ContentSeriesGen` and `ThreadConverter` must respect these limits during generation.
+
+**Vertical rotation configuration:**
+- Quarterly vertical schedule is a default, not hardcoded
+- Stored in `~/.soul-v2/content-config.json`: `{"current_vertical": "legal", "rotation": ["legal", "healthcare", "sales", "ecommerce"]}`
+- Quarterly assessment can recommend pivot → user updates config
+- Runner reads config at start of each month's Substack generation
 
 ## Relationship to Other Specs
 
