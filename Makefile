@@ -1,9 +1,9 @@
-.PHONY: build build-go build-tasks build-tutor build-projects build-observe build-infra build-quality build-data build-docs build-sentinel build-bench build-mesh build-scout web serve types clean deploy
+.PHONY: build build-go build-tasks build-tutor build-projects build-observe build-mcp build-infra build-quality build-data build-docs build-sentinel build-bench build-mesh build-scout web serve types clean deploy
 .PHONY: verify verify-static verify-unit verify-integ verify-e2e verify-review
 .PHONY: check-bundle check-secrets check-deps
 
 # Build
-build: web build-go build-tasks build-tutor build-projects build-observe build-infra build-quality build-data build-docs build-sentinel build-bench build-mesh build-scout
+build: web build-go build-tasks build-tutor build-projects build-observe build-mcp build-infra build-quality build-data build-docs build-sentinel build-bench build-mesh build-scout
 build-go:
 	go build -o soul-chat ./cmd/chat
 build-tasks:
@@ -14,6 +14,8 @@ build-projects:
 	go build -o soul-projects ./cmd/projects
 build-observe:
 	go build -o soul-observe ./cmd/observe
+build-mcp:
+	go build -o soul-mcp ./cmd/mcp
 build-infra:
 	go build -o soul-infra ./cmd/infra
 build-quality:
@@ -33,9 +35,10 @@ build-scout:
 web:
 	cd web && npx vite build
 serve: build
-	./soul-chat serve & ./soul-tasks serve & ./soul-tutor serve & ./soul-projects serve & ./soul-observe serve & ./soul-infra serve & ./soul-quality serve & ./soul-data serve & ./soul-docs serve & ./soul-sentinel serve & ./soul-bench serve & ./soul-mesh serve & ./soul-scout serve & wait
+	# Note: soul-mcp requires SOUL_MCP_SECRET and SOUL_MCP_ADMIN_PASSWORD env vars
+	./soul-chat serve & ./soul-tasks serve & ./soul-tutor serve & ./soul-projects serve & ./soul-observe serve & ./soul-mcp serve & ./soul-infra serve & ./soul-quality serve & ./soul-data serve & ./soul-docs serve & ./soul-sentinel serve & ./soul-bench serve & ./soul-mesh serve & ./soul-scout serve & wait
 clean:
-	rm -f soul-chat soul-tasks soul-tutor soul-projects soul-observe soul-infra soul-quality soul-data soul-docs soul-sentinel soul-bench soul-mesh soul-scout
+	rm -f soul-chat soul-tasks soul-tutor soul-projects soul-observe soul-mcp soul-infra soul-quality soul-data soul-docs soul-sentinel soul-bench soul-mesh soul-scout
 	rm -rf web/dist
 
 # Generate

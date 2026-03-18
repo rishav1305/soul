@@ -1,0 +1,27 @@
+[Unit]
+Description=Soul v2 MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=rishav
+Group=rishav
+WorkingDirectory=/home/rishav/soul-v2
+ExecStart=/home/rishav/soul-v2/soul-mcp serve
+Restart=on-failure
+RestartSec=5
+Environment=SOUL_MCP_HOST=127.0.0.1
+Environment=SOUL_MCP_PORT=3028
+Environment=SOUL_MCP_SECRET=changeme
+Environment=SOUL_MCP_ADMIN_PASSWORD=changeme
+Environment=SOUL_MCP_BASE_URL=https://soul.rishavchatterjee.com/mcp
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rishav/.soul-v2
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

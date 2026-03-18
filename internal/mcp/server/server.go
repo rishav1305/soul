@@ -89,7 +89,8 @@ func New(opts ...Option) *Server {
 	if s.oauth != nil {
 		s.mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.oauth.HandleProtectedResource)
 		s.mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.oauth.HandleAuthorizationServer)
-		s.mux.HandleFunc("/authorize", s.oauth.HandleAuthorize) // GET + POST
+		s.mux.HandleFunc("GET /authorize", s.oauth.HandleAuthorize)
+		s.mux.HandleFunc("POST /authorize", s.oauth.HandleAuthorize)
 		s.mux.HandleFunc("POST /token", s.oauth.HandleToken)
 		s.mux.HandleFunc("POST /register", s.oauth.HandleRegister)
 	}
