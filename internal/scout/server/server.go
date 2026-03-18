@@ -584,7 +584,11 @@ func (s *Server) handleSweepStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSweepDigest(w http.ResponseWriter, r *http.Request) {
 	val, err := s.store.GetSyncMeta("sweep_last_digest")
-	if err != nil || val == "" {
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "read digest: "+err.Error())
+		return
+	}
+	if val == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"last_run":           "",
 			"next_run":           "",
@@ -860,7 +864,17 @@ func (s *Server) handleApplyOptimization(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAgentStatus(w http.ResponseWriter, r *http.Request) {
 	runIDStr := r.URL.Query().Get("run_id")
 	if runIDStr == "" {
-		writeError(w, http.StatusBadRequest, "run_id query parameter is required")
+		// No run_id — return latest run
+		runs, err := s.store.ListAgentRuns("")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if len(runs) == 0 {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "no runs"})
+			return
+		}
+		writeJSON(w, http.StatusOK, runs[0])
 		return
 	}
 	runID, err := strconv.ParseInt(runIDStr, 10, 64)
@@ -1105,7 +1119,10 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	case "lead_add":
 		data, _ := json.Marshal(input)
 		var lead store.Lead
-		json.Unmarshal(data, &lead)
+		if err := json.Unmarshal(data, &lead); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid lead data: "+err.Error())
+			return
+		}
 		id, err := s.store.AddLead(lead)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -1259,7 +1276,10 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	case "optimization_add":
 		data, _ := json.Marshal(input)
 		var opt store.Optimization
-		json.Unmarshal(data, &opt)
+		if err := json.Unmarshal(data, &opt); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid optimization data: "+err.Error())
+			return
+		}
 		id, err := s.store.AddOptimization(opt)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
