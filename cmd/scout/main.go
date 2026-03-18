@@ -113,7 +113,14 @@ func runServe() {
 	// 7. Create TheirStack client and scheduler (if API key present).
 	if theirStackKey := os.Getenv("SOUL_SCOUT_THEIRSTACK_KEY"); theirStackKey != "" {
 		tsClient := sweep.NewTheirStackClient(theirStackKey, http.DefaultClient)
-		scheduler := sweep.NewScheduler(sweepCfg, st, aiSvc, tsClient)
+		// Only enable auto-scoring if profiledb is available
+		var scorer sweep.Scorer
+		if aiSvc.HasProfileDB() {
+			scorer = aiSvc
+		} else {
+			log.Println("scout: profiledb not configured — auto-scoring disabled")
+		}
+		scheduler := sweep.NewScheduler(sweepCfg, st, scorer, tsClient)
 		scheduler.Start()
 		defer scheduler.Stop()
 		opts = append(opts, server.WithScheduler(scheduler))

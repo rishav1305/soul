@@ -28,6 +28,11 @@ func New(st *store.Store, pdb *profiledb.Client, sender Sender, dataDir string) 
 	return &Service{store: st, profileDB: pdb, sender: sender, dataDir: dataDir}
 }
 
+// HasProfileDB returns true if the profile database is configured.
+func (s *Service) HasProfileDB() bool {
+	return s.profileDB != nil
+}
+
 // fetchProfile returns the full profile or an error if profiledb is nil.
 func (s *Service) fetchProfile() (map[string]interface{}, error) {
 	if s.profileDB == nil {

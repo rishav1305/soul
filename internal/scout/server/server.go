@@ -631,9 +631,10 @@ func (s *Server) handlePutSweepConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "credit_budget must be > 0")
 		return
 	}
-	// TheirStack requires at least one filter — validate presence
-	if cfg.PostedAtMaxAgeDays <= 0 && len(cfg.JobTitleOr) == 0 {
-		writeError(w, http.StatusBadRequest, "posted_at_max_age_days or job_title_or is required (TheirStack API constraint)")
+	// TheirStack requires at least one of: posted_at_max_age_days, posted_at_gte/lte,
+	// company_domain_or, company_linkedin_url_or, company_name_or
+	if cfg.PostedAtMaxAgeDays <= 0 {
+		writeError(w, http.StatusBadRequest, "posted_at_max_age_days must be > 0 (TheirStack API requires a date filter)")
 		return
 	}
 	if err := sweep.SaveConfig(s.configPath, &cfg); err != nil {
@@ -1008,6 +1009,10 @@ func (s *Server) handleAIReferral(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
 	if s.aiService == nil {
 		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
 		return
@@ -1026,6 +1031,10 @@ func (s *Server) handleAIPitch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
 		return
 	}
 	if s.aiService == nil {

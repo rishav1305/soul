@@ -16,6 +16,7 @@ type Scheduler struct {
 	scorer     Scorer
 	client     *TheirStackClient
 	stopCh     chan struct{}
+	resetCh    chan struct{} // signals loop to reset ticker with new interval
 	mu         sync.Mutex
 	started    bool
 	running    bool
@@ -46,6 +47,7 @@ func NewScheduler(cfg *SweepConfig, st *store.Store, scorer Scorer, client *Thei
 		scorer:   scorer,
 		client:   client,
 		stopCh:   make(chan struct{}),
+		resetCh:  make(chan struct{}, 1),
 	}
 }
 
@@ -88,6 +90,13 @@ func (s *Scheduler) loop() {
 		select {
 		case <-ticker.C:
 			s.runSweep()
+		case <-s.resetCh:
+			// Interval changed — reset ticker
+			ticker.Stop()
+			s.mu.Lock()
+			newInterval := s.interval
+			s.mu.Unlock()
+			ticker = time.NewTicker(newInterval)
 		case <-s.stopCh:
 			return
 		}
@@ -167,15 +176,22 @@ func (s *Scheduler) runSweepLocked() {
 		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches)
 }
 
-// UpdateConfig replaces the live sweep config. Takes effect on next sweep run.
+// UpdateConfig replaces the live sweep config. Resets the ticker if interval changed.
 func (s *Scheduler) UpdateConfig(cfg *SweepConfig) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.config = cfg
 	newInterval := time.Duration(cfg.IntervalHours) * time.Hour
-	if newInterval > 0 {
+	if newInterval > 0 && newInterval != s.interval {
 		s.interval = newInterval
+		s.mu.Unlock()
+		// Signal loop to reset ticker (non-blocking)
+		select {
+		case s.resetCh <- struct{}{}:
+		default:
+		}
+		return
 	}
+	s.mu.Unlock()
 }
 
 // Status returns the current scheduler state.
