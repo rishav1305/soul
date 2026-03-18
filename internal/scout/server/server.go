@@ -216,10 +216,17 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "" {
+		allowed := map[string]bool{
+			"http://127.0.0.1:3002": true,
+			"http://localhost:3002": true,
+			"http://127.0.0.1:5173": true, // vite dev
+			"http://localhost:5173": true,
+		}
+		if !allowed[origin] {
 			origin = "http://127.0.0.1:3002"
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -1196,10 +1203,17 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "sweep_digest":
-		digestJSON, _ := s.store.GetSyncMeta("sweep_last_digest")
+		digestJSON, err := s.store.GetSyncMeta("sweep_last_digest")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "read digest: "+err.Error())
+			return
+		}
 		if digestJSON != "" {
 			var digest map[string]interface{}
-			json.Unmarshal([]byte(digestJSON), &digest)
+			if err := json.Unmarshal([]byte(digestJSON), &digest); err != nil {
+				writeError(w, http.StatusInternalServerError, "parse digest: "+err.Error())
+				return
+			}
 			writeJSON(w, http.StatusOK, digest)
 		} else {
 			writeJSON(w, http.StatusOK, map[string]interface{}{"last_run": "", "new_leads": 0, "high_matches": 0, "high_match_leads": []interface{}{}})
@@ -1275,7 +1289,11 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 		if runID == 0 {
 			// No run_id — return latest run
 			runs, err := s.store.ListAgentRuns("")
-			if err != nil || len(runs) == 0 {
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if len(runs) == 0 {
 				writeJSON(w, http.StatusOK, map[string]string{"status": "no runs"})
 				return
 			}
