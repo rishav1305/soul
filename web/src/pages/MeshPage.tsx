@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useMesh } from '../hooks/useMesh';
+import type { MeshNode } from '../hooks/useMesh';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
 import { ClusterStatus } from '../components/mesh/ClusterStatus';
@@ -13,12 +14,17 @@ export function MeshPage() {
     clusterStatus, nodes, selectedNode, setSelectedNode,
     heartbeats, linkCode, loading, error,
     activeTab, setActiveTab, refresh,
-    generateCode, linkNode,
+    generateCode, linkNode, fetchHeartbeats,
   } = useMesh();
 
   useEffect(() => { reportUsage('page.view', { page: 'mesh' }); }, []);
 
   const tabs = ['cluster', 'nodes'] as const;
+
+  const handleSelectNode = useCallback((node: MeshNode) => {
+    setSelectedNode(node);
+    fetchHeartbeats(node.id);
+  }, [setSelectedNode, fetchHeartbeats]);
 
   return (
     <div data-testid="mesh-page" className="h-full overflow-y-auto p-4 sm:p-6 space-y-4">
@@ -54,7 +60,7 @@ export function MeshPage() {
           {selectedNode ? (
             <NodeDetail node={selectedNode} heartbeats={heartbeats} onClose={() => setSelectedNode(null)} />
           ) : (
-            <NodeList nodes={nodes} selectedId={null} onSelect={setSelectedNode} />
+            <NodeList nodes={nodes} selectedId={null} onSelect={handleSelectNode} />
           )}
         </div>
       )}

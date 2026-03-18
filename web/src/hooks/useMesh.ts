@@ -7,33 +7,33 @@ type MeshTab = 'cluster' | 'nodes';
 export interface MeshNode {
   id: string;
   name: string;
-  role: 'hub' | 'agent';
-  status: 'online' | 'offline' | 'degraded';
+  host: string;
+  port: number;
+  role: string;
   platform: string;
   arch: string;
   cpu_cores: number;
-  ram_total_gb: number;
+  ram_total_mb: number;
   storage_total_gb: number;
-  capability_score: number;
+  status: string;
   last_heartbeat: string;
+  capability_score?: number;
 }
 
 export interface ClusterStatus {
-  name: string;
-  role: string;
-  total_cpu_cores: number;
-  total_ram_gb: number;
-  total_storage_gb: number;
-  online_nodes: number;
   total_nodes: number;
+  total_cpu: number;
+  total_ram_mb: number;
+  total_storage_gb: number;
+  hub_id: string;
 }
 
 export interface Heartbeat {
-  node_id: string;
-  node_name: string;
+  cpu_usage_percent: number;
+  ram_available_mb: number;
+  ram_used_percent: number;
+  storage_free_gb: number;
   timestamp: string;
-  status: string;
-  latency_ms: number;
 }
 
 interface LinkResponse {
@@ -55,6 +55,7 @@ interface UseMeshReturn {
   refresh: () => void;
   generateCode: () => Promise<void>;
   linkNode: (code: string) => Promise<void>;
+  fetchHeartbeats: (nodeId: string) => Promise<void>;
 }
 
 export function useMesh(): UseMeshReturn {
@@ -73,12 +74,8 @@ export function useMesh(): UseMeshReturn {
     try {
       switch (tab) {
         case 'cluster': {
-          const [status, hb] = await Promise.all([
-            api.get<ClusterStatus>('/api/mesh/status'),
-            api.get<Heartbeat[]>('/api/mesh/heartbeats'),
-          ]);
+          const status = await api.get<ClusterStatus>('/api/mesh/status');
           setClusterStatus(status);
-          setHeartbeats(hb ?? []);
           break;
         }
         case 'nodes': {
@@ -93,6 +90,15 @@ export function useMesh(): UseMeshReturn {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const fetchHeartbeats = useCallback(async (nodeId: string) => {
+    try {
+      const data = await api.get<Heartbeat[]>(`/api/mesh/heartbeats?node_id=${nodeId}`);
+      setHeartbeats(data ?? []);
+    } catch (err: unknown) {
+      reportError('useMesh.fetchHeartbeats', err);
     }
   }, []);
 
@@ -136,6 +142,6 @@ export function useMesh(): UseMeshReturn {
     clusterStatus, nodes, selectedNode, setSelectedNode,
     heartbeats, linkCode, loading, error,
     activeTab, setActiveTab: handleSetTab, refresh,
-    generateCode, linkNode,
+    generateCode, linkNode, fetchHeartbeats,
   };
 }
