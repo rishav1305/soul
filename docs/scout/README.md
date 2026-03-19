@@ -7,11 +7,12 @@
 | [`platforms.md`](platforms.md) | All platforms, subscriptions, communities, API services | Active |
 | [`jobs.md`](jobs.md) | Job discovery (TheirStack) + application strategy (3-tier, AI pipeline) | Spec'd |
 | [`networking.md`](networking.md) | Multi-intent networking, warmth scoring, 4-channel playbook | Spec'd |
-| [`freelance.md`](freelance.md) | Individual freelance strategy (Upwork, Contra, Toptal, etc.) | Draft |
-| [`contracts.md`](contracts.md) | Team/company contract strategy (Clutch, staff aug, direct outreach) | Draft |
+| [`freelance.md`](freelance.md) | Individual freelance strategy (Upwork, Contra, Toptal, etc.) | Spec'd |
+| [`contracts.md`](contracts.md) | Team/company contract strategy (Clutch, staff aug, direct outreach) | Spec'd |
 | [`consulting.md`](consulting.md) | Expert consulting strategy (GLG, Guidepoint, AlphaSights, etc.) | Spec'd |
 | [`content.md`](content.md) | Social media & content strategy (LinkedIn, X, Substack, vertical deep-dives) | Detailed |
 | [`profile.md`](profile.md) | Profile & online presence (LinkedIn SEO, portfolio app, GitHub curation, AI sync) | Spec'd |
+| [`schedule.md`](schedule.md) | Weekly operating schedule (daily rhythm, all 17 gates, adaptive trust, targets) | Spec'd |
 
 **Specs:**
 - `docs/superpowers/specs/2026-03-18-job-application-strategy-design.md`
@@ -26,7 +27,7 @@
 5. [Freelance, Contract & Consulting Strategy](#5-freelance-contract--consulting-strategy) → [`freelance.md`](freelance.md) [`contracts.md`](contracts.md) [`consulting.md`](consulting.md)
 6. [Social Media & Content Strategy](#6-social-media--content-strategy) → [`content.md`](content.md)
 7. [Profile & Online Presence](#7-profile--online-presence) → [`profile.md`](profile.md)
-8. [Weekly Schedule](#8-weekly-schedule)
+8. [Weekly Schedule](#8-weekly-schedule) → [`schedule.md`](schedule.md)
 9. [Task Distribution (30-Day Launch Plan)](#9-task-distribution-30-day-launch-plan)
 10. [Scout AI Tools](#10-scout-ai-tools)
 11. [Metrics & Tracking](#11-metrics--tracking)
