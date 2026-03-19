@@ -305,7 +305,7 @@ func (s *Store) getActionableInsights(pipelineFilter string) (*ActionableInsight
 	rows.Close()
 
 	// Pipeline gaps: pipelines with zero active leads.
-	knownPipelines := []string{"job", "freelance", "contract", "consulting", "product-dev"}
+	knownPipelines := []string{"job", "freelance", "contract", "consulting", "product-dev", "referral", "networking"}
 	for _, kp := range knownPipelines {
 		if pipelineFilter != "" && pipelineFilter != kp {
 			continue

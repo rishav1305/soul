@@ -57,6 +57,15 @@ func (s *Store) AddLead(lead Lead) (int64, error) {
 	if lead.Metadata == "" {
 		lead.Metadata = "{}"
 	}
+	if lead.Tier == 0 {
+		lead.Tier = 3
+	}
+	if lead.Warmth == "" {
+		lead.Warmth = "new"
+	}
+	if lead.Channels == "" {
+		lead.Channels = "[]"
+	}
 
 	res, err := s.db.Exec(`
 		INSERT INTO leads (
@@ -72,7 +81,9 @@ func (s *Store) AddLead(lead Lead) (int64, error) {
 			company_linkedin_url, company_total_funding_usd, company_funding_stage,
 			company_logo, company_country,
 			hiring_manager, hiring_manager_linkedin,
-			metadata
+			metadata,
+			tier, contact_type, intent, warmth,
+			interaction_count, channels, last_interaction_at, source_ref_id
 		) VALUES (
 			?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?,
@@ -86,7 +97,9 @@ func (s *Store) AddLead(lead Lead) (int64, error) {
 			?, ?, ?,
 			?, ?,
 			?, ?,
-			?
+			?,
+			?, ?, ?, ?,
+			?, ?, ?, ?
 		)`,
 		lead.Source, lead.Pipeline, lead.Stage, lead.MatchScore,
 		lead.NextAction, lead.NextDate, lead.Notes, lead.CreatedAt, lead.UpdatedAt, lead.ClosedAt,
@@ -101,6 +114,8 @@ func (s *Store) AddLead(lead Lead) (int64, error) {
 		lead.CompanyLogo, lead.CompanyCountry,
 		lead.HiringManager, lead.HiringManagerLinkedIn,
 		lead.Metadata,
+		lead.Tier, lead.ContactType, lead.Intent, lead.Warmth,
+		lead.InteractionCount, lead.Channels, lead.LastInteractionAt, lead.SourceRefID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("scout: add lead: %w", err)

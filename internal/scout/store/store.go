@@ -74,6 +74,16 @@ type Lead struct {
 
 	// Metadata.
 	Metadata string `json:"metadata"`
+
+	// Strategy fields (added by scout-strategy implementation).
+	Tier              int    `json:"tier"`
+	ContactType       string `json:"contactType"`
+	Intent            string `json:"intent"`
+	Warmth            string `json:"warmth"`
+	InteractionCount  int    `json:"interactionCount"`
+	Channels          string `json:"channels"`
+	LastInteractionAt string `json:"lastInteractionAt"`
+	SourceRefID       *int64 `json:"sourceRefId"`
 }
 
 // StageHistory records a stage transition for a lead.
@@ -242,7 +252,15 @@ CREATE TABLE IF NOT EXISTS leads (
     company_country TEXT NOT NULL DEFAULT '',
     hiring_manager TEXT NOT NULL DEFAULT '',
     hiring_manager_linkedin TEXT NOT NULL DEFAULT '',
-    metadata TEXT NOT NULL DEFAULT '{}'
+    metadata TEXT NOT NULL DEFAULT '{}',
+    tier INTEGER NOT NULL DEFAULT 3,
+    contact_type TEXT NOT NULL DEFAULT '',
+    intent TEXT NOT NULL DEFAULT '',
+    warmth TEXT NOT NULL DEFAULT 'new',
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    channels TEXT NOT NULL DEFAULT '[]',
+    last_interaction_at TEXT NOT NULL DEFAULT '',
+    source_ref_id INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_theirstack_id ON leads(theirstack_id) WHERE theirstack_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);
@@ -319,6 +337,86 @@ CREATE TABLE IF NOT EXISTS platform_trust (
 		return fmt.Errorf("scout: migrate: create other tables: %w", err)
 	}
 
+	// Add strategy columns to existing leads table (idempotent).
+	strategyColumns := map[string]string{
+		"tier":                "INTEGER NOT NULL DEFAULT 3",
+		"contact_type":       "TEXT NOT NULL DEFAULT ''",
+		"intent":             "TEXT NOT NULL DEFAULT ''",
+		"warmth":             "TEXT NOT NULL DEFAULT 'new'",
+		"interaction_count":  "INTEGER NOT NULL DEFAULT 0",
+		"channels":           "TEXT NOT NULL DEFAULT '[]'",
+		"last_interaction_at": "TEXT NOT NULL DEFAULT ''",
+		"source_ref_id":      "INTEGER",
+	}
+	for col, typedef := range strategyColumns {
+		var exists int
+		_ = s.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('leads') WHERE name = ?", col).Scan(&exists)
+		if exists == 0 {
+			if _, err := s.db.Exec("ALTER TABLE leads ADD COLUMN " + col + " " + typedef); err != nil {
+				return fmt.Errorf("scout: migrate: add column %s: %w", col, err)
+			}
+		}
+	}
+
+	// Create strategy tables (idempotent).
+	const strategySchema = `
+CREATE TABLE IF NOT EXISTS lead_artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER NOT NULL REFERENCES leads(id),
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_lead_artifacts_lead ON lead_artifacts(lead_id);
+
+CREATE TABLE IF NOT EXISTS interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER NOT NULL REFERENCES leads(id),
+    type TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_interactions_lead ON interactions(lead_id);
+
+CREATE TABLE IF NOT EXISTS content_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL,
+    pillar TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    content TEXT NOT NULL DEFAULT '',
+    hook TEXT NOT NULL DEFAULT '',
+    scheduled_date TEXT NOT NULL DEFAULT '',
+    published_at TEXT NOT NULL DEFAULT '',
+    impressions INTEGER DEFAULT 0,
+    likes INTEGER DEFAULT 0,
+    comments INTEGER DEFAULT 0,
+    shares INTEGER DEFAULT 0,
+    saves INTEGER DEFAULT 0,
+    profile_views INTEGER DEFAULT 0,
+    inbound_leads INTEGER DEFAULT 0,
+    post_url TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_content_platform ON content_posts(platform);
+CREATE INDEX IF NOT EXISTS idx_content_pillar ON content_posts(pillar);
+
+CREATE TABLE IF NOT EXISTS content_backlog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT NOT NULL,
+    pillar TEXT NOT NULL,
+    source TEXT NOT NULL,
+    angle TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    archived_at TEXT NOT NULL DEFAULT ''
+);
+`
+	if _, err := s.db.Exec(strategySchema); err != nil {
+		return fmt.Errorf("scout: migrate: create strategy tables: %w", err)
+	}
+
 	return nil
 }
 
@@ -357,6 +455,8 @@ func scanLead(sc interface{ Scan(...interface{}) error }) (*Lead, error) {
 		&l.CompanyLogo, &l.CompanyCountry,
 		&l.HiringManager, &l.HiringManagerLinkedIn,
 		&l.Metadata,
+		&l.Tier, &l.ContactType, &l.Intent, &l.Warmth,
+		&l.InteractionCount, &l.Channels, &l.LastInteractionAt, &l.SourceRefID,
 	)
 	return &l, err
 }
@@ -374,7 +474,9 @@ const leadColumns = `id, source, pipeline, stage, match_score,
 	company_linkedin_url, company_total_funding_usd, company_funding_stage,
 	company_logo, company_country,
 	hiring_manager, hiring_manager_linkedin,
-	metadata`
+	metadata,
+	tier, contact_type, intent, warmth,
+	interaction_count, channels, last_interaction_at, source_ref_id`
 
 // allowedLeadFields defines which fields can be updated dynamically.
 // Excludes: id, created_at, theirstack_id.
@@ -423,6 +525,14 @@ var allowedLeadFields = map[string]bool{
 	"hiring_manager":            true,
 	"hiring_manager_linkedin":   true,
 	"metadata":                  true,
+	"tier":                      true,
+	"contact_type":              true,
+	"intent":                    true,
+	"warmth":                    true,
+	"interaction_count":         true,
+	"channels":                  true,
+	"last_interaction_at":       true,
+	"source_ref_id":             true,
 }
 
 // UpdateLead modifies lead fields dynamically. Only allowed fields are applied.

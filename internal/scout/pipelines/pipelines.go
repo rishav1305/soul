@@ -10,11 +10,13 @@ type Pipeline struct {
 
 // Pipelines defines the 5 supported pipeline types.
 var Pipelines = map[string]Pipeline{
-	"job":         {Stages: []string{"discovered", "applied", "screening", "interview", "offer", "joined"}, Terminal: []string{"joined", "rejected", "withdrawn"}},
-	"freelance":   {Stages: []string{"found", "proposal-sent", "shortlisted", "awarded", "delivering", "completed"}, Terminal: []string{"completed", "lost", "withdrawn"}},
+	"job":         {Stages: []string{"discovered", "qualified", "preparing", "outreach-sent", "applied", "screening", "interview", "offer", "joined"}, Terminal: []string{"joined", "rejected", "withdrawn", "skipped"}},
+	"freelance":   {Stages: []string{"found", "proposal-ready", "proposal-sent", "shortlisted", "awarded", "delivering", "completed"}, Terminal: []string{"completed", "lost", "withdrawn"}},
 	"contract":    {Stages: []string{"discovered", "applied", "screening", "interview", "offer", "engaged", "completed"}, Terminal: []string{"completed", "rejected", "withdrawn"}},
 	"consulting":  {Stages: []string{"lead", "discovery-call", "proposal-sent", "negotiating", "engaged", "delivered"}, Terminal: []string{"delivered", "lost", "declined"}},
 	"product-dev": {Stages: []string{"lead", "scoping", "proposal-sent", "negotiating", "building", "delivered"}, Terminal: []string{"delivered", "lost", "declined"}},
+	"referral":    {Stages: []string{"identified", "connected", "conversation", "referral-asked", "referred", "interviewing", "offer"}, Terminal: []string{"offer", "declined", "no-response"}},
+	"networking":  {Stages: []string{"identified", "connected", "engaging", "warm", "converting", "converted"}, Terminal: []string{"converted", "inactive", "not-relevant"}},
 }
 
 // ValidateTransition checks whether moving from fromStage to toStage is valid

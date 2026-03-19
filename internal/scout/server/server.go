@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/internal/scout/ai"
+	"github.com/rishav1305/soul-v2/internal/scout/pipelines"
 	"github.com/rishav1305/soul-v2/internal/scout/profiledb"
 	"github.com/rishav1305/soul-v2/internal/scout/store"
 	"github.com/rishav1305/soul-v2/internal/scout/sweep"
@@ -445,6 +446,12 @@ func (s *Server) handleRecordAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Action != "" && body.Action != lead.Stage {
+		if lead.Pipeline != "" {
+			if err := pipelines.ValidateTransition(lead.Pipeline, lead.Stage, body.Action); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		if err := s.store.RecordStageHistory(id, lead.Stage, body.Action, body.Notes); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -1174,6 +1181,12 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action != "" && action != lead.Stage {
+			if lead.Pipeline != "" {
+				if err := pipelines.ValidateTransition(lead.Pipeline, lead.Stage, action); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+			}
 			if err := s.store.RecordStageHistory(leadID, lead.Stage, action, notes); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
