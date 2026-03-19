@@ -195,6 +195,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/ai/salary", s.handleAISalary)
 	s.mux.HandleFunc("POST /api/ai/referral", s.handleAIReferral)
 	s.mux.HandleFunc("POST /api/ai/pitch", s.handleAIPitch)
+	// Batch 1 AI tools.
+	s.mux.HandleFunc("POST /api/ai/resume-tailor", s.handleAIResumeTailor)
+	s.mux.HandleFunc("POST /api/ai/freelance-score", s.handleAIFreelanceScore)
+	s.mux.HandleFunc("POST /api/ai/networking-draft", s.handleAINetworkingDraft)
+	s.mux.HandleFunc("POST /api/ai/networking-brief", s.handleAINetworkingBrief)
+	s.mux.HandleFunc("POST /api/ai/content-series", s.handleAIContentSeries)
+	s.mux.HandleFunc("POST /api/ai/hook-writer", s.handleAIHookWriter)
+	s.mux.HandleFunc("POST /api/ai/content-topic", s.handleAIContentTopic)
+	s.mux.HandleFunc("POST /api/ai/expert-application", s.handleAIExpertApplication)
+	s.mux.HandleFunc("POST /api/ai/call-prep", s.handleAICallPrep)
 
 	// Tool dispatch.
 	s.mux.HandleFunc("POST /api/tools/{name}/execute", s.handleToolExecute)
@@ -1087,6 +1097,217 @@ func (s *Server) handleAIPitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
+}
+
+// --- Batch 1 AI Tools ---
+
+func (s *Server) handleAIResumeTailor(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ResumeTailor(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"resume": result})
+}
+
+func (s *Server) handleAIFreelanceScore(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.FreelanceScore(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAINetworkingDraft(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID          int64  `json:"lead_id"`
+		Channel         string `json:"channel"`
+		ActivityContext string `json:"activity_context"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.NetworkingDraft(r.Context(), body.LeadID, body.Channel, body.ActivityContext)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"draft": result})
+}
+
+func (s *Server) handleAINetworkingBrief(w http.ResponseWriter, r *http.Request) {
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.WeeklyNetworkingBrief(r.Context())
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIContentSeries(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Topic    string `json:"topic"`
+		Insights string `json:"insights"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Topic == "" {
+		writeError(w, http.StatusBadRequest, "topic is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ContentSeriesGen(r.Context(), body.Topic, body.Insights)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIHookWriter(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Draft string `json:"draft"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Draft == "" {
+		writeError(w, http.StatusBadRequest, "draft is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.HookWriter(r.Context(), body.Draft)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIContentTopic(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		WeekSummary string `json:"week_summary"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.WeekSummary == "" {
+		writeError(w, http.StatusBadRequest, "week_summary is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ContentTopicGen(r.Context(), body.WeekSummary)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAIExpertApplication(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		NetworkName string `json:"network_name"`
+		FocusArea   string `json:"focus_area"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.NetworkName == "" {
+		writeError(w, http.StatusBadRequest, "network_name is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.ExpertApplication(r.Context(), body.NetworkName, body.FocusArea)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"application": result})
+}
+
+func (s *Server) handleAICallPrep(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		LeadID int64 `json:"lead_id"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.LeadID <= 0 {
+		writeError(w, http.StatusBadRequest, "lead_id is required")
+		return
+	}
+	if s.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI service not configured")
+		return
+	}
+	result, err := s.aiService.CallPrepBrief(r.Context(), body.LeadID)
+	if err != nil {
+		writeError(w, aiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // --- Tool Dispatch ---

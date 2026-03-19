@@ -158,6 +158,16 @@ func NewDispatcher() *Dispatcher {
 			// Async tools — 10s is fine, they return immediately with run_id
 			"referral_finder": {Method: "POST", Path: "/api/ai/referral", Product: "scout"},
 			"company_pitch":   {Method: "POST", Path: "/api/ai/pitch", Product: "scout"},
+			// Batch 1 tools
+			"resume_tailor":          {Method: "POST", Path: "/api/ai/resume-tailor", Product: "scout", Timeout: 30 * time.Second},
+			"freelance_score":        {Method: "POST", Path: "/api/ai/freelance-score", Product: "scout", Timeout: 30 * time.Second},
+			"networking_draft":       {Method: "POST", Path: "/api/ai/networking-draft", Product: "scout", Timeout: 30 * time.Second},
+			"weekly_networking_brief": {Method: "POST", Path: "/api/ai/networking-brief", Product: "scout", Timeout: 30 * time.Second},
+			"content_series_gen":     {Method: "POST", Path: "/api/ai/content-series", Product: "scout", Timeout: 30 * time.Second},
+			"hook_writer":            {Method: "POST", Path: "/api/ai/hook-writer", Product: "scout", Timeout: 30 * time.Second},
+			"content_topic_gen":      {Method: "POST", Path: "/api/ai/content-topic", Product: "scout", Timeout: 30 * time.Second},
+			"expert_application":     {Method: "POST", Path: "/api/ai/expert-application", Product: "scout", Timeout: 30 * time.Second},
+			"call_prep_brief":        {Method: "POST", Path: "/api/ai/call-prep", Product: "scout", Timeout: 30 * time.Second},
 		},
 	}
 	return d

@@ -157,6 +157,52 @@ Help users manage their job search efficiently, find high-quality leads, and opt
 				Description: "Generate a team augmentation pitch document for a target company. This tool runs asynchronously — poll agent_status for results.",
 				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead"}},"required":["lead_id"]}`),
 			},
+			// Batch 1 tools (scout strategy implementation)
+			{
+				Name:        "resume_tailor",
+				Description: "Tailor your resume against a specific job lead's description and requirements. Returns the tailored resume in markdown.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the lead to tailor resume for"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "freelance_score",
+				Description: "Score a freelance gig 0-100 on skill match, budget fit, scope clarity, client quality, and time fit.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the freelance lead to score"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "networking_draft",
+				Description: "Generate a channel-specific networking outreach draft (LinkedIn, X, or email) for a contact.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the networking contact"},"channel":{"type":"string","description":"Channel: linkedin, x, or email"},"activity_context":{"type":"string","description":"Recent activity or context about the person"}},"required":["lead_id","channel"]}`),
+			},
+			{
+				Name:        "weekly_networking_brief",
+				Description: "Generate a weekly networking brief showing warm, dormant, and ready contacts with suggested actions.",
+				InputSchema: mustJSON(`{"type":"object","properties":{}}`),
+			},
+			{
+				Name:        "content_series_gen",
+				Description: "Generate a 3-part content series (LinkedIn posts, X posts, carousel outline) from a topic and raw insights.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"topic":{"type":"string","description":"Content topic"},"insights":{"type":"string","description":"Raw insights or findings to build content from"}},"required":["topic","insights"]}`),
+			},
+			{
+				Name:        "hook_writer",
+				Description: "Generate 5 alternative hook lines for a LinkedIn post using proven formulas.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"draft":{"type":"string","description":"Draft post to generate hooks for"}},"required":["draft"]}`),
+			},
+			{
+				Name:        "content_topic_gen",
+				Description: "Suggest 3 content topics based on this week's work, mapped to content pillars.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"week_summary":{"type":"string","description":"Summary of what you worked on this week"}},"required":["week_summary"]}`),
+			},
+			{
+				Name:        "expert_application",
+				Description: "Generate a tailored application for an expert consulting network (GLG, Guidepoint, etc).",
+				InputSchema: mustJSON(`{"type":"object","properties":{"network_name":{"type":"string","description":"Name of the expert network"},"focus_area":{"type":"string","description":"Your focus area for this network"}},"required":["network_name","focus_area"]}`),
+			},
+			{
+				Name:        "call_prep_brief",
+				Description: "Generate a prep brief for an expert consulting call — company background, likely questions, relevant experience.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
+			},
 		},
 	}
 }
