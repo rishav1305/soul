@@ -2,7 +2,7 @@
 
 **Plan:** `docs/superpowers/plans/2026-03-19-scout-implementation-plan.md`
 **Branch:** `feat/scout-strategy`
-**Last updated:** 2026-03-19 18:55 IST
+**Last updated:** 2026-03-19 23:30 IST
 
 ---
 
@@ -24,16 +24,17 @@
 - [x] TierClassifier + LoadDreamCompanies — 21 tests
 - [x] Store CRUD (artifacts, interactions, content) — 9 tests
 - [x] All merged, 72 new tests, go vet clean
-- [ ] Register Batch 1 tools in server.go + scout.go + dispatch.go
+- [x] Register Batch 1 tools in server.go + scout.go + dispatch.go
 
-## Batch 2 — Hour 2 (Tasks 8-13) — PENDING
-- [ ] SOWGenerator + ContractFollowUp + CaseStudyDraft
-- [ ] ConsultingFollowUp + AdvisoryProposal + ProjectProposal + ConsultingUpsellEvaluator
-- [ ] ThreadConverter + SubstackExpander + ReactiveContentGen + EngagementReply
-- [ ] ContentMetrics + LinkedInUpdate + GitHubREADMEGen
-- [ ] ProfileAudit + TestimonialRequest + PinRecommendation
-- [ ] ContractUpsellDetector + Runner Wiring (all pipeline phases)
-- [ ] All merged, make verify green
+## Batch 2 — Hour 2 (Tasks 8-13) — COMPLETE ✅
+- [x] SOWGenerator + ContractFollowUp + CaseStudyDraft — 14 tests
+- [x] ConsultingFollowUp + AdvisoryProposal + ProjectProposal + ConsultingUpsellEvaluator — 19 tests
+- [x] ThreadConverter + SubstackExpander + ReactiveContentGen + EngagementReply — 20 tests
+- [x] ContentMetrics + LinkedInUpdate + GitHubREADMEGen — 7 tests
+- [x] ProfileAudit + TestimonialRequest + PinRecommendation — 10 tests
+- [x] ContractUpsellDetector + Runner Wiring (all 12 pipeline phases) — 28 tests
+- [x] All merged, 163 new tests, go vet + build clean
+- [x] Register Batch 2 tools — 18 new AI endpoints in server.go + scout.go + dispatch.go
 
 ## Batch 3 — Hour 3 (Tasks 14-16) — PENDING
 - [ ] Priority Queue tab + Gate Framework
@@ -49,9 +50,9 @@
 ---
 
 ## Stats So Far
-- Files added: 19 new files
-- Lines added: ~2,280
-- New tests: 72 (all passing)
+- Files added: 49 new files
+- Lines added: ~5,500
+- New tests: 235 (all passing — 130 AI + 33 runner + 72 from Batch 1)
 - Existing tests: no regressions
 - Phase tests: foundation 25/25
 
@@ -76,28 +77,26 @@
 | 15 | ExpertApplication | ✅ Built (Batch 1) |
 | 16 | CallPrepBrief | ✅ Built (Batch 1) |
 | 17 | TierClassifier | ✅ Built (Batch 1) |
-| 18 | SOWGenerator | ⏳ Pending (Batch 2) |
-| 19 | ContractFollowUp | ⏳ Pending (Batch 2) |
-| 20 | CaseStudyDraft | ⏳ Pending (Batch 2) |
-| 21 | ConsultingFollowUp | ⏳ Pending (Batch 2) |
-| 22 | AdvisoryProposal | ⏳ Pending (Batch 2) |
-| 23 | ProjectProposal | ⏳ Pending (Batch 2) |
-| 24 | ConsultingUpsellEvaluator | ⏳ Pending (Batch 2) |
-| 25 | ThreadConverter | ⏳ Pending (Batch 2) |
-| 26 | SubstackExpander | ⏳ Pending (Batch 2) |
-| 27 | ReactiveContentGen | ⏳ Pending (Batch 2) |
-| 28 | EngagementReply | ⏳ Pending (Batch 2) |
-| 29 | ContentMetrics | ⏳ Pending (Batch 2) |
-| 30 | LinkedInUpdate | ⏳ Pending (Batch 2) |
-| 31 | GitHubREADMEGen | ⏳ Pending (Batch 2) |
-| 32 | ProfileAudit | ⏳ Pending (Batch 2) |
-| 33 | TestimonialRequest | ⏳ Pending (Batch 2) |
-| 34 | PinRecommendation | ⏳ Pending (Batch 2) |
-| 35 | ContractUpsellDetector | ⏳ Pending (Batch 2) |
+| 18 | SOWGenerator | ✅ Built (Batch 2) |
+| 19 | ContractFollowUp | ✅ Built (Batch 2) |
+| 20 | CaseStudyDraft | ✅ Built (Batch 2) |
+| 21 | ConsultingFollowUp | ✅ Built (Batch 2) |
+| 22 | AdvisoryProposal | ✅ Built (Batch 2) |
+| 23 | ProjectProposal | ✅ Built (Batch 2) |
+| 24 | ConsultingUpsellEvaluator | ✅ Built (Batch 2) |
+| 25 | ThreadConverter | ✅ Built (Batch 2) |
+| 26 | SubstackExpander | ✅ Built (Batch 2) |
+| 27 | ReactiveContentGen | ✅ Built (Batch 2) |
+| 28 | EngagementReply | ✅ Built (Batch 2) |
+| 29 | ContentMetrics | ✅ Built (Batch 2) |
+| 30 | LinkedInUpdate | ✅ Built (Batch 2) |
+| 31 | GitHubREADMEGen | ✅ Built (Batch 2) |
+| 32 | ProfileAudit | ✅ Built (Batch 2) |
+| 33 | TestimonialRequest | ✅ Built (Batch 2) |
+| 34 | PinRecommendation | ✅ Built (Batch 2) |
+| 35 | ContractUpsellDetector | ✅ Built (Batch 2) |
 
 ## Next Steps
-1. Register Batch 1 tools in server.go + scout.go + dispatch.go
-2. Launch Batch 2 (6 agents — remaining 18 AI tools + runner wiring)
-3. Launch Batch 3 (3 agents — frontend gate UIs)
-4. Integration testing + first real run
-5. Ship
+1. Launch Batch 3 (3 agents — frontend gate UIs)
+2. Integration testing + first real run
+3. Ship
