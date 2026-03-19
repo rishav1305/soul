@@ -2,7 +2,7 @@
 
 **Plan:** `docs/superpowers/plans/2026-03-19-scout-implementation-plan.md`
 **Branch:** `feat/scout-strategy`
-**Last updated:** 2026-03-19 23:30 IST
+**Last updated:** 2026-03-20 00:15 IST
 
 ---
 
@@ -36,11 +36,11 @@
 - [x] All merged, 163 new tests, go vet + build clean
 - [x] Register Batch 2 tools — 18 new AI endpoints in server.go + scout.go + dispatch.go
 
-## Batch 3 — Hour 3 (Tasks 14-16) — PENDING
-- [ ] Priority Queue tab + Gate Framework
-- [ ] Jobs + Freelance + Networking Gate UIs
-- [ ] Content + Consulting + Contracts + Profile Gate UIs + Metrics
-- [ ] All merged, tsc clean, make verify green
+## Batch 3 — Hour 3 (Tasks 14-16) — COMPLETE ✅
+- [x] Priority Queue tab + GateAction framework (2 components)
+- [x] Jobs + Freelance + Networking Gate UIs (3 components)
+- [x] Content + Consulting + Contracts + Profile Gate UIs + MetricsDashboard (5 components)
+- [x] All merged, tsc --noEmit clean, 10 new components, 2,495 lines
 
 ## Hour 4 (Tasks 17-19) — PENDING
 - [ ] Integration testing (make build + make verify)
@@ -50,9 +50,10 @@
 ---
 
 ## Stats So Far
-- Files added: 49 new files
-- Lines added: ~5,500
+- Files added: 59 new files
+- Lines added: ~8,000
 - New tests: 235 (all passing — 130 AI + 33 runner + 72 from Batch 1)
+- Frontend components: 10 new (gate UIs + priority queue + metrics)
 - Existing tests: no regressions
 - Phase tests: foundation 25/25
 
@@ -97,6 +98,6 @@
 | 35 | ContractUpsellDetector | ✅ Built (Batch 2) |
 
 ## Next Steps
-1. Launch Batch 3 (3 agents — frontend gate UIs)
-2. Integration testing + first real run
-3. Ship
+1. Integration testing (make build + make verify)
+2. First real run (TheirStack sweep + AI outputs review)
+3. Ship (merge to master)
