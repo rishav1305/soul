@@ -13,10 +13,19 @@
 | [`content.md`](content.md) | Social media & content strategy (LinkedIn, X, Substack, vertical deep-dives) | Detailed |
 | [`profile.md`](profile.md) | Profile & online presence (LinkedIn SEO, portfolio app, GitHub curation, AI sync) | Spec'd |
 | [`schedule.md`](schedule.md) | Weekly operating schedule (daily rhythm, all 17 gates, adaptive trust, targets) | Spec'd |
+| [`launch-plan.md`](launch-plan.md) | 30-day launch plan (day-by-day, week-by-week) | Ready |
+| [`ai-tools.md`](ai-tools.md) | All 35 AI tools inventory (7 existing + 28 new, prioritized) | Ready |
+| [`metrics.md`](metrics.md) | Metrics & tracking (leading + lagging per section, funnels, dashboard) | Ready |
 
-**Specs:**
+**Specs (8 total):**
 - `docs/superpowers/specs/2026-03-18-job-application-strategy-design.md`
 - `docs/superpowers/specs/2026-03-18-networking-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-freelance-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-contracts-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-consulting-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-content-strategy-design.md`
+- `docs/superpowers/specs/2026-03-18-profile-presence-design.md`
+- `docs/superpowers/specs/2026-03-19-weekly-schedule-design.md`
 
 ## Table of Contents (this doc = overview)
 
@@ -28,9 +37,9 @@
 6. [Social Media & Content Strategy](#6-social-media--content-strategy) → [`content.md`](content.md)
 7. [Profile & Online Presence](#7-profile--online-presence) → [`profile.md`](profile.md)
 8. [Weekly Schedule](#8-weekly-schedule) → [`schedule.md`](schedule.md)
-9. [Task Distribution (30-Day Launch Plan)](#9-task-distribution-30-day-launch-plan)
-10. [Scout AI Tools](#10-scout-ai-tools)
-11. [Metrics & Tracking](#11-metrics--tracking)
+9. [30-Day Launch Plan](#9-task-distribution-30-day-launch-plan) → [`launch-plan.md`](launch-plan.md)
+10. [Scout AI Tools](#10-scout-ai-tools) → [`ai-tools.md`](ai-tools.md)
+11. [Metrics & Tracking](#11-metrics--tracking) → [`metrics.md`](metrics.md)
 
 ---
 
