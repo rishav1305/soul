@@ -89,12 +89,13 @@ internal/mesh/
   server/                     HTTP + WebSocket server
 internal/scout/
   store/                      SQLite (scout.db) — 7 tables (leads, stage_history, sync, optimizations, agents)
-  pipelines/                  5 pipeline types (job, freelance, contract, consulting, product-dev)
-  sweep/                      TheirStack API client, scheduler, sweep orchestrator
-  ai/                         7 Claude-powered tools (match, proposal, cover, outreach, salary, referral, pitch)
+  pipelines/                  7 pipeline types (job, freelance, contract, consulting, product-dev, referral, networking)
+  sweep/                      TheirStack API client, scheduler, sweep orchestrator, tier classifier
+  ai/                         35 Claude-powered tools (match, resume, cover, outreach, salary, referral, pitch + 28 strategy tools)
+  runner/                     Pipeline runner — 12 phases across all pipelines (qualify, prepare, cadence, stale, engage, warm, publish)
   profiledb/                  PostgreSQL client (pgx/v5) for portfolio data
   agent/                      Claude CLI subprocess launcher
-  server/                     HTTP server — 32 REST endpoints
+  server/                     HTTP server — 50 REST endpoints
 web/src/
   main.tsx                    Entry — RouterProvider with lazy-loaded routes
   router.tsx                  14 routes (/, /chat, /tasks, /tutor, /projects, /observe, /scout, /sentinel, /mesh, /bench)
@@ -141,14 +142,14 @@ Chat sessions can be bound to any of 21 products via the tool selector in ChatIn
 
 Tool counts by product:
 - Core: Tasks (6), Tutor (7), Projects (6), Observe (4)
-- Smart Agents: Scout (28), Sentinel (7), Mesh (4), Bench (4)
+- Smart Agents: Scout (55), Sentinel (7), Mesh (4), Bench (4)
 - Quality: Compliance (4), QA (2), Analytics (2)
 - Infrastructure: DevOps (2), DBA (2), Migrate (2)
 - Data: DataEng (2), CostOps (2), Viz (2)
 - Documentation: Docs (2), API (2)
 - Built-in (all contexts): Memories (4), Custom Tools (3), Subagent (1)
 
-Total: 92 product tools + 8 built-in = 100 tools.
+Total: 119 product tools + 8 built-in = 127 tools.
 
 ## Environment Variables
 
