@@ -6,17 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
 
-type errSender struct {
-	err error
-}
-
-func (e *errSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
-	return nil, e.err
-}
+// errSender is defined in content_test.go — reuse it here.
 
 func TestResumeTailor(t *testing.T) {
 	st := newTestStore(t)
