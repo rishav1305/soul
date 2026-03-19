@@ -238,3 +238,111 @@ Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
 - Prefix: init, feat, fix, refactor, test, spec, chore, docs
 - One logical change per commit
 - Every commit must pass `make verify-static`
+
+## Scout — Quick Reference for AI Developers
+
+### Adding a Scout AI Tool
+
+1. Create `internal/scout/ai/{tool_name}.go` — follow pattern in `ai/match.go` or `ai/cover.go`
+2. Add method to `ai.Service` struct (sync: return string, async: use `agent.LaunchAsync`)
+3. Register tool in `internal/chat/context/scout.go` → `scoutTools()` with Claude tool schema
+4. Add dispatch case in `internal/chat/context/dispatch.go` → `scoutDispatch()`
+5. Add REST endpoint in `internal/scout/server/server.go` → `handleToolExecute` switch
+6. Write unit test `internal/scout/ai/{tool_name}_test.go`
+7. Write integration test `tests/integration/scout_{tool_name}_test.go`
+8. Run: `make verify`
+
+### Adding a Pipeline Stage or Pipeline
+
+1. Update `internal/scout/pipelines/pipelines.go` — add/modify pipeline definition
+2. Update `internal/scout/store/analytics.go` → `knownPipelines` if new pipeline
+3. Write unit test for `ValidateTransition` with new stages
+4. Run: `make verify`
+
+### Adding a Frontend Scout Component
+
+1. Create `web/src/components/scout/{ComponentName}.tsx`
+2. Add `data-testid` on every interactive element
+3. Use zinc palette (dark theme), Tailwind CSS v4
+4. Add to `web/src/pages/ScoutPage.tsx` in appropriate tab
+5. Update `web/src/hooks/useScout.ts` if new API calls needed
+6. `types.ts` is generated — if new types needed, update `specs/*.yaml` first, then `make types`
+7. Run: `cd web && npx tsc --noEmit`
+
+### Schema Migration (Adding Columns/Tables)
+
+1. Add `ALTER TABLE` in `internal/scout/store/store.go` → `ensureMigrations()` (check column existence with `PRAGMA table_info` before altering)
+2. Add field to `Lead` struct + `scanLead` function
+3. Add field to `allowedLeadFields` map (for PATCH support)
+4. Write test verifying migration + CRUD works
+5. Run: `make verify`
+
+### AI Tool Pattern (copy for new tools)
+
+```go
+// Sync tool (returns result directly):
+func (s *Service) ToolName(ctx context.Context, leadID int64) (string, error) {
+    lead, err := s.store.GetLead(leadID)
+    if err != nil {
+        return "", fmt.Errorf("get lead: %w", err)
+    }
+    system := "You are an expert..."
+    userMsg := fmt.Sprintf("Job: %s\nCompany: %s\nDescription: %s", lead.JobTitle, lead.Company, lead.Description)
+    return s.sendAndExtractText(ctx, system, userMsg)
+}
+
+// Async tool (returns run_id, poll for results):
+func (s *Service) ToolName(ctx context.Context, leadID int64) (int64, error) {
+    lead, err := s.store.GetLead(leadID)
+    if err != nil {
+        return 0, fmt.Errorf("get lead: %w", err)
+    }
+    cfg := agent.LaunchConfig{Mode: "tool_name", LeadID: leadID, Prompt: "...", DataDir: s.dataDir}
+    return agent.LaunchAsync(s.store, cfg)
+}
+```
+
+### Tool Registration Pattern
+
+```go
+// In scoutTools() — add to tools slice:
+{Name: "tool_name", Description: "...", InputSchema: map[string]any{
+    "type": "object",
+    "properties": map[string]any{"lead_id": map[string]any{"type": "integer", "description": "Lead ID"}},
+    "required": []string{"lead_id"},
+}}
+
+// In scoutDispatch() — add case:
+case "tool_name":
+    leadID := int64(input["lead_id"].(float64))
+    result, err := aiSvc.ToolName(ctx, leadID)
+```
+
+### Scout Spec → Code Map
+
+| Spec | AI Tools | Runner | Frontend | Tests |
+|---|---|---|---|---|
+| Job Application | ai/resume.go | runner/job.go | scout/JobGate.tsx | ai/resume_test.go |
+| Networking | ai/networking.go | runner/networking.go | scout/NetworkingGate.tsx | ai/networking_test.go |
+| Freelance | ai/freelance_score.go | runner/freelance.go | scout/FreelanceGate.tsx | ai/freelance_score_test.go |
+| Contracts | ai/sow.go, ai/case_study.go, ai/upsell.go | runner/contracts.go | scout/ContractGate.tsx | ai/sow_test.go |
+| Consulting | ai/call_prep.go, ai/expert_app.go | runner/consulting.go | scout/ConsultingGate.tsx | ai/call_prep_test.go |
+| Content | ai/content_*.go | runner/content.go | scout/ContentGate.tsx | ai/content_*_test.go |
+| Profile | ai/linkedin_update.go, ai/github_readme.go | runner/profile.go | scout/ProfileGate.tsx | ai/linkedin_update_test.go |
+| Pipeline Runner | — | runner/runner.go | scout/PriorityQueue.tsx | runner/runner_test.go |
+
+### Specs Location
+
+Strategy docs: `docs/scout/*.md` (13 docs)
+Design specs: `docs/superpowers/specs/2026-03-18-*.md` (8 specs)
+Schedule spec: `docs/superpowers/specs/2026-03-19-weekly-schedule-design.md`
+
+### Agent Mandate (30 rules — include in every subagent prompt)
+
+Go: standard lib preferred, Claude via internal/chat/stream/, parameterized SQL (?), no secrets, error returns not panics, race-safe.
+Testing: unit test every public fn, property tests for parsers, integration tests for endpoints, `go test -race`.
+Frontend: data-testid, zinc dark theme, TS strict (warnings=errors), tsc --noEmit, no innerHTML, types.ts generated.
+Integration: register in scout.go + dispatch.go + server.go, follow ai/match.go pattern.
+Security: no innerHTML, no direct anthropic import, no hardcoded secrets, no unprotected endpoints, no SQL concat.
+Commits: prefix (feat/fix/test), one logical change, make verify-static before commit.
+Verification: make verify (L1-L3) before merge.
