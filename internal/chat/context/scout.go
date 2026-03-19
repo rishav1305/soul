@@ -203,6 +203,100 @@ Help users manage their job search efficiently, find high-quality leads, and opt
 				Description: "Generate a prep brief for an expert consulting call — company background, likely questions, relevant experience.",
 				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
 			},
+			// Batch 2 tools — contracts
+			{
+				Name:        "sow_generator",
+				Description: "Generate a Statement of Work for a contract lead — scope, deliverables, timeline, pricing, assumptions.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the contract lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "contract_followup",
+				Description: "Generate a stage-appropriate follow-up message for a contract lead, using interaction history for context.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the contract lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "case_study_draft",
+				Description: "Draft a case study from a completed contract — title, challenge, approach, results, testimonial prompt.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the contract lead"}},"required":["lead_id"]}`),
+			},
+			// Batch 2 tools — consulting
+			{
+				Name:        "consulting_followup",
+				Description: "Generate a follow-up message for a consulting engagement based on stage and interaction history.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "advisory_proposal",
+				Description: "Generate an advisory retainer proposal — executive summary, scope, deliverables, pricing model, terms.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "project_proposal",
+				Description: "Generate a project proposal — problem statement, solution, approach, milestones, budget, timeline.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "consulting_upsell_evaluator",
+				Description: "Evaluate upsell potential for a consulting engagement — score, opportunities, recommended approach, timing.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the consulting lead"}},"required":["lead_id"]}`),
+			},
+			// Batch 2 tools — content
+			{
+				Name:        "thread_converter",
+				Description: "Convert a LinkedIn post into an X/Twitter thread with hook tweet, numbered thread, and CTA.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"post":{"type":"string","description":"LinkedIn post content to convert"}},"required":["post"]}`),
+			},
+			{
+				Name:        "substack_expander",
+				Description: "Expand a LinkedIn post into a long-form Substack article (1500-2000 words).",
+				InputSchema: mustJSON(`{"type":"object","properties":{"post":{"type":"string","description":"LinkedIn post to expand"},"topic":{"type":"string","description":"Topic/title for the article"}},"required":["post","topic"]}`),
+			},
+			{
+				Name:        "reactive_content_gen",
+				Description: "Generate reactive content (LinkedIn + X posts) based on a news event or industry development.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"news_context":{"type":"string","description":"News event or development to react to"},"angle":{"type":"string","description":"Your expert angle on this news"}},"required":["news_context","angle"]}`),
+			},
+			{
+				Name:        "engagement_reply",
+				Description: "Generate a thoughtful reply to a LinkedIn or X post that adds genuine value.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"post_content":{"type":"string","description":"Content of the post to reply to"},"author_context":{"type":"string","description":"Context about the post author"}},"required":["post_content"]}`),
+			},
+			// Batch 2 tools — metrics + profile
+			{
+				Name:        "content_metrics",
+				Description: "Aggregate content performance metrics across published posts with AI analysis and recommendations.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"platform":{"type":"string","description":"Filter by platform (linkedin, x) or empty for all"}}}`),
+			},
+			{
+				Name:        "linkedin_update",
+				Description: "Optimize a LinkedIn profile section for AI/ML visibility and consulting opportunities.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"section":{"type":"string","description":"Profile section: headline, about, or experience"},"current_content":{"type":"string","description":"Current content of the section"}},"required":["section","current_content"]}`),
+			},
+			{
+				Name:        "github_readme_gen",
+				Description: "Generate a compelling GitHub README for an AI/ML project with badges, features, architecture, and quick start.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"repo_name":{"type":"string","description":"Repository name"},"description":{"type":"string","description":"Brief project description"}},"required":["repo_name","description"]}`),
+			},
+			{
+				Name:        "profile_audit",
+				Description: "Audit a professional profile for completeness, SEO, and positioning. Returns score and recommendations.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"platform":{"type":"string","description":"Platform: linkedin or github"},"current_profile":{"type":"string","description":"Current profile content to audit"}},"required":["platform","current_profile"]}`),
+			},
+			{
+				Name:        "testimonial_request",
+				Description: "Generate a warm testimonial request message for a completed engagement.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the completed engagement lead"}},"required":["lead_id"]}`),
+			},
+			{
+				Name:        "pin_recommendation",
+				Description: "Analyze published posts and recommend which to pin/feature on your profile.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"platform":{"type":"string","description":"Platform: linkedin or github"}},"required":["platform"]}`),
+			},
+			{
+				Name:        "contract_upsell_detector",
+				Description: "Detect upsell opportunities in completed contracts — new services, scope expansion, referral potential.",
+				InputSchema: mustJSON(`{"type":"object","properties":{"lead_id":{"type":"integer","description":"ID of the contract lead"}},"required":["lead_id"]}`),
+			},
 		},
 	}
 }
