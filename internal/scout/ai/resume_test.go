@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// errSender is defined in content_test.go — reuse it here.
-
 func TestResumeTailor(t *testing.T) {
 	st := newTestStore(t)
 	lead := makeTestLead()
