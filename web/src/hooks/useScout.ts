@@ -77,7 +77,7 @@ export interface ScoutScoredLead {
   match_score: number;
 }
 
-export type ScoutTab = 'pipeline' | 'analytics' | 'actions' | 'profile' | 'intelligence';
+export type ScoutTab = 'priority' | 'pipeline' | 'analytics' | 'actions' | 'profile' | 'intelligence';
 
 export interface UseScoutReturn {
   leads: ScoutLead[];
@@ -96,6 +96,7 @@ export interface UseScoutReturn {
   updateLead: (id: number, data: Partial<ScoutLead>) => Promise<void>;
   triggerSweep: (platforms: string[]) => Promise<void>;
   syncPlatform: (platform: string) => Promise<void>;
+  callAITool: (toolName: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 
 export function useScout(): UseScoutReturn {
@@ -108,13 +109,18 @@ export function useScout(): UseScoutReturn {
   const [scoredLeads, setScoredLeads] = useState<ScoutScoredLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ScoutTab>('pipeline');
+  const [activeTab, setActiveTab] = useState<ScoutTab>('priority');
 
   const fetchData = useCallback(async (tab: ScoutTab) => {
     setLoading(true);
     setError(null);
     try {
       switch (tab) {
+        case 'priority': {
+          const data = await api.get<ScoutLead[]>('/api/scout/leads');
+          setLeads(data ?? []);
+          break;
+        }
         case 'pipeline': {
           const data = await api.get<ScoutLead[]>('/api/scout/leads');
           setLeads(data ?? []);
@@ -198,9 +204,13 @@ export function useScout(): UseScoutReturn {
     await fetchData('actions');
   }, [fetchData]);
 
+  const callAITool = useCallback(async (toolName: string, params: Record<string, unknown>) => {
+    return api.post<unknown>(`/api/ai/${toolName}`, params);
+  }, []);
+
   return {
     leads, analytics, sweepStatus, profile, optimizations, agentRuns, scoredLeads,
     loading, error, activeTab, setActiveTab: handleSetTab, refresh,
-    addLead, updateLead, triggerSweep, syncPlatform,
+    addLead, updateLead, triggerSweep, syncPlatform, callAITool,
   };
 }

@@ -10,6 +10,7 @@ import { SyncStatus } from '../components/scout/SyncStatus';
 import { AgentActivity } from '../components/scout/AgentActivity';
 import { ProfilePanel } from '../components/scout/ProfilePanel';
 import { IntelligenceView } from '../components/scout/IntelligenceView';
+import { PriorityQueue } from '../components/scout/PriorityQueue';
 import type { ScoutLead } from '../hooks/useScout';
 
 export function ScoutPage() {
@@ -24,7 +25,7 @@ export function ScoutPage() {
 
   useEffect(() => { reportUsage('page.view', { page: 'scout' }); }, []);
 
-  const tabs = ['pipeline', 'analytics', 'actions', 'profile', 'intelligence'] as const;
+  const tabs = ['priority', 'pipeline', 'analytics', 'actions', 'profile', 'intelligence'] as const;
 
   const handleApproveOptimization = (id: number) => {
     updateLead(id, {}).catch(() => { /* error surfaced via hook */ });
@@ -71,6 +72,10 @@ export function ScoutPage() {
       {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="scout-error">{error}</div>}
 
       {/* Tab content */}
+      {activeTab === 'priority' && (
+        <PriorityQueue leads={leads} />
+      )}
+
       {activeTab === 'pipeline' && (
         <>
           {selectedLead ? (
