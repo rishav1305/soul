@@ -11,9 +11,12 @@ import (
 	"syscall"
 
 	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/tutor/modules"
+	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul-v2/internal/tutor/eval"
+	"github.com/rishav1305/soul-v2/internal/tutor/questions"
 	"github.com/rishav1305/soul-v2/internal/tutor/server"
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul-v2/pkg/auth"
 )
 
 func main() {
@@ -57,6 +60,13 @@ func runServe() {
 	}
 	defer tutorStore.Close()
 
+	// Claude API client for semantic evaluation.
+	credPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
+	authSource := auth.NewOAuthTokenSource(credPath, nil)
+	streamClient := stream.NewClient(authSource)
+	evaluator := eval.New(streamClient)
+	log.Println("tutor: semantic evaluation initialized")
+
 	// Metrics logger.
 	metricsLogger, err := metrics.NewEventLogger(dataDir, "tutor")
 	if err != nil {
@@ -64,18 +74,12 @@ func runServe() {
 	}
 	defer metricsLogger.Close()
 
-	// Auto-import on first run if DB is empty.
-	topics, _ := tutorStore.ListTopics("", "")
-	if len(topics) == 0 {
-		log.Println("tutor: empty database, attempting auto-import...")
-		importer := modules.NewImporter(tutorStore, contentDir)
-		stats, err := importer.ImportStdlib()
-		if err != nil {
-			log.Printf("tutor: auto-import skipped: %v", err)
-		} else {
-			log.Printf("tutor: auto-import complete — %d topics, %d questions, %d files",
-				stats.TopicsCreated, stats.QuestionsImported, stats.FilesCopied)
-		}
+	// Seed embedded questions on boot (idempotent).
+	loadStats, err := questions.Load(tutorStore)
+	if err != nil {
+		log.Printf("tutor: question loading error: %v", err)
+	} else {
+		log.Printf("tutor: questions loaded — %d topics, %d questions", loadStats.TopicsCreated, loadStats.QuestionsCreated)
 	}
 
 	// Server options.
@@ -96,6 +100,7 @@ func runServe() {
 		server.WithPort(port),
 		server.WithContentDir(contentDir),
 		server.WithMetrics(metricsLogger),
+		server.WithEvaluator(evaluator),
 	}
 
 	srv := server.New(opts...)
