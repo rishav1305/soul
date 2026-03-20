@@ -30,17 +30,16 @@
 │       └── e2e-quality-gate/      Symlink → ~/.claude/skills/e2e-quality-gate
 ├── tutor/
 │   ├── CLAUDE.md
-│   └── .claude/skills/            Empty (no local skills)
+│   └── .claude/skills/
+│       └── daily-planner/         Symlink → ~/soul-old/.claude/skills/daily-planner
 ├── marketing/
 │   ├── CLAUDE.md
 │   └── .claude/skills/
-│       └── ui-ux-pro-max/         Symlink → ~/soul-v2/.claude/skills/ui-ux-pro-max
+│       ├── ui-ux-pro-max/         Symlink → ~/soul-v2/.claude/skills/ui-ux-pro-max
+│       └── daily-planner/         Symlink → ~/soul-old/.claude/skills/daily-planner
 ├── strategy/
 │   ├── CLAUDE.md
 │   └── .claude/skills/            Empty (no local skills)
-├── conference/
-│   ├── CLAUDE.md                  Facilitator persona
-│   └── .claude/skills/            Empty (Phase 2)
 └── shared/
     ├── decisions/                 Conference consensus docs
     ├── briefs/                    Strategy briefs, reports
@@ -86,7 +85,7 @@
 - [ ] **Step 1: Create the full directory tree**
 
 ```bash
-mkdir -p ~/soul-roles/{scout-pm,dev-pm,tutor,marketing,strategy,conference}/.claude/skills
+mkdir -p ~/soul-roles/{scout-pm,dev-pm,tutor,marketing,strategy}/.claude/skills
 mkdir -p ~/soul-roles/shared/{decisions,briefs,.conference-state}
 mkdir -p ~/soul-roles/shared/inbox/{scout-pm,dev-pm,marketing,tutor,strategy}/{archive}
 ```
@@ -94,7 +93,7 @@ mkdir -p ~/soul-roles/shared/inbox/{scout-pm,dev-pm,marketing,tutor,strategy}/{a
 - [ ] **Step 2: Create soul-v2 symlinks in each persona directory**
 
 ```bash
-for role in scout-pm dev-pm tutor marketing strategy conference; do
+for role in scout-pm dev-pm tutor marketing strategy; do
   ln -s /home/rishav/soul-v2 ~/soul-roles/$role/soul-v2
 done
 ```
@@ -110,10 +109,10 @@ Expected: file contents displayed (not "No such file")
 
 Read `~/.claude/settings.json`. Add `"marketingskills@marketingskills": true` to the `enabledPlugins` object.
 
-- [ ] **Step 5: Initialize git in soul-roles**
+- [ ] **Step 5: Initialize git (init only, commit after symlinks)**
 
 ```bash
-cd ~/soul-roles && git init && git add -A && git commit -m "init: soul-roles directory structure"
+cd ~/soul-roles && git init
 ```
 
 - [ ] **Step 6: Create role-specific skill symlinks**
@@ -128,8 +127,12 @@ ln -s /home/rishav/soul-v2/.claude/skills/ui-ux-pro-max ~/soul-roles/dev-pm/.cla
 ln -s /home/rishav/.claude/skills/incremental-decomposition ~/soul-roles/dev-pm/.claude/skills/incremental-decomposition
 ln -s /home/rishav/.claude/skills/e2e-quality-gate ~/soul-roles/dev-pm/.claude/skills/e2e-quality-gate
 
+# Tutor
+ln -s /home/rishav/soul-old/.claude/skills/daily-planner ~/soul-roles/tutor/.claude/skills/daily-planner
+
 # Marketing
 ln -s /home/rishav/soul-v2/.claude/skills/ui-ux-pro-max ~/soul-roles/marketing/.claude/skills/ui-ux-pro-max
+ln -s /home/rishav/soul-old/.claude/skills/daily-planner ~/soul-roles/marketing/.claude/skills/daily-planner
 ```
 
 - [ ] **Step 7: Verify symlinks resolve**
@@ -137,9 +140,17 @@ ln -s /home/rishav/soul-v2/.claude/skills/ui-ux-pro-max ~/soul-roles/marketing/.
 ```bash
 ls ~/soul-roles/dev-pm/.claude/skills/soul-pm/SKILL.md
 ls ~/soul-roles/scout-pm/.claude/skills/daily-planner/SKILL.md
+ls ~/soul-roles/tutor/.claude/skills/daily-planner/SKILL.md
 ls ~/soul-roles/marketing/.claude/skills/ui-ux-pro-max/SKILL.md
+ls ~/soul-roles/marketing/.claude/skills/daily-planner/SKILL.md
 ```
-Expected: all three files found.
+Expected: all five files found.
+
+- [ ] **Step 8: Initial commit with all structure + symlinks**
+
+```bash
+cd ~/soul-roles && git add -A && git commit -m "init: soul-roles directory structure with skill symlinks"
+```
 
 ---
 
@@ -892,49 +903,7 @@ ALWAYS include confidence level: "High confidence (multiple sources)" or "Low co
 
 ---
 
-## Task 7: Conference Facilitator Persona (Stub)
-
-**Files:**
-- Create: `~/soul-roles/conference/CLAUDE.md`
-
-- [ ] **Step 1: Write Conference Facilitator CLAUDE.md (Phase 2 stub)**
-
-Write the following to `~/soul-roles/conference/CLAUDE.md`:
-
-```markdown
-# Conference Facilitator
-
-## Identity
-
-You are the Conference Facilitator for Rishav's AI leadership team. You orchestrate structured discussions between personas, detect conflicts, manage rounds, and produce consensus documents.
-
-You are neutral. You never take sides. You synthesize, you don't decide.
-
-## Status
-
-This persona is a Phase 2 implementation. The full conference protocol (research phase, round-based debate, convergence detection, CEO interject) will be implemented in the /conference global skill.
-
-For now, use individual persona consult skills (/scout-pm, /dev-pm, /marketing, /strategy, /tutor) for input, and synthesize manually.
-
-## Mandate
-
-**DO:**
-- Parse conference invitations (identify topic + personas)
-- Load persona identities from ~/soul-roles/{persona}/CLAUDE.md
-- Facilitate structured discussions
-- Detect agreements and conflicts
-- Write decision docs to ~/soul-roles/shared/decisions/
-- Distribute action items to ~/soul-roles/shared/inbox/{persona}/
-
-**DO NOT:**
-- Access any persona's memory
-- Make domain decisions or take sides
-- Send anything external
-```
-
----
-
-## Task 8: Global Consult Skills
+## Task 7: Global Consult Skills
 
 **Files:**
 - Create: `~/.claude/skills/scout-pm/SKILL.md`
@@ -1255,7 +1224,7 @@ Until the full protocol is implemented, simulate a conference manually:
 
 ---
 
-## Task 9: Bash Aliases & Final Setup
+## Task 8: Bash Aliases & Final Setup
 
 **Files:**
 - Modify: `~/.bashrc`
@@ -1268,13 +1237,11 @@ Append to `~/.bashrc`:
 # Soul Roles — AI Leadership Team
 alias scout-pm='cd ~/soul-roles/scout-pm && claude'
 alias dev-pm='cd ~/soul-roles/dev-pm && claude'
-alias tutor-session='cd ~/soul-roles/tutor && claude'
+alias tutor='cd ~/soul-roles/tutor && claude'
 alias marketing='cd ~/soul-roles/marketing && claude'
 alias strategy='cd ~/soul-roles/strategy && claude'
-alias conference='cd ~/soul-roles/conference && claude'
+# conference is a global skill (/conference), not a persona directory
 ```
-
-Note: `tutor-session` instead of `tutor` to avoid conflict with any existing `tutor` command.
 
 - [ ] **Step 2: Reload bashrc**
 
@@ -1290,16 +1257,16 @@ cd ~/soul-roles && git add -A && git commit -m "feat: 5 personas + consult skill
 
 ---
 
-## Task 10: Verification
+## Task 9: Verification
 
 - [ ] **Step 1: Verify directory structure**
 
 ```bash
 find ~/soul-roles -type f -name "CLAUDE.md" | sort
 ```
-Expected: 6 files (scout-pm, dev-pm, tutor, marketing, strategy, conference)
+Expected: 5 files (scout-pm, dev-pm, tutor, marketing, strategy)
 
-- [ ] **Step 2: Verify skill symlinks resolve**
+- [ ] **Step 2: Verify ALL skill symlinks resolve**
 
 ```bash
 ls -la ~/soul-roles/scout-pm/.claude/skills/daily-planner/SKILL.md
@@ -1307,14 +1274,16 @@ ls -la ~/soul-roles/dev-pm/.claude/skills/soul-pm/SKILL.md
 ls -la ~/soul-roles/dev-pm/.claude/skills/ui-ux-pro-max/SKILL.md
 ls -la ~/soul-roles/dev-pm/.claude/skills/incremental-decomposition/SKILL.md
 ls -la ~/soul-roles/dev-pm/.claude/skills/e2e-quality-gate/SKILL.md
+ls -la ~/soul-roles/tutor/.claude/skills/daily-planner/SKILL.md
 ls -la ~/soul-roles/marketing/.claude/skills/ui-ux-pro-max/SKILL.md
+ls -la ~/soul-roles/marketing/.claude/skills/daily-planner/SKILL.md
 ```
-Expected: all files found, symlinks resolve.
+Expected: all 8 files found, symlinks resolve.
 
 - [ ] **Step 3: Verify global consult skills**
 
 ```bash
-find ~/.claude/skills -name "SKILL.md" | sort
+find ~/.claude/skills -maxdepth 2 -name "SKILL.md" | sort
 ```
 Expected: should include scout-pm, dev-pm, tutor, marketing, strategy, conference (plus existing incremental-decomposition, e2e-quality-gate).
 
@@ -1336,14 +1305,40 @@ grep "marketingskills" ~/.claude/settings.json
 ```
 Expected: `"marketingskills@marketingskills": true`
 
-- [ ] **Step 6: Test a consult from soul-v2 root**
+- [ ] **Step 6: Test consult from soul-v2 root for EACH persona**
 
-From `~/soul-v2/`, invoke `/scout-pm what pipelines are currently active?` and verify it dispatches a subagent with the Scout PM persona.
+From `~/soul-v2/`, test each consult skill:
+1. `/scout-pm what pipelines are currently active?`
+2. `/dev-pm what is the current build status?`
+3. `/tutor what are my weakest interview topics?`
+4. `/marketing what's the current SEO state of the portfolio?`
+5. `/strategy what's the current overall career strategy?`
 
-- [ ] **Step 7: Commit verification results**
+For each: verify it dispatches a subagent with the correct persona identity and returns a labeled response (📣 PERSONA_NAME: ...).
+
+- [ ] **Step 7: Test solo session memory isolation**
+
+Launch one solo session to verify memory path:
+```bash
+cd ~/soul-roles/scout-pm && claude
+# In the session: ask it to save a test memory
+# Exit, then verify:
+ls ~/.claude/projects/-home-rishav-soul-roles-scout-pm/memory/
+```
+Expected: memory files created in the scout-pm-specific directory, NOT in the soul-v2 memory directory.
+
+- [ ] **Step 8: Test skill whitelist compliance**
+
+In a Scout PM solo session, attempt to invoke a blacklisted skill:
+```
+/code-review (this is in Scout PM's DO NOT USE list)
+```
+Expected: Scout PM should refuse or flag that code-review is outside its domain. Record whether the persona respects the restriction. This establishes a baseline compliance rate.
+
+- [ ] **Step 9: Commit soul-roles**
 
 ```bash
-cd ~/soul-roles && git add -A && git commit -m "test: verification complete"
+cd ~/soul-roles && git add -A && git commit -m "test: phase 1 verification complete"
 ```
 
 ---
@@ -1355,10 +1350,9 @@ With 4 max parallel agents (from resource-check.sh):
 | Batch | Tasks | Agents | Dependencies |
 |-------|-------|--------|-------------|
 | 1 | Task 1 (dirs + symlinks + prereqs) | 1 (sequential) | None |
-| 2 | Tasks 2, 3, 4, 5 (4 personas) | 4 parallel | Batch 1 |
-| 3 | Tasks 6, 7 (strategy + conference stub) | 2 parallel | Batch 1 |
-| 4 | Task 8 (all 6 global skills) | 1 (sequential, fast) | Batch 1 |
-| 5 | Task 9 (aliases + setup) | 1 | All above |
-| 6 | Task 10 (verification) | 1 | All above |
+| 2 | Tasks 2, 3, 4, 5 (Scout PM, Dev PM, Tutor, Marketing personas) | 4 parallel | Batch 1 |
+| 3 | Task 6 (Strategy persona) + Task 7 (all 6 global skills) | 2 parallel | Batch 1 |
+| 4 | Task 8 (aliases + setup) | 1 | All above |
+| 5 | Task 9 (verification) | 1 (manual — requires interactive testing) | All above |
 
-**Estimated total:** Batch 1 (2 min) + Batch 2-4 parallel (~5 min) + Batch 5-6 (3 min) = ~10 minutes.
+**Estimated total:** Batch 1 (2 min) + Batch 2-3 parallel (~5 min) + Batch 4-5 (5 min) = ~12 minutes.
