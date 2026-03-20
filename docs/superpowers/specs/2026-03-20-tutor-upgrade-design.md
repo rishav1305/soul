@@ -14,7 +14,7 @@ Upgrade the Tutor interview prep system from an empty framework with word-overla
 - Full SM-2 spaced repetition engine (store + SM2Update algorithm)
 - 11-table SQLite schema: topics, quiz_questions, spaced_repetition, progress, question_attempts, daily_activity, confidence_ratings, mock_sessions, mock_session_scores, star_stories, study_plans
 - 5 modules: DSA, AI, Behavioral, Mock, Planner + Progress
-- REST API: 16 endpoints on port 3006
+- REST API: 17 endpoints on port 3006
 - Importer: reads Python stdlib cheatsheet format from ~/interview-prep/
 
 ### What's Missing
@@ -56,10 +56,11 @@ internal/tutor/questions/
   "question": "Given a sorted array, find two numbers that add to a target. What's the optimal Python approach?",
   "answer": "Use two pointers (left=0, right=len-1). Move left up if sum < target, right down if sum > target. O(n) time, O(1) space.",
   "explanation": "Two pointers exploit the sorted property. Unlike hash map approach (O(n) space), this uses O(1) space.",
-  "tags": ["python", "two-pointers", "arrays"],
-  "role_track": ["ai_engineer", "data_engineer"]
+  "source": "dsa_python:arrays:001"
 }
 ```
+
+**Note on tags/role_track:** These are NOT stored in the database. The `source` field serves as the dedup key (unique per question across JSON files). Python enrichment is achieved through question content and evaluation prompts, not per-question tag storage. The `source` field format is `{file}:{category}:{sequence}` — used by the loader for idempotent seeding.
 
 **DSA Python distribution (50):**
 - Arrays/Strings: 10 (two pointers, sliding window, prefix sums)
@@ -88,8 +89,12 @@ internal/tutor/questions/
 **Loader behavior:**
 - `questions.Load(store)` called on server boot
 - Reads embedded JSON, creates topics via `store.CreateTopic()` (uses `ON CONFLICT DO NOTHING`)
-- Creates quiz questions via `store.CreateQuizQuestion()`
-- Fully idempotent — safe to run on every boot
+- Creates quiz questions via `store.CreateQuizQuestion()` — **dedup by source field**: before inserting, checks if a question with the same `source` value already exists for that topic. If yes, skips. This makes the loader fully idempotent without requiring a schema migration.
+- Safe to run on every boot — duplicate questions are never created
+
+**Schema migration (minimal):**
+- Add `UNIQUE` index on `quiz_questions(topic_id, source)` via `ensureMigrations()` pattern (check index existence before creating). This is the **only** schema change required.
+- The `source` field already exists in the table — only the unique index is new.
 
 ### 2. Claude Semantic Evaluation
 
@@ -124,7 +129,8 @@ type EvalResult struct {
 | 70-89 | 4 | Correct with hesitation |
 | 50-69 | 3 | Barely correct, gaps |
 | 30-49 | 2 | Incorrect but close |
-| 0-29 | 1 | Completely wrong |
+| 1-29 | 1 | Completely wrong |
+| 0 (blank/skipped) | 0 | Complete blackout — no attempt |
 
 **System prompt:**
 ```
@@ -138,11 +144,17 @@ Given the reference answer and candidate's response, evaluate on:
 Return JSON: {correct, score, quality, feedback, keyMissed, keyHit}
 ```
 
-**Fallback:** If Claude API is unavailable (network, rate limit), falls back to `evaluateWordOverlap` so drills don't break.
+**Fallback:** If Claude API is unavailable (network, rate limit) or returns malformed JSON, falls back to `evaluateWordOverlap` so drills don't break. Malformed response detection: if JSON parse fails or required fields are missing, use fallback.
 
 **New endpoint:** `POST /api/tutor/evaluate`
 - Input: `{question_id, answer}`
-- Calls evaluator, records attempt via existing `store.RecordAttempt`, updates SM-2
+- Implementation steps:
+  1. Fetch question from store (`GetQuizQuestion`)
+  2. Call `evaluator.Evaluate()` (or word-overlap fallback)
+  3. Create progress record via `store.RecordProgress()` — this returns a `progressID`
+  4. Record attempt via `store.RecordAttempt(questionID, progressID, ...)` — the `progressID` from step 3 is required as a foreign key
+  5. Update SM-2 via `store.UpsertSpacedRep()` using the quality from evaluation
+  6. Update daily activity via `store.UpsertDailyActivity()`
 - Returns: `EvalResult` + next review date
 
 ### 3. System Design Module
@@ -174,6 +186,8 @@ System design questions are open-ended. Evaluation scores on 5 dimensions:
 
 Reference answers serve as rubrics (list of expected components/concepts) rather than exact answers.
 
+**Server route registration:** System Design tools are accessed via the existing `POST /api/tools/{name}/execute` dispatch pattern. Three new cases added to `handleToolExecute` switch: `sysdesign_learn`, `sysdesign_drill`, `sysdesign_generate`. No dedicated REST endpoints needed.
+
 ### 4. Python Enrichment
 
 Not a separate module — enrichment across question content:
@@ -190,7 +204,7 @@ Not a separate module — enrichment across question content:
 
 3. **AI questions reference Python tooling:** Not "explain RAG" but "implement a RAG pipeline using LangChain in Python."
 
-4. **Tags:** Every question gets a `tags` array including `"python"` where Python idioms are expected. Evaluation prompt includes: "The candidate should demonstrate Python-idiomatic solutions where applicable."
+4. **Python detection in evaluation:** The evaluator checks the question's module (`dsa`) and whether the question text contains Python-related keywords. When detected, the evaluation prompt includes: "The candidate should demonstrate Python-idiomatic solutions where applicable." No per-question tag storage needed — this is prompt-level enrichment.
 
 5. **Reference answers contain Python code snippets** — the `answer` field contains actual Python, not just prose.
 
@@ -263,14 +277,14 @@ Not a separate module — enrichment across question content:
 
 | File | Change |
 |------|--------|
-| `internal/tutor/modules/registry.go` | Add `SystemDesign` field, wire evaluator |
-| `internal/tutor/modules/dsa.go` | Replace `evaluateWordOverlap` with `eval.Evaluator` |
-| `internal/tutor/modules/ai.go` | Replace `evaluateWordOverlap` with `eval.Evaluator` |
-| `internal/tutor/server/server.go` | Add `/api/tutor/evaluate`, `sysdesign_*` routes, wire evaluator |
-| `cmd/tutor/main.go` | Init stream client, pass to server, call question loader |
+| `internal/tutor/modules/registry.go` | Add `SystemDesign` field, accept evaluator, pass to modules |
+| `internal/tutor/modules/dsa.go` | Add `evaluator` field, replace `evaluateWordOverlap` with `eval.Evaluator` call |
+| `internal/tutor/modules/ai.go` | Add `evaluator` field, replace `evaluateWordOverlap` with `eval.Evaluator` call |
+| `internal/tutor/server/server.go` | Add `evaluator` field + `WithEvaluator` option, add `/api/tutor/evaluate` route, add `sysdesign_learn`/`sysdesign_drill`/`sysdesign_generate` cases to `handleToolExecute` |
+| `internal/tutor/store/store.go` | Add `CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_questions_source ON quiz_questions(topic_id, source)` in `migrate()` |
+| `cmd/tutor/main.go` | Import `pkg/auth`, create `OAuthTokenSource` from `~/.claude/.credentials.json`, init `stream.Client`, create `eval.Evaluator`, call `questions.Load(store)`, pass evaluator to server via `WithEvaluator`. If credentials missing, server still boots (evaluator is nil, modules fall back to word overlap). |
 
 **Not touched:**
-- `internal/tutor/store/store.go` — schema already supports everything
 - `web/` — no frontend changes
 - `internal/chat/context/` — no Chat product registration
 - `specs/` — skills not spec-driven
@@ -304,6 +318,6 @@ cmd/tutor/main.go
 
 - No web UI changes — Claude Code skills are the interaction layer
 - No Chat product tool registration — can add later if needed
-- No new database tables or migrations — existing schema covers all needs
+- One minimal schema change: unique index on `quiz_questions(topic_id, source)` for loader idempotency — no new tables
 - No Go module — Python enrichment instead
 - No frontend gate components — backend + skills only
