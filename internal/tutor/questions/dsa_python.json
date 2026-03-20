@@ -21,6 +21,86 @@
   },
   {
     "module": "dsa",
+    "category": "arrays",
+    "topic": "Prefix Sums",
+    "difficulty": "medium",
+    "question": "Given an array of integers, answer multiple range-sum queries efficiently. Precompute a prefix sum array and handle queries in O(1). Also handle the variant where you need to count subarrays summing to a target k.",
+    "answer": "Prefix sum for range queries:\n\n```python\ndef build_prefix(nums: list[int]) -> list[int]:\n    prefix = [0] * (len(nums) + 1)\n    for i, v in enumerate(nums):\n        prefix[i + 1] = prefix[i] + v\n    return prefix\n\ndef range_sum(prefix: list[int], left: int, right: int) -> int:\n    return prefix[right + 1] - prefix[left]\n```\n\nSubarray count summing to k (LeetCode 560):\n\n```python\nfrom collections import defaultdict\n\ndef subarray_sum(nums: list[int], k: int) -> int:\n    count = 0\n    curr_sum = 0\n    prefix_counts: dict[int, int] = defaultdict(int)\n    prefix_counts[0] = 1\n    for num in nums:\n        curr_sum += num\n        count += prefix_counts[curr_sum - k]\n        prefix_counts[curr_sum] += 1\n    return count\n```\n\nBuild: O(n). Each query: O(1). Subarray count: O(n) time, O(n) space.",
+    "explanation": "Prefix sums convert range-sum queries from O(n) to O(1) after O(n) preprocessing. The subarray-sum-equals-k variant uses a hash map of running prefix sums — if prefix[j] - prefix[i] == k, the subarray (i, j] sums to k. This is the same technique behind many sliding window and two-sum variants. The defaultdict(int) pattern avoids KeyError for unseen prefix sums.",
+    "source": "dsa_python:arrays:003"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Kadane's Algorithm",
+    "difficulty": "medium",
+    "question": "Find the contiguous subarray with the maximum sum (maximum subarray problem). Implement Kadane's algorithm in Python. How do you also track the start and end indices of the subarray?",
+    "answer": "```python\ndef max_subarray(nums: list[int]) -> tuple[int, int, int]:\n    \"\"\"Returns (max_sum, start_index, end_index).\"\"\"\n    max_sum = nums[0]\n    curr_sum = nums[0]\n    start = end = 0\n    temp_start = 0\n    for i in range(1, len(nums)):\n        if curr_sum + nums[i] < nums[i]:\n            curr_sum = nums[i]\n            temp_start = i\n        else:\n            curr_sum += nums[i]\n        if curr_sum > max_sum:\n            max_sum = curr_sum\n            start = temp_start\n            end = i\n    return max_sum, start, end\n```\n\nTime: O(n), Space: O(1). Kadane's tracks the best subarray ending at each position — if extending the previous subarray yields a worse sum than starting fresh, we reset.",
+    "explanation": "Kadane's algorithm is a classic dynamic programming problem disguised as a greedy algorithm. The recurrence is: dp[i] = max(nums[i], dp[i-1] + nums[i]). The insight is that dp[i] only depends on dp[i-1], so we need O(1) space. Edge case: if all numbers are negative, the answer is the single largest (least negative) element. This is a must-know for FAANG interviews.",
+    "source": "dsa_python:arrays:004"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Merge Intervals",
+    "difficulty": "medium",
+    "question": "Given a list of intervals [start, end], merge all overlapping intervals and return the non-overlapping set. What is the optimal approach?",
+    "answer": "```python\ndef merge_intervals(intervals: list[list[int]]) -> list[list[int]]:\n    intervals.sort(key=lambda x: x[0])\n    merged: list[list[int]] = [intervals[0]]\n    for start, end in intervals[1:]:\n        if start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n```\n\nTime: O(n log n) for sorting. Space: O(n) for result. After sorting by start time, overlapping intervals are adjacent, so one pass merges them.",
+    "explanation": "Sorting by start time is the key insight — it guarantees that if intervals overlap, they will be adjacent. The merge condition is: current start <= last merged end. When merging, take the max of both ends (handles contained intervals like [1,10], [2,5]). This pattern extends to insert-interval, meeting-rooms, and interval-scheduling problems.",
+    "source": "dsa_python:arrays:005"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Matrix Traversal",
+    "difficulty": "medium",
+    "question": "Given an m x n matrix, implement spiral order traversal. Return all elements in spiral order from the outermost layer inward.",
+    "answer": "```python\ndef spiral_order(matrix: list[list[int]]) -> list[int]:\n    result: list[int] = []\n    if not matrix:\n        return result\n    top, bottom = 0, len(matrix) - 1\n    left, right = 0, len(matrix[0]) - 1\n    while top <= bottom and left <= right:\n        for col in range(left, right + 1):\n            result.append(matrix[top][col])\n        top += 1\n        for row in range(top, bottom + 1):\n            result.append(matrix[row][right])\n        right -= 1\n        if top <= bottom:\n            for col in range(right, left - 1, -1):\n                result.append(matrix[bottom][col])\n            bottom -= 1\n        if left <= right:\n            for row in range(bottom, top - 1, -1):\n                result.append(matrix[row][left])\n            left += 1\n    return result\n```\n\nTime: O(m*n), Space: O(1) excluding output. The four boundary pointers shrink inward each layer.",
+    "explanation": "Spiral traversal uses four boundaries (top, bottom, left, right) that contract after each direction sweep. The extra if-checks before the bottom-left and left-up sweeps prevent double-counting when only one row or column remains. This is a common Amazon/Google interview question. An alternative approach uses direction vectors [(0,1),(1,0),(0,-1),(-1,0)] with boundary marking.",
+    "source": "dsa_python:arrays:006"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Array Rotation",
+    "difficulty": "easy",
+    "question": "Rotate an array to the right by k steps in-place with O(1) extra space. Explain the three-reverse approach and why it works.",
+    "answer": "```python\ndef rotate(nums: list[int], k: int) -> None:\n    n = len(nums)\n    k %= n  # handle k > n\n    def reverse(start: int, end: int) -> None:\n        while start < end:\n            nums[start], nums[end] = nums[end], nums[start]\n            start += 1\n            end -= 1\n    reverse(0, n - 1)      # reverse entire array\n    reverse(0, k - 1)      # reverse first k elements\n    reverse(k, n - 1)      # reverse remaining elements\n\n# Pythonic one-liner (creates new list internally):\ndef rotate_pythonic(nums: list[int], k: int) -> None:\n    k %= len(nums)\n    nums[:] = nums[-k:] + nums[:-k]\n```\n\nTime: O(n), Space: O(1) for three-reverse approach.",
+    "explanation": "The three-reverse trick works because reversing the whole array puts elements in the right relative order but reversed within each segment. The two sub-reverses correct the internal order. Example: [1,2,3,4,5] rotated by 2 → reverse all → [5,4,3,2,1] → reverse [5,4] → [4,5,3,2,1] → reverse [3,2,1] → [4,5,1,2,3]. The Pythonic slice approach is O(n) space due to list creation — interviewers may ask for the in-place version.",
+    "source": "dsa_python:arrays:007"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Subarray Problems",
+    "difficulty": "hard",
+    "question": "Find the length of the longest subarray with at most k distinct characters (variable-size sliding window). How does this generalize to 'longest substring without repeating characters'?",
+    "answer": "```python\nfrom collections import defaultdict\n\ndef longest_k_distinct(s: str, k: int) -> int:\n    char_count: dict[str, int] = defaultdict(int)\n    left = 0\n    max_len = 0\n    for right in range(len(s)):\n        char_count[s[right]] += 1\n        while len(char_count) > k:\n            char_count[s[left]] -= 1\n            if char_count[s[left]] == 0:\n                del char_count[s[left]]\n            left += 1\n        max_len = max(max_len, right - left + 1)\n    return max_len\n\ndef longest_no_repeat(s: str) -> int:\n    \"\"\"Special case: k = len(alphabet), each char count <= 1.\"\"\"\n    seen: dict[str, int] = {}  # char -> last index\n    left = 0\n    max_len = 0\n    for right, ch in enumerate(s):\n        if ch in seen and seen[ch] >= left:\n            left = seen[ch] + 1\n        seen[ch] = right\n        max_len = max(max_len, right - left + 1)\n    return max_len\n```\n\nBoth O(n) time, O(k) space.",
+    "explanation": "Variable-size sliding window: expand right boundary to include more, shrink left boundary when a constraint is violated. The hash map tracks the current window state. 'Longest substring without repeating characters' (LeetCode 3) is the same pattern with the constraint 'no duplicate characters'. Using a last-seen-index map with the optimization of jumping left directly past the duplicate is the O(n) approach preferred in interviews.",
+    "source": "dsa_python:arrays:008"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Binary Search on Sorted Arrays",
+    "difficulty": "medium",
+    "question": "Implement binary search to find the leftmost (first) occurrence of a target in a sorted array with duplicates. Then implement a variant that finds the insertion position (bisect_left).",
+    "answer": "```python\nimport bisect\n\ndef find_leftmost(nums: list[int], target: int) -> int:\n    left, right = 0, len(nums) - 1\n    result = -1\n    while left <= right:\n        mid = left + (right - left) // 2\n        if nums[mid] == target:\n            result = mid\n            right = mid - 1  # keep searching left\n        elif nums[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return result\n\ndef insertion_position(nums: list[int], target: int) -> int:\n    \"\"\"Equivalent to bisect.bisect_left(nums, target).\"\"\"\n    left, right = 0, len(nums)\n    while left < right:\n        mid = left + (right - left) // 2\n        if nums[mid] < target:\n            left = mid + 1\n        else:\n            right = mid\n    return left\n\n# Python stdlib:\npos = bisect.bisect_left([1, 2, 2, 2, 3], 2)  # returns 1\n```\n\nTime: O(log n), Space: O(1).",
+    "explanation": "The leftmost variant continues searching left even after finding the target — the key modification from standard binary search. bisect.bisect_left and bisect.bisect_right are the Python stdlib equivalents and are preferred in production code. Understanding the open vs closed interval convention (left < right vs left <= right) is crucial — mixing them causes off-by-one bugs. bisect_left returns the insertion point for the leftmost match; bisect_right returns one past the rightmost match.",
+    "source": "dsa_python:arrays:009"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Binary Search on Answer",
+    "difficulty": "hard",
+    "question": "Koko eats bananas at speed k. There are n piles. She has h hours. Find the minimum k such that she can eat all bananas in h hours. This is 'binary search on the answer space'. Explain the pattern.",
+    "answer": "```python\nimport math\n\ndef min_eating_speed(piles: list[int], h: int) -> int:\n    def can_finish(k: int) -> bool:\n        return sum(math.ceil(p / k) for p in piles) <= h\n\n    left, right = 1, max(piles)\n    while left < right:\n        mid = left + (right - left) // 2\n        if can_finish(mid):\n            right = mid  # try smaller k\n        else:\n            left = mid + 1\n    return left\n```\n\nTime: O(n * log(max(piles))), Space: O(1). Binary search on the answer space [1, max(piles)] with a feasibility check at each step.",
+    "explanation": "Binary search on the answer is a powerful pattern for optimization problems where: (1) the answer lies in a bounded range, (2) there is a monotonic feasibility function (if k works, k+1 also works). Other examples: minimum capacity to ship packages in d days, split array into m subarrays minimizing the max sum, magnetic force between balls. The key is identifying the monotonicity — the feasibility function must be non-decreasing (or non-increasing) across the search space.",
+    "source": "dsa_python:arrays:010"
+  },
+  {
+    "module": "dsa",
     "category": "hash_maps",
     "topic": "Frequency Counting",
     "difficulty": "easy",
@@ -28,6 +108,96 @@
     "answer": "Approach 1 — Counter (most Pythonic):\n```python\nfrom collections import Counter\n\ndef is_anagram(s: str, t: str) -> bool:\n    return Counter(s) == Counter(t)\n```\n\nApproach 2 — defaultdict (explicit control):\n```python\nfrom collections import defaultdict\n\ndef is_anagram_dd(s: str, t: str) -> bool:\n    if len(s) != len(t):\n        return False\n    freq: dict[str, int] = defaultdict(int)\n    for c in s:\n        freq[c] += 1\n    for c in t:\n        freq[c] -= 1\n    return all(v == 0 for v in freq.values())\n```\n\nBoth are O(n) time. Counter is more concise; defaultdict gives you fine-grained control and is faster when you need early-exit or streaming.",
     "explanation": "Counter internally uses a C-optimized hash map. Counter subtraction (Counter(s) - Counter(t)) is also valid for multiset difference. The defaultdict(int) pattern is preferred when you need to combine frequency counting with other logic, or when working with generators where you can't afford two passes. For sorted string comparison (sorted(s) == sorted(t)), time is O(n log n) — worse for large inputs.",
     "source": "dsa_python:hash_maps:001"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "Grouping Anagrams",
+    "difficulty": "medium",
+    "question": "Given a list of strings, group all anagrams together. What are two valid key strategies (sorted string vs frequency tuple), and which is faster for long strings?",
+    "answer": "```python\nfrom collections import defaultdict\n\ndef group_anagrams_sorted(strs: list[str]) -> list[list[str]]:\n    groups: dict[str, list[str]] = defaultdict(list)\n    for s in strs:\n        key = ''.join(sorted(s))\n        groups[key].append(s)\n    return list(groups.values())\n\ndef group_anagrams_freq(strs: list[str]) -> list[list[str]]:\n    groups: dict[tuple[int, ...], list[str]] = defaultdict(list)\n    for s in strs:\n        freq = [0] * 26\n        for c in s:\n            freq[ord(c) - ord('a')] += 1\n        groups[tuple(freq)].append(s)\n    return list(groups.values())\n```\n\nSorted key: O(n * k log k) where k is max string length. Frequency key: O(n * k) — faster for long strings. Both use O(n * k) space.",
+    "explanation": "The sorted key is simpler and often preferred in interviews. The frequency tuple key avoids the O(k log k) sort per string but requires a fixed alphabet (lowercase letters). For Unicode strings, use Counter as the key: tuple(sorted(Counter(s).items())). The defaultdict(list) pattern for grouping is a fundamental Python idiom — it avoids the if-key-exists boilerplate.",
+    "source": "dsa_python:hash_maps:002"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "Two Sum",
+    "difficulty": "easy",
+    "question": "Given an unsorted array and a target, find two numbers that sum to target and return their indices. Why is the hash map approach O(n) while sorting would be O(n log n)?",
+    "answer": "```python\ndef two_sum(nums: list[int], target: int) -> list[int]:\n    seen: dict[int, int] = {}  # value -> index\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return [seen[complement], i]\n        seen[num] = i\n    return []\n```\n\nTime: O(n), Space: O(n). One pass through the array. The hash map stores each number's index so we can look up the complement in O(1).",
+    "explanation": "This is the classic hash map pattern: trade space for time. The sorting approach (O(n log n)) works but destroys original indices — you would need to store (value, index) pairs and sort by value, then use two pointers. The one-pass hash map approach is cleaner and faster. In Python, dict lookups are amortized O(1). This exact problem (LeetCode 1) is the most frequently asked coding interview question.",
+    "source": "dsa_python:hash_maps:003"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "LRU Cache",
+    "difficulty": "hard",
+    "question": "Implement an LRU (Least Recently Used) cache with O(1) get and put operations. Use collections.OrderedDict or implement from scratch with a doubly-linked list + hash map.",
+    "answer": "```python\nfrom collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.cache: OrderedDict[int, int] = OrderedDict()\n        self.capacity = capacity\n\n    def get(self, key: int) -> int:\n        if key not in self.cache:\n            return -1\n        self.cache.move_to_end(key)\n        return self.cache[key]\n\n    def put(self, key: int, value: int) -> None:\n        if key in self.cache:\n            self.cache.move_to_end(key)\n        self.cache[key] = value\n        if len(self.cache) > self.capacity:\n            self.cache.popitem(last=False)  # remove oldest\n```\n\nAll operations O(1) amortized. OrderedDict internally uses a doubly-linked list, so move_to_end and popitem(last=False) are O(1).",
+    "explanation": "OrderedDict is Python's built-in doubly-linked hash map — it preserves insertion order and supports O(1) reordering. The from-scratch implementation requires: a dict mapping key to DLL node, and a DLL where head is most recent and tail is least recent. On get: move node to head. On put: insert at head, if over capacity remove tail. The OrderedDict approach is preferred in Python interviews — it shows knowledge of the stdlib and is less error-prone.",
+    "source": "dsa_python:hash_maps:004"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "Consistent Hashing",
+    "difficulty": "hard",
+    "question": "Explain consistent hashing and implement a basic consistent hash ring in Python using bisect. How does it minimize key remapping when nodes are added or removed?",
+    "answer": "```python\nimport bisect\nimport hashlib\n\nclass ConsistentHashRing:\n    def __init__(self, replicas: int = 150):\n        self.replicas = replicas\n        self.ring: list[int] = []  # sorted hash positions\n        self.nodes: dict[int, str] = {}  # hash -> node name\n\n    def _hash(self, key: str) -> int:\n        return int(hashlib.md5(key.encode()).hexdigest(), 16)\n\n    def add_node(self, node: str) -> None:\n        for i in range(self.replicas):\n            h = self._hash(f\"{node}:{i}\")\n            bisect.insort(self.ring, h)\n            self.nodes[h] = node\n\n    def remove_node(self, node: str) -> None:\n        for i in range(self.replicas):\n            h = self._hash(f\"{node}:{i}\")\n            idx = bisect.bisect_left(self.ring, h)\n            if idx < len(self.ring) and self.ring[idx] == h:\n                self.ring.pop(idx)\n                del self.nodes[h]\n\n    def get_node(self, key: str) -> str:\n        if not self.ring:\n            raise ValueError(\"empty ring\")\n        h = self._hash(key)\n        idx = bisect.bisect_right(self.ring, h) % len(self.ring)\n        return self.nodes[self.ring[idx]]\n```\n\nLookup: O(log n) via bisect. Add/remove: O(r * log(n*r)) where r is replicas.",
+    "explanation": "Consistent hashing maps both keys and nodes onto a hash ring. A key is assigned to the next node clockwise on the ring. When a node is added/removed, only keys between the new/removed node and its predecessor are remapped — O(K/N) keys instead of O(K) in naive hashing. Virtual nodes (replicas) distribute load more evenly. This is used in Cassandra, DynamoDB, and load balancers. The bisect module provides O(log n) sorted array operations.",
+    "source": "dsa_python:hash_maps:005"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "defaultdict Patterns",
+    "difficulty": "easy",
+    "question": "Show three common defaultdict patterns in Python: counting, grouping, and graph adjacency list construction. When should you use defaultdict vs Counter vs setdefault?",
+    "answer": "```python\nfrom collections import defaultdict, Counter\n\n# 1. Counting (defaultdict(int))\nword_count: dict[str, int] = defaultdict(int)\nfor word in ['apple', 'banana', 'apple']:\n    word_count[word] += 1\n# {'apple': 2, 'banana': 1}\n\n# 2. Grouping (defaultdict(list))\nby_length: dict[int, list[str]] = defaultdict(list)\nfor word in ['hi', 'hello', 'ok', 'world']:\n    by_length[len(word)].append(word)\n# {2: ['hi', 'ok'], 5: ['hello', 'world']}\n\n# 3. Graph adjacency list (defaultdict(set))\ngraph: dict[str, set[str]] = defaultdict(set)\nedges = [('a', 'b'), ('a', 'c'), ('b', 'c')]\nfor u, v in edges:\n    graph[u].add(v)\n    graph[v].add(u)\n\n# Counter is preferred for pure counting:\ncounts = Counter(['apple', 'banana', 'apple'])\ncounts.most_common(1)  # [('apple', 2)]\n```\n\nUse Counter for counting with extras (most_common, subtraction). Use defaultdict for grouping, graph building, or nested structures. Use setdefault when you want dict without import.",
+    "explanation": "defaultdict avoids KeyError by auto-creating missing keys with the factory function. The factory must be callable with no arguments: int (returns 0), list (returns []), set (returns set()). For nested defaultdicts (e.g., adjacency matrix with weights), use defaultdict(lambda: defaultdict(int)). Counter adds most_common(), elements(), and arithmetic operations (+, -, &, |) on top of dict. In interviews, using these correctly signals Python proficiency.",
+    "source": "dsa_python:hash_maps:006"
+  },
+  {
+    "module": "dsa",
+    "category": "linked_lists",
+    "topic": "Cycle Detection",
+    "difficulty": "medium",
+    "question": "Detect if a linked list has a cycle using Floyd's tortoise and hare algorithm. If a cycle exists, find the node where the cycle begins. Prove why the algorithm works.",
+    "answer": "```python\nfrom typing import Optional\n\nclass ListNode:\n    def __init__(self, val: int = 0, next: 'Optional[ListNode]' = None):\n        self.val = val\n        self.next = next\n\ndef detect_cycle(head: Optional[ListNode]) -> Optional[ListNode]:\n    slow = fast = head\n    while fast and fast.next:\n        slow = slow.next\n        fast = fast.next.next\n        if slow is fast:\n            # Cycle found — find entry point\n            entry = head\n            while entry is not slow:\n                entry = entry.next\n                slow = slow.next\n            return entry\n    return None  # no cycle\n```\n\nTime: O(n), Space: O(1). Phase 1 detects the cycle; Phase 2 finds the entry point by moving two pointers (one from head, one from meeting point) at the same speed.",
+    "explanation": "Let the distance from head to cycle entry be a, and the distance from cycle entry to meeting point be b, with cycle length c. When they meet: slow traveled a + b, fast traveled a + b + k*c. Since fast is 2x slow: 2(a+b) = a+b+k*c, so a+b = k*c, thus a = k*c - b. Starting from the meeting point and moving a steps lands at the cycle entry — same as starting from head and moving a steps. This is a must-know O(1) space algorithm.",
+    "source": "dsa_python:linked_lists:001"
+  },
+  {
+    "module": "dsa",
+    "category": "linked_lists",
+    "topic": "Reversal",
+    "difficulty": "easy",
+    "question": "Reverse a singly linked list iteratively and recursively. Also reverse a sublist from position left to right (LeetCode 92).",
+    "answer": "```python\nfrom typing import Optional\n\nclass ListNode:\n    def __init__(self, val: int = 0, next: 'Optional[ListNode]' = None):\n        self.val = val\n        self.next = next\n\ndef reverse_iterative(head: Optional[ListNode]) -> Optional[ListNode]:\n    prev, curr = None, head\n    while curr:\n        nxt = curr.next\n        curr.next = prev\n        prev = curr\n        curr = nxt\n    return prev\n\ndef reverse_recursive(head: Optional[ListNode]) -> Optional[ListNode]:\n    if not head or not head.next:\n        return head\n    new_head = reverse_recursive(head.next)\n    head.next.next = head\n    head.next = None\n    return new_head\n\ndef reverse_between(head: Optional[ListNode], left: int, right: int) -> Optional[ListNode]:\n    dummy = ListNode(0, head)\n    prev = dummy\n    for _ in range(left - 1):\n        prev = prev.next\n    curr = prev.next\n    for _ in range(right - left):\n        nxt = curr.next\n        curr.next = nxt.next\n        nxt.next = prev.next\n        prev.next = nxt\n    return dummy.next\n```\n\nAll O(n) time, O(1) space (iterative), O(n) stack space (recursive).",
+    "explanation": "The iterative approach uses three pointers: prev, curr, nxt. The recursive approach reverses the rest of the list first, then fixes pointers. The partial-reverse (reverse_between) uses a dummy node to handle the edge case where left=1. The insertion technique moves nodes one-by-one to the front of the reversed section. Dummy nodes are a standard linked list interview trick to avoid special-casing the head.",
+    "source": "dsa_python:linked_lists:002"
+  },
+  {
+    "module": "dsa",
+    "category": "linked_lists",
+    "topic": "Merge Sorted Lists",
+    "difficulty": "easy",
+    "question": "Merge two sorted linked lists into one sorted list. Then extend to merge k sorted linked lists using a min-heap. What are the time complexities?",
+    "answer": "```python\nimport heapq\nfrom typing import Optional\n\nclass ListNode:\n    def __init__(self, val: int = 0, next: 'Optional[ListNode]' = None):\n        self.val = val\n        self.next = next\n    def __lt__(self, other: 'ListNode') -> bool:\n        return self.val < other.val\n\ndef merge_two(l1: Optional[ListNode], l2: Optional[ListNode]) -> Optional[ListNode]:\n    dummy = ListNode()\n    curr = dummy\n    while l1 and l2:\n        if l1.val <= l2.val:\n            curr.next = l1\n            l1 = l1.next\n        else:\n            curr.next = l2\n            l2 = l2.next\n        curr = curr.next\n    curr.next = l1 or l2\n    return dummy.next\n\ndef merge_k_lists(lists: list[Optional[ListNode]]) -> Optional[ListNode]:\n    heap: list[ListNode] = []\n    for head in lists:\n        if head:\n            heapq.heappush(heap, head)\n    dummy = ListNode()\n    curr = dummy\n    while heap:\n        node = heapq.heappop(heap)\n        curr.next = node\n        curr = curr.next\n        if node.next:\n            heapq.heappush(heap, node.next)\n    return dummy.next\n```\n\nMerge two: O(n + m). Merge k: O(N log k) where N is total nodes.",
+    "explanation": "The dummy node pattern simplifies initialization. For merge-k, heapq maintains the smallest element across k lists — each push/pop is O(log k). The __lt__ method on ListNode is required because heapq compares elements. Alternative: divide-and-conquer merging (merge pairs recursively) also achieves O(N log k). heapq is Python's min-heap — for max-heap, negate values.",
+    "source": "dsa_python:linked_lists:003"
+  },
+  {
+    "module": "dsa",
+    "category": "linked_lists",
+    "topic": "Deep Copy with Random Pointer",
+    "difficulty": "hard",
+    "question": "Clone a linked list where each node has a next pointer and a random pointer that can point to any node in the list or null. Implement both the hash map approach and the interleaving approach.",
+    "answer": "```python\nfrom typing import Optional\n\nclass Node:\n    def __init__(self, val: int = 0, next: 'Optional[Node]' = None, random: 'Optional[Node]' = None):\n        self.val = val\n        self.next = next\n        self.random = random\n\ndef copy_random_list_hashmap(head: Optional[Node]) -> Optional[Node]:\n    if not head:\n        return None\n    old_to_new: dict[Node, Node] = {}\n    curr = head\n    while curr:\n        old_to_new[curr] = Node(curr.val)\n        curr = curr.next\n    curr = head\n    while curr:\n        clone = old_to_new[curr]\n        clone.next = old_to_new.get(curr.next)\n        clone.random = old_to_new.get(curr.random)\n        curr = curr.next\n    return old_to_new[head]\n\ndef copy_random_list_interleave(head: Optional[Node]) -> Optional[Node]:\n    if not head:\n        return None\n    # Step 1: Interleave cloned nodes\n    curr = head\n    while curr:\n        clone = Node(curr.val, curr.next)\n        curr.next = clone\n        curr = clone.next\n    # Step 2: Set random pointers\n    curr = head\n    while curr:\n        if curr.random:\n            curr.next.random = curr.random.next\n        curr = curr.next.next\n    # Step 3: Separate lists\n    dummy = Node(0)\n    copy_curr = dummy\n    curr = head\n    while curr:\n        copy_curr.next = curr.next\n        curr.next = curr.next.next\n        copy_curr = copy_curr.next\n        curr = curr.next\n    return dummy.next\n```\n\nHash map: O(n) time, O(n) space. Interleave: O(n) time, O(1) space.",
+    "explanation": "The hash map approach is straightforward: build a mapping from original to clone, then wire up next/random pointers. The interleaving approach is the O(1) space trick: insert clone nodes directly after their originals (A -> A' -> B -> B'), set random pointers using the adjacency (A'.random = A.random.next), then deinterleave. This is a classic hard interview question testing pointer manipulation skills.",
+    "source": "dsa_python:linked_lists:004"
   },
   {
     "module": "dsa",
@@ -41,6 +211,236 @@
   },
   {
     "module": "dsa",
+    "category": "trees",
+    "topic": "DFS Variations",
+    "difficulty": "medium",
+    "question": "Implement preorder, inorder, and postorder traversals of a binary tree both recursively and iteratively. When is each traversal order useful?",
+    "answer": "```python\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef preorder(root: Optional[TreeNode]) -> list[int]:\n    result: list[int] = []\n    stack = [root] if root else []\n    while stack:\n        node = stack.pop()\n        result.append(node.val)\n        if node.right: stack.append(node.right)\n        if node.left: stack.append(node.left)\n    return result\n\ndef inorder(root: Optional[TreeNode]) -> list[int]:\n    result: list[int] = []\n    stack: list[TreeNode] = []\n    curr = root\n    while curr or stack:\n        while curr:\n            stack.append(curr)\n            curr = curr.left\n        curr = stack.pop()\n        result.append(curr.val)\n        curr = curr.right\n    return result\n\ndef postorder(root: Optional[TreeNode]) -> list[int]:\n    result: list[int] = []\n    stack = [root] if root else []\n    while stack:\n        node = stack.pop()\n        result.append(node.val)\n        if node.left: stack.append(node.left)\n        if node.right: stack.append(node.right)\n    return result[::-1]  # reverse of modified preorder\n```\n\nAll O(n) time, O(h) space where h is tree height.",
+    "explanation": "Inorder on BST gives sorted order — used for BST validation and kth smallest. Preorder is used for tree serialization (root first). Postorder is used for deletion (children before parent) and expression evaluation. The iterative inorder uses the 'go left as far as possible, then backtrack' pattern. Iterative postorder uses the trick: modified preorder (root, right, left) reversed gives postorder (left, right, root).",
+    "source": "dsa_python:trees:002"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "BST Operations",
+    "difficulty": "medium",
+    "question": "Implement search, insert, and delete operations on a Binary Search Tree. Also implement BST validation (is_valid_bst). What are the time complexities for balanced vs unbalanced BSTs?",
+    "answer": "```python\nfrom typing import Optional\nimport math\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef search_bst(root: Optional[TreeNode], target: int) -> Optional[TreeNode]:\n    while root:\n        if target == root.val:\n            return root\n        root = root.left if target < root.val else root.right\n    return None\n\ndef insert_bst(root: Optional[TreeNode], val: int) -> TreeNode:\n    if not root:\n        return TreeNode(val)\n    if val < root.val:\n        root.left = insert_bst(root.left, val)\n    elif val > root.val:\n        root.right = insert_bst(root.right, val)\n    return root\n\ndef delete_bst(root: Optional[TreeNode], key: int) -> Optional[TreeNode]:\n    if not root:\n        return None\n    if key < root.val:\n        root.left = delete_bst(root.left, key)\n    elif key > root.val:\n        root.right = delete_bst(root.right, key)\n    else:\n        if not root.left:\n            return root.right\n        if not root.right:\n            return root.left\n        succ = root.right\n        while succ.left:\n            succ = succ.left\n        root.val = succ.val\n        root.right = delete_bst(root.right, succ.val)\n    return root\n\ndef is_valid_bst(root: Optional[TreeNode], lo: float = -math.inf, hi: float = math.inf) -> bool:\n    if not root:\n        return True\n    if not (lo < root.val < hi):\n        return False\n    return is_valid_bst(root.left, lo, root.val) and is_valid_bst(root.right, root.val, hi)\n```\n\nBalanced BST: O(log n) per operation. Unbalanced (degenerate): O(n).",
+    "explanation": "BST delete has three cases: leaf (remove), one child (replace with child), two children (replace with inorder successor — smallest in right subtree). BST validation requires passing min/max bounds, not just comparing with parent — a common mistake is checking only node.left.val < node.val < node.right.val, which misses the global ordering constraint. Using math.inf for initial bounds handles edge cases cleanly.",
+    "source": "dsa_python:trees:003"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "Lowest Common Ancestor",
+    "difficulty": "medium",
+    "question": "Find the lowest common ancestor (LCA) of two nodes in a binary tree. How does the algorithm differ for a BST vs a general binary tree?",
+    "answer": "```python\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef lca_binary_tree(root: Optional[TreeNode], p: TreeNode, q: TreeNode) -> Optional[TreeNode]:\n    if not root or root is p or root is q:\n        return root\n    left = lca_binary_tree(root.left, p, q)\n    right = lca_binary_tree(root.right, p, q)\n    if left and right:\n        return root  # p and q are in different subtrees\n    return left or right\n\ndef lca_bst(root: Optional[TreeNode], p: TreeNode, q: TreeNode) -> Optional[TreeNode]:\n    while root:\n        if p.val < root.val and q.val < root.val:\n            root = root.left\n        elif p.val > root.val and q.val > root.val:\n            root = root.right\n        else:\n            return root  # split point is the LCA\n    return None\n```\n\nGeneral binary tree: O(n) time, O(h) space. BST: O(h) time, O(1) space.",
+    "explanation": "In a general binary tree, LCA is the deepest node that has p in one subtree and q in the other (or is p/q itself). The recursive solution returns non-null from both sides only at the LCA. In a BST, the sorted property lets us navigate: if both values are smaller, go left; both larger, go right; otherwise we are at the split point (the LCA). BST LCA can be done iteratively in O(1) space.",
+    "source": "dsa_python:trees:004"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "Serialize and Deserialize",
+    "difficulty": "hard",
+    "question": "Implement serialization and deserialization of a binary tree to and from a string. The serialized format should uniquely represent the tree structure.",
+    "answer": "```python\nfrom collections import deque\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef serialize(root: Optional[TreeNode]) -> str:\n    \"\"\"Preorder traversal with null markers.\"\"\"\n    tokens: list[str] = []\n    def dfs(node: Optional[TreeNode]) -> None:\n        if not node:\n            tokens.append('#')\n            return\n        tokens.append(str(node.val))\n        dfs(node.left)\n        dfs(node.right)\n    dfs(root)\n    return ','.join(tokens)\n\ndef deserialize(data: str) -> Optional[TreeNode]:\n    tokens = deque(data.split(','))\n    def dfs() -> Optional[TreeNode]:\n        val = tokens.popleft()\n        if val == '#':\n            return None\n        node = TreeNode(int(val))\n        node.left = dfs()\n        node.right = dfs()\n        return node\n    return dfs()\n```\n\nTime: O(n), Space: O(n). Uses preorder with '#' for null nodes. A deque is used for O(1) popleft during deserialization.",
+    "explanation": "Preorder with null markers uniquely identifies a binary tree — without null markers, preorder alone is ambiguous. BFS-based serialization (level-order with nulls) is also valid and produces a format closer to LeetCode's tree representation. The deque-based deserialization consumes tokens left-to-right, matching the preorder construction. This is LeetCode 297 — a frequently asked hard problem.",
+    "source": "dsa_python:trees:005"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "Trie Operations",
+    "difficulty": "medium",
+    "question": "Implement a Trie (prefix tree) supporting insert, search, and startsWith operations. How would you extend it to support wildcard search (dots matching any character)?",
+    "answer": "```python\nclass TrieNode:\n    def __init__(self):\n        self.children: dict[str, 'TrieNode'] = {}\n        self.is_end: bool = False\n\nclass Trie:\n    def __init__(self):\n        self.root = TrieNode()\n\n    def insert(self, word: str) -> None:\n        node = self.root\n        for ch in word:\n            if ch not in node.children:\n                node.children[ch] = TrieNode()\n            node = node.children[ch]\n        node.is_end = True\n\n    def search(self, word: str) -> bool:\n        node = self._find(word)\n        return node is not None and node.is_end\n\n    def starts_with(self, prefix: str) -> bool:\n        return self._find(prefix) is not None\n\n    def _find(self, prefix: str) -> 'TrieNode | None':\n        node = self.root\n        for ch in prefix:\n            if ch not in node.children:\n                return None\n            node = node.children[ch]\n        return node\n\n    def search_wildcard(self, word: str) -> bool:\n        def dfs(node: TrieNode, i: int) -> bool:\n            if i == len(word):\n                return node.is_end\n            if word[i] == '.':\n                return any(dfs(child, i + 1) for child in node.children.values())\n            if word[i] not in node.children:\n                return False\n            return dfs(node.children[word[i]], i + 1)\n        return dfs(self.root, 0)\n```\n\nInsert/Search: O(m) where m is word length. Wildcard: O(26^m) worst case but typically much faster.",
+    "explanation": "Tries store characters along edges, not in nodes. Using a dict for children (vs a fixed-size array of 26) is the Pythonic approach — it handles arbitrary character sets. The wildcard extension (LeetCode 211) uses DFS branching on '.'. Tries are used in autocomplete, spell checking, IP routing (binary trie), and word games. In interviews, the dict-based Python implementation is expected over the array-based C/Java version.",
+    "source": "dsa_python:trees:006"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "Binary Tree from Traversals",
+    "difficulty": "hard",
+    "question": "Construct a binary tree from its preorder and inorder traversals. Why can't you reconstruct a unique tree from preorder and postorder alone (unless the tree is full)?",
+    "answer": "```python\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef build_tree(preorder: list[int], inorder: list[int]) -> Optional[TreeNode]:\n    inorder_map = {val: idx for idx, val in enumerate(inorder)}\n    pre_idx = [0]  # mutable counter\n\n    def build(lo: int, hi: int) -> Optional[TreeNode]:\n        if lo > hi:\n            return None\n        root_val = preorder[pre_idx[0]]\n        pre_idx[0] += 1\n        root = TreeNode(root_val)\n        mid = inorder_map[root_val]\n        root.left = build(lo, mid - 1)\n        root.right = build(mid + 1, hi)\n        return root\n\n    return build(0, len(inorder) - 1)\n```\n\nTime: O(n) with hash map for inorder index lookup. Space: O(n).",
+    "explanation": "Preorder gives the root first; inorder tells us which elements are in the left vs right subtree. The hash map makes root lookup in inorder O(1) instead of O(n). Preorder + postorder is ambiguous because when a node has only one child, you cannot tell if it is a left or right child. This is LeetCode 105 — a classic that tests understanding of tree traversal properties. The [0] counter trick uses a mutable list to simulate a nonlocal variable in the closure.",
+    "source": "dsa_python:trees:007"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "Path Sum",
+    "difficulty": "medium",
+    "question": "Find all root-to-leaf paths in a binary tree that sum to a target value. Also solve the variant: find the number of paths (not necessarily root-to-leaf) that sum to a target (LeetCode 437).",
+    "answer": "```python\nfrom collections import defaultdict\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef path_sum_root_to_leaf(root: Optional[TreeNode], target: int) -> list[list[int]]:\n    result: list[list[int]] = []\n    def dfs(node: Optional[TreeNode], remaining: int, path: list[int]) -> None:\n        if not node:\n            return\n        path.append(node.val)\n        if not node.left and not node.right and remaining == node.val:\n            result.append(path[:])\n        dfs(node.left, remaining - node.val, path)\n        dfs(node.right, remaining - node.val, path)\n        path.pop()  # backtrack\n    dfs(root, target, [])\n    return result\n\ndef path_sum_any(root: Optional[TreeNode], target: int) -> int:\n    prefix: dict[int, int] = defaultdict(int)\n    prefix[0] = 1\n    count = 0\n    def dfs(node: Optional[TreeNode], curr_sum: int) -> None:\n        nonlocal count\n        if not node:\n            return\n        curr_sum += node.val\n        count += prefix[curr_sum - target]\n        prefix[curr_sum] += 1\n        dfs(node.left, curr_sum)\n        dfs(node.right, curr_sum)\n        prefix[curr_sum] -= 1  # backtrack\n    dfs(root, 0)\n    return count\n```\n\nRoot-to-leaf: O(n) time, O(h) space. Any-path: O(n) time, O(n) space.",
+    "explanation": "The any-path variant (LeetCode 437) uses the prefix sum technique from arrays adapted to trees: if prefix_sum[j] - prefix_sum[i] = target, the path from node i to node j sums to target. The backtracking step (prefix[curr_sum] -= 1) is essential — without it, prefix sums from one branch leak into another. This combines tree DFS with the hash map prefix sum pattern.",
+    "source": "dsa_python:trees:008"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "1D DP — Climbing Stairs",
+    "difficulty": "easy",
+    "question": "You can climb 1 or 2 stairs at a time. How many distinct ways to reach the top of n stairs? Implement with tabulation, memoization, and space-optimized approaches.",
+    "answer": "```python\nfrom functools import lru_cache\n\n# Memoization (top-down)\n@lru_cache(maxsize=None)\ndef climb_memo(n: int) -> int:\n    if n <= 2:\n        return n\n    return climb_memo(n - 1) + climb_memo(n - 2)\n\n# Tabulation (bottom-up)\ndef climb_tab(n: int) -> int:\n    if n <= 2:\n        return n\n    dp = [0] * (n + 1)\n    dp[1], dp[2] = 1, 2\n    for i in range(3, n + 1):\n        dp[i] = dp[i - 1] + dp[i - 2]\n    return dp[n]\n\n# Space-optimized\ndef climb_opt(n: int) -> int:\n    if n <= 2:\n        return n\n    a, b = 1, 2\n    for _ in range(3, n + 1):\n        a, b = b, a + b\n    return b\n```\n\nAll O(n) time. Tabulation: O(n) space. Space-optimized: O(1). This is the Fibonacci sequence — climb(n) = fib(n+1).",
+    "explanation": "This is the entry point to DP. The recurrence dp[i] = dp[i-1] + dp[i-2] comes from: the last step was either 1 stair (dp[i-1] ways to get there) or 2 stairs (dp[i-2] ways). functools.lru_cache is Python's memoization decorator — it caches return values by arguments. The space-optimized version only tracks the last two values since dp[i] depends only on dp[i-1] and dp[i-2]. This pattern recurs in house robber, decode ways, and tribonacci.",
+    "source": "dsa_python:dp:001"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "1D DP — House Robber",
+    "difficulty": "medium",
+    "question": "You are robbing houses along a street. Adjacent houses cannot be robbed. Maximize the total money robbed. Extend to the circular variant (House Robber II) where the first and last houses are adjacent.",
+    "answer": "```python\ndef rob(nums: list[int]) -> int:\n    if len(nums) <= 2:\n        return max(nums)\n    prev2, prev1 = nums[0], max(nums[0], nums[1])\n    for i in range(2, len(nums)):\n        prev2, prev1 = prev1, max(prev1, prev2 + nums[i])\n    return prev1\n\ndef rob_circular(nums: list[int]) -> int:\n    if len(nums) == 1:\n        return nums[0]\n    # Either skip first house or skip last house\n    return max(rob(nums[1:]), rob(nums[:-1]))\n```\n\nTime: O(n), Space: O(1). The recurrence is dp[i] = max(dp[i-1], dp[i-2] + nums[i]) — either skip this house or rob it plus the best from two houses back.",
+    "explanation": "The circular variant decomposes into two linear subproblems: one excluding the first house, one excluding the last. This ensures the first and last are never both robbed. The space-optimized version uses two variables instead of a dp array. This problem teaches the 'include or exclude' recurrence pattern that generalizes to many DP problems (subset sum, knapsack, etc.).",
+    "source": "dsa_python:dp:002"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "1D DP — Coin Change",
+    "difficulty": "medium",
+    "question": "Given coin denominations and a target amount, find the fewest number of coins needed to make the amount. If it cannot be made, return -1. This is the unbounded knapsack variant.",
+    "answer": "```python\ndef coin_change(coins: list[int], amount: int) -> int:\n    dp = [float('inf')] * (amount + 1)\n    dp[0] = 0\n    for i in range(1, amount + 1):\n        for coin in coins:\n            if coin <= i and dp[i - coin] + 1 < dp[i]:\n                dp[i] = dp[i - coin] + 1\n    return dp[amount] if dp[amount] != float('inf') else -1\n\n# Count ways variant (number of combinations):\ndef coin_change_ways(coins: list[int], amount: int) -> int:\n    dp = [0] * (amount + 1)\n    dp[0] = 1\n    for coin in coins:  # iterate coins first to avoid counting permutations\n        for i in range(coin, amount + 1):\n            dp[i] += dp[i - coin]\n    return dp[amount]\n```\n\nMin coins: O(amount * len(coins)) time, O(amount) space. Ways: same complexity.",
+    "explanation": "The min-coins problem is unbounded knapsack: each coin can be used unlimited times, so we iterate amounts in the inner loop (not a 0/1 knapsack constraint). The 'count ways' variant swaps the loop order — iterating coins in the outer loop counts combinations (order doesn't matter); iterating amounts in the outer loop counts permutations. This distinction is a common interview trick question.",
+    "source": "dsa_python:dp:003"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "2D DP — Unique Paths",
+    "difficulty": "medium",
+    "question": "Find the number of unique paths from the top-left to the bottom-right of an m x n grid, moving only right or down. Extend to handle obstacles.",
+    "answer": "```python\ndef unique_paths(m: int, n: int) -> int:\n    dp = [1] * n  # space-optimized: single row\n    for _ in range(1, m):\n        for j in range(1, n):\n            dp[j] += dp[j - 1]\n    return dp[n - 1]\n\ndef unique_paths_with_obstacles(grid: list[list[int]]) -> int:\n    m, n = len(grid), len(grid[0])\n    if grid[0][0] == 1 or grid[m-1][n-1] == 1:\n        return 0\n    dp = [0] * n\n    dp[0] = 1\n    for i in range(m):\n        for j in range(n):\n            if grid[i][j] == 1:\n                dp[j] = 0\n            elif j > 0:\n                dp[j] += dp[j - 1]\n    return dp[n - 1]\n```\n\nTime: O(m*n), Space: O(n). The recurrence is dp[i][j] = dp[i-1][j] + dp[i][j-1] since we can arrive from above or from the left.",
+    "explanation": "The space optimization works because each row only depends on the current and previous row. By processing left-to-right, dp[j] already contains the value from the row above (before update), and dp[j-1] has the value from the current row (already updated). The obstacle variant sets dp[j] = 0 for blocked cells. The pure math answer is C(m+n-2, m-1) using combinatorics, but interviewers expect the DP approach.",
+    "source": "dsa_python:dp:004"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "2D DP — Edit Distance",
+    "difficulty": "hard",
+    "question": "Find the minimum number of operations (insert, delete, replace) to convert word1 to word2. This is the Levenshtein distance. How is this used in spell checking and diff algorithms?",
+    "answer": "```python\ndef min_distance(word1: str, word2: str) -> int:\n    m, n = len(word1), len(word2)\n    # Space-optimized: two rows\n    prev = list(range(n + 1))\n    curr = [0] * (n + 1)\n    for i in range(1, m + 1):\n        curr[0] = i\n        for j in range(1, n + 1):\n            if word1[i-1] == word2[j-1]:\n                curr[j] = prev[j-1]\n            else:\n                curr[j] = 1 + min(prev[j],      # delete\n                                  curr[j-1],     # insert\n                                  prev[j-1])     # replace\n        prev, curr = curr, prev\n    return prev[n]\n```\n\nTime: O(m*n), Space: O(min(m,n)). The full DP table approach uses O(m*n) space but allows backtracking to find the actual edit operations.",
+    "explanation": "Edit distance is foundational in NLP (spell checking, fuzzy matching), bioinformatics (sequence alignment), and diff algorithms. The three operations map to three cells in the DP table: delete (dp[i-1][j]+1), insert (dp[i][j-1]+1), replace (dp[i-1][j-1]+1). If characters match, dp[i][j] = dp[i-1][j-1] (no operation needed). Python's difflib.SequenceMatcher uses a similar algorithm internally. This is LeetCode 72 — a canonical 2D DP problem.",
+    "source": "dsa_python:dp:005"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "2D DP — Longest Common Subsequence",
+    "difficulty": "medium",
+    "question": "Find the length of the longest common subsequence (LCS) of two strings. How do you reconstruct the actual subsequence from the DP table?",
+    "answer": "```python\ndef lcs_length(text1: str, text2: str) -> int:\n    m, n = len(text1), len(text2)\n    prev = [0] * (n + 1)\n    for i in range(1, m + 1):\n        curr = [0] * (n + 1)\n        for j in range(1, n + 1):\n            if text1[i-1] == text2[j-1]:\n                curr[j] = prev[j-1] + 1\n            else:\n                curr[j] = max(prev[j], curr[j-1])\n        prev = curr\n    return prev[n]\n\ndef lcs_with_reconstruction(text1: str, text2: str) -> str:\n    m, n = len(text1), len(text2)\n    dp = [[0] * (n + 1) for _ in range(m + 1)]\n    for i in range(1, m + 1):\n        for j in range(1, n + 1):\n            if text1[i-1] == text2[j-1]:\n                dp[i][j] = dp[i-1][j-1] + 1\n            else:\n                dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n    # Backtrack\n    result: list[str] = []\n    i, j = m, n\n    while i > 0 and j > 0:\n        if text1[i-1] == text2[j-1]:\n            result.append(text1[i-1])\n            i -= 1\n            j -= 1\n        elif dp[i-1][j] > dp[i][j-1]:\n            i -= 1\n        else:\n            j -= 1\n    return ''.join(reversed(result))\n```\n\nTime: O(m*n), Space: O(m*n) for reconstruction, O(n) for length only.",
+    "explanation": "LCS is the foundation for many string DP problems: shortest common supersequence = m + n - LCS, longest palindromic subsequence = LCS(s, reverse(s)), minimum deletions to make strings equal = m + n - 2*LCS. The backtracking follows the path of decisions: if characters match, they are in the LCS; otherwise, follow the larger cell. This is used in git diff to find the minimal changeset between files.",
+    "source": "dsa_python:dp:006"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "State Machine DP — Buy and Sell Stock",
+    "difficulty": "hard",
+    "question": "Best time to buy and sell stock with at most k transactions. Model as a state machine with 'holding' and 'not holding' states across k transactions.",
+    "answer": "```python\ndef max_profit_k(k: int, prices: list[int]) -> int:\n    n = len(prices)\n    if n <= 1 or k == 0:\n        return 0\n    if k >= n // 2:  # unlimited transactions\n        return sum(max(prices[i+1] - prices[i], 0) for i in range(n - 1))\n\n    # dp[t][0] = max profit with t transactions completed, not holding\n    # dp[t][1] = max profit with t transactions, holding\n    dp = [[0, float('-inf')] for _ in range(k + 1)]\n    for price in prices:\n        for t in range(1, k + 1):\n            dp[t][0] = max(dp[t][0], dp[t][1] + price)       # sell\n            dp[t][1] = max(dp[t][1], dp[t-1][0] - price)     # buy\n    return dp[k][0]\n\n# With cooldown (1 day wait after selling):\ndef max_profit_cooldown(prices: list[int]) -> int:\n    hold = float('-inf')  # holding stock\n    sold = 0               # just sold\n    rest = 0               # resting (cooldown)\n    for price in prices:\n        prev_hold = hold\n        hold = max(hold, rest - price)        # buy or keep holding\n        rest = max(rest, sold)                 # rest or end cooldown\n        sold = prev_hold + price              # sell\n    return max(sold, rest)\n```\n\nk transactions: O(n*k) time, O(k) space. Cooldown: O(n) time, O(1) space.",
+    "explanation": "The stock trading family of problems is best modeled as state machines. States: (transaction count, holding/not-holding). Transitions: buy (not-holding -> holding), sell (holding -> not-holding). The cooldown variant adds a 'resting' state that enforces a 1-day gap after selling. The k >= n//2 optimization handles the unlimited-transactions case in O(n) to avoid TLE on LeetCode. This DP pattern generalizes to any finite state machine problem.",
+    "source": "dsa_python:dp:007"
+  },
+  {
+    "module": "dsa",
+    "category": "dp",
+    "topic": "0/1 Knapsack",
+    "difficulty": "hard",
+    "question": "Given items with weights and values and a knapsack capacity, maximize the total value without exceeding capacity. Each item can be used at most once. Implement with space optimization.",
+    "answer": "```python\ndef knapsack_01(weights: list[int], values: list[int], capacity: int) -> int:\n    n = len(weights)\n    dp = [0] * (capacity + 1)\n    for i in range(n):\n        # Traverse right-to-left to ensure each item is used at most once\n        for w in range(capacity, weights[i] - 1, -1):\n            dp[w] = max(dp[w], dp[w - weights[i]] + values[i])\n    return dp[capacity]\n\n# Reconstruct which items were selected:\ndef knapsack_with_items(weights: list[int], values: list[int], capacity: int) -> tuple[int, list[int]]:\n    n = len(weights)\n    dp = [[0] * (capacity + 1) for _ in range(n + 1)]\n    for i in range(1, n + 1):\n        for w in range(capacity + 1):\n            dp[i][w] = dp[i-1][w]\n            if weights[i-1] <= w:\n                dp[i][w] = max(dp[i][w], dp[i-1][w - weights[i-1]] + values[i-1])\n    # Backtrack\n    items: list[int] = []\n    w = capacity\n    for i in range(n, 0, -1):\n        if dp[i][w] != dp[i-1][w]:\n            items.append(i - 1)\n            w -= weights[i - 1]\n    return dp[n][capacity], items\n```\n\nTime: O(n * capacity), Space: O(capacity) optimized, O(n * capacity) with reconstruction.",
+    "explanation": "The critical insight in the 1D space optimization is the reverse traversal: processing right-to-left ensures we use values from the previous item's row (not the current item's already-updated values). Left-to-right would allow using the same item multiple times (unbounded knapsack). The 0/1 knapsack pattern applies to partition equal subset sum, target sum, and many resource allocation problems. This is a pseudo-polynomial algorithm — exponential in the number of bits of capacity.",
+    "source": "dsa_python:dp:008"
+  },
+  {
+    "module": "dsa",
+    "category": "stacks",
+    "topic": "Monotonic Stack — Next Greater Element",
+    "difficulty": "medium",
+    "question": "For each element in an array, find the next greater element to its right. If none exists, return -1 for that position. Implement using a monotonic stack.",
+    "answer": "```python\ndef next_greater_element(nums: list[int]) -> list[int]:\n    n = len(nums)\n    result = [-1] * n\n    stack: list[int] = []  # indices of elements waiting for a greater element\n    for i in range(n):\n        while stack and nums[i] > nums[stack[-1]]:\n            result[stack.pop()] = nums[i]\n        stack.append(i)\n    return result\n\n# Circular variant (Next Greater Element II):\ndef next_greater_circular(nums: list[int]) -> list[int]:\n    n = len(nums)\n    result = [-1] * n\n    stack: list[int] = []\n    for i in range(2 * n):  # traverse array twice\n        while stack and nums[i % n] > nums[stack[-1]]:\n            result[stack.pop()] = nums[i % n]\n        if i < n:\n            stack.append(i)\n    return result\n```\n\nTime: O(n), Space: O(n). Each element is pushed and popped at most once.",
+    "explanation": "A monotonic decreasing stack maintains elements in decreasing order from bottom to top. When a new element is larger than the top, it is the 'next greater element' for all stack elements it exceeds. The circular variant processes the array twice using modular indexing but only pushes indices from the first pass. This pattern applies to stock span, daily temperatures, largest rectangle in histogram, and trapping rain water.",
+    "source": "dsa_python:stacks:001"
+  },
+  {
+    "module": "dsa",
+    "category": "stacks",
+    "topic": "Monotonic Stack — Largest Rectangle in Histogram",
+    "difficulty": "hard",
+    "question": "Find the largest rectangular area in a histogram where the width of each bar is 1. This is LeetCode 84 — explain the monotonic stack approach.",
+    "answer": "```python\ndef largest_rectangle(heights: list[int]) -> int:\n    stack: list[int] = []  # indices\n    max_area = 0\n    heights_ext = heights + [0]  # sentinel to flush remaining bars\n    for i, h in enumerate(heights_ext):\n        while stack and h < heights_ext[stack[-1]]:\n            height = heights_ext[stack.pop()]\n            width = i if not stack else i - stack[-1] - 1\n            max_area = max(max_area, height * width)\n        stack.append(i)\n    return max_area\n```\n\nTime: O(n), Space: O(n). Each bar is pushed and popped at most once.",
+    "explanation": "The stack maintains indices of bars in increasing height order. When a shorter bar is encountered, the taller bars on the stack can extend left (to the previous bar in the stack) and right (to the current position). The sentinel value 0 at the end ensures all remaining bars are processed. The width calculation uses the stack's previous element as the left boundary: width = i - stack[-1] - 1. This extends to 'maximal rectangle in a binary matrix' by treating each row as a histogram.",
+    "source": "dsa_python:stacks:002"
+  },
+  {
+    "module": "dsa",
+    "category": "stacks",
+    "topic": "Balanced Parentheses and Min Stack",
+    "difficulty": "easy",
+    "question": "Validate if a string of brackets is balanced. Also implement a MinStack that supports push, pop, top, and getMin in O(1) time.",
+    "answer": "```python\ndef is_valid(s: str) -> bool:\n    stack: list[str] = []\n    pairs = {')': '(', '}': '{', ']': '['}\n    for ch in s:\n        if ch in pairs:\n            if not stack or stack[-1] != pairs[ch]:\n                return False\n            stack.pop()\n        else:\n            stack.append(ch)\n    return len(stack) == 0\n\nclass MinStack:\n    def __init__(self):\n        self.stack: list[int] = []\n        self.min_stack: list[int] = []\n\n    def push(self, val: int) -> None:\n        self.stack.append(val)\n        if not self.min_stack or val <= self.min_stack[-1]:\n            self.min_stack.append(val)\n\n    def pop(self) -> None:\n        if self.stack.pop() == self.min_stack[-1]:\n            self.min_stack.pop()\n\n    def top(self) -> int:\n        return self.stack[-1]\n\n    def get_min(self) -> int:\n        return self.min_stack[-1]\n```\n\nAll operations O(1) time. MinStack uses O(n) auxiliary space in the worst case.",
+    "explanation": "The bracket validator uses a stack to match opening and closing brackets. The dict lookup makes it extensible to new bracket types. MinStack maintains a parallel stack of minimums — only pushing when the new value is <= the current minimum (using <= not < handles duplicate minimums correctly). An alternative approach stores (value, current_min) tuples on a single stack, trading less code for more memory per element.",
+    "source": "dsa_python:stacks:003"
+  },
+  {
+    "module": "dsa",
+    "category": "stacks",
+    "topic": "Evaluate Expression",
+    "difficulty": "medium",
+    "question": "Evaluate a basic calculator expression with +, -, *, /, parentheses, and integers. Handle operator precedence correctly without converting to postfix notation.",
+    "answer": "```python\ndef calculate(s: str) -> int:\n    stack: list[int] = []\n    num = 0\n    sign = '+'\n    s = s.replace(' ', '') + '+'\n    for ch in s:\n        if ch.isdigit():\n            num = num * 10 + int(ch)\n        elif ch == '(':\n            stack.append(0)  # placeholder for nested handling\n        else:\n            if sign == '+':\n                stack.append(num)\n            elif sign == '-':\n                stack.append(-num)\n            elif sign == '*':\n                stack.append(stack.pop() * num)\n            elif sign == '/':\n                stack.append(int(stack.pop() / num))  # truncate toward zero\n            num = 0\n            sign = ch\n    return sum(stack)\n\n# Simpler version for + and - with parentheses (LeetCode 224):\ndef basic_calculator(s: str) -> int:\n    stack: list[int] = []\n    result = 0\n    num = 0\n    sign = 1\n    for ch in s:\n        if ch.isdigit():\n            num = num * 10 + int(ch)\n        elif ch in '+-':\n            result += sign * num\n            num = 0\n            sign = 1 if ch == '+' else -1\n        elif ch == '(':\n            stack.append(result)\n            stack.append(sign)\n            result = 0\n            sign = 1\n        elif ch == ')':\n            result += sign * num\n            num = 0\n            result *= stack.pop()  # sign before parenthesis\n            result += stack.pop()  # accumulated result before parenthesis\n    return result + sign * num\n```\n\nTime: O(n), Space: O(n).",
+    "explanation": "The key insight for operator precedence: process * and / immediately (they modify the top of the stack), defer + and - (just push to stack). At the end, sum the stack. For parentheses, save the current state on the stack and start fresh. Python's int() truncates toward zero for positive numbers, but int(-3/2) = -1 while -3//2 = -2 — use int(a/b) for C-style truncation. This is a common Google/Meta interview question.",
+    "source": "dsa_python:stacks:004"
+  },
+  {
+    "module": "dsa",
+    "category": "sorting",
+    "topic": "Quickselect — Kth Largest",
+    "difficulty": "medium",
+    "question": "Find the kth largest element in an unsorted array. Compare quickselect, heapq.nlargest, and sorted approaches. When is each optimal?",
+    "answer": "```python\nimport heapq\nimport random\n\ndef kth_largest_quickselect(nums: list[int], k: int) -> int:\n    target = len(nums) - k  # kth largest = (n-k)th smallest\n    def quickselect(lo: int, hi: int) -> int:\n        pivot_idx = random.randint(lo, hi)\n        nums[pivot_idx], nums[hi] = nums[hi], nums[pivot_idx]\n        pivot = nums[hi]\n        store = lo\n        for i in range(lo, hi):\n            if nums[i] < pivot:\n                nums[store], nums[i] = nums[i], nums[store]\n                store += 1\n        nums[store], nums[hi] = nums[hi], nums[store]\n        if store == target:\n            return nums[store]\n        elif store < target:\n            return quickselect(store + 1, hi)\n        else:\n            return quickselect(lo, store - 1)\n    return quickselect(0, len(nums) - 1)\n\n# Python stdlib approaches:\ndef kth_largest_heap(nums: list[int], k: int) -> int:\n    return heapq.nlargest(k, nums)[-1]  # O(n + k log n)\n\ndef kth_largest_sorted(nums: list[int], k: int) -> int:\n    return sorted(nums, reverse=True)[k - 1]  # O(n log n)\n```\n\nQuickselect: O(n) average, O(n^2) worst. heapq.nlargest: O(n + k log n). sorted: O(n log n).",
+    "explanation": "Quickselect only recurses into one partition (unlike quicksort which recurses into both), giving average O(n). Random pivot selection avoids worst-case O(n^2) on sorted input. heapq.nlargest uses a min-heap of size k internally — efficient when k << n. For k = 1 (max), use max(nums). For k = n (min), use min(nums). In Python, heapq.nlargest is the pragmatic choice — quickselect is the interview-expected answer for demonstrating algorithm knowledge.",
+    "source": "dsa_python:sorting:001"
+  },
+  {
+    "module": "dsa",
+    "category": "sorting",
+    "topic": "Merge Sort Variants",
+    "difficulty": "medium",
+    "question": "Implement merge sort and use it to count inversions in an array. An inversion is a pair (i, j) where i < j but nums[i] > nums[j]. Why is merge sort preferred over other sorts for this?",
+    "answer": "```python\ndef merge_sort_count(nums: list[int]) -> tuple[list[int], int]:\n    if len(nums) <= 1:\n        return nums, 0\n    mid = len(nums) // 2\n    left, left_inv = merge_sort_count(nums[:mid])\n    right, right_inv = merge_sort_count(nums[mid:])\n    merged: list[int] = []\n    inversions = left_inv + right_inv\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            merged.append(left[i])\n            i += 1\n        else:\n            merged.append(right[j])\n            inversions += len(left) - i  # all remaining left elements form inversions\n            j += 1\n    merged.extend(left[i:])\n    merged.extend(right[j:])\n    return merged, inversions\n\n# Usage:\nsorted_arr, count = merge_sort_count([3, 1, 2])\n# sorted_arr = [1, 2, 3], count = 2 (inversions: (3,1) and (3,2))\n```\n\nTime: O(n log n), Space: O(n). Merge sort counts split inversions during the merge step — when a right element is placed before remaining left elements, all those left elements form inversions with it.",
+    "explanation": "Merge sort naturally splits the inversion count into three parts: left inversions, right inversions, and split inversions (counted during merge). The key line is inversions += len(left) - i: when right[j] < left[i], all elements left[i:] are greater than right[j] (since left is sorted), so they all form inversions. This cannot be done with quicksort because quicksort's partition does not preserve relative order. Inversion count measures how far an array is from sorted — used in ranking similarity metrics.",
+    "source": "dsa_python:sorting:002"
+  },
+  {
+    "module": "dsa",
+    "category": "sorting",
+    "topic": "Topological Sort",
+    "difficulty": "medium",
+    "question": "Implement topological sort using both Kahn's algorithm (BFS) and DFS. Detect if a valid topological ordering exists (i.e., the graph is a DAG).",
+    "answer": "```python\nfrom collections import deque, defaultdict\n\ndef topo_sort_kahn(num_nodes: int, edges: list[tuple[int, int]]) -> list[int]:\n    \"\"\"Kahn's algorithm (BFS). edges: (prerequisite, dependent).\"\"\"\n    graph: dict[int, list[int]] = defaultdict(list)\n    in_degree = [0] * num_nodes\n    for u, v in edges:\n        graph[u].append(v)\n        in_degree[v] += 1\n    queue = deque(i for i in range(num_nodes) if in_degree[i] == 0)\n    order: list[int] = []\n    while queue:\n        node = queue.popleft()\n        order.append(node)\n        for neighbor in graph[node]:\n            in_degree[neighbor] -= 1\n            if in_degree[neighbor] == 0:\n                queue.append(neighbor)\n    if len(order) != num_nodes:\n        return []  # cycle detected\n    return order\n\ndef topo_sort_dfs(num_nodes: int, edges: list[tuple[int, int]]) -> list[int]:\n    graph: dict[int, list[int]] = defaultdict(list)\n    for u, v in edges:\n        graph[u].append(v)\n    WHITE, GRAY, BLACK = 0, 1, 2\n    color = [WHITE] * num_nodes\n    order: list[int] = []\n    has_cycle = False\n    def dfs(node: int) -> None:\n        nonlocal has_cycle\n        if has_cycle:\n            return\n        color[node] = GRAY\n        for neighbor in graph[node]:\n            if color[neighbor] == GRAY:\n                has_cycle = True\n                return\n            if color[neighbor] == WHITE:\n                dfs(neighbor)\n        color[node] = BLACK\n        order.append(node)\n    for i in range(num_nodes):\n        if color[i] == WHITE:\n            dfs(i)\n    return order[::-1] if not has_cycle else []\n```\n\nBoth O(V + E) time, O(V + E) space.",
+    "explanation": "Kahn's algorithm processes nodes with zero in-degree first (no prerequisites). If the final order has fewer than n nodes, a cycle exists. DFS-based topological sort adds nodes to the order in post-order (after all descendants are visited), then reverses. The three-color scheme (white=unvisited, gray=in-progress, black=done) detects cycles: a gray node encountered during DFS means a back edge (cycle). Topological sort is used in build systems, course scheduling, and dependency resolution.",
+    "source": "dsa_python:sorting:003"
+  },
+  {
+    "module": "dsa",
+    "category": "sorting",
+    "topic": "Counting Sort and Bucket Sort",
+    "difficulty": "medium",
+    "question": "Implement counting sort for integers in a known range and bucket sort for uniformly distributed floating-point numbers. When do these O(n) sorts beat comparison-based O(n log n) sorts?",
+    "answer": "```python\ndef counting_sort(nums: list[int]) -> list[int]:\n    if not nums:\n        return []\n    lo, hi = min(nums), max(nums)\n    counts = [0] * (hi - lo + 1)\n    for num in nums:\n        counts[num - lo] += 1\n    result: list[int] = []\n    for i, count in enumerate(counts):\n        result.extend([i + lo] * count)\n    return result\n\ndef bucket_sort(nums: list[float], num_buckets: int = 10) -> list[float]:\n    \"\"\"Sort floats in [0, 1) using bucket sort.\"\"\"\n    if not nums:\n        return []\n    buckets: list[list[float]] = [[] for _ in range(num_buckets)]\n    for num in nums:\n        idx = min(int(num * num_buckets), num_buckets - 1)\n        buckets[idx].append(num)\n    result: list[float] = []\n    for bucket in buckets:\n        bucket.sort()  # insertion sort for small buckets\n        result.extend(bucket)\n    return result\n```\n\nCounting sort: O(n + k) where k is the range. Bucket sort: O(n) average when data is uniformly distributed.",
+    "explanation": "These are non-comparison sorts that break the O(n log n) lower bound by exploiting data properties. Counting sort requires a bounded integer range (impractical if range >> n). Bucket sort requires roughly uniform distribution — if all elements land in one bucket, it degrades to O(n log n). Radix sort combines counting sort across digits for larger ranges. Python's built-in sorted() uses Timsort (O(n log n), adaptive) and is usually faster in practice due to C implementation — use counting/bucket sort only when n is very large and the constraints are right.",
+    "source": "dsa_python:sorting:004"
+  },
+  {
+    "module": "dsa",
     "category": "python_specific",
     "topic": "Generators and itertools",
     "difficulty": "hard",
@@ -48,5 +448,55 @@
     "answer": "```python\nimport itertools\nfrom typing import Generator\n\ndef permutations_lazy(items: list) -> Generator[tuple, None, None]:\n    \"\"\"Yield permutations one at a time without storing all of them.\"\"\"\n    if len(items) <= 1:\n        yield tuple(items)\n        return\n    for i, item in enumerate(items):\n        rest = items[:i] + items[i+1:]\n        for perm in permutations_lazy(rest):\n            yield (item,) + perm\n\ndef first_k_valid(items: list, predicate, k: int) -> list[tuple]:\n    \"\"\"Return first k permutations satisfying predicate.\"\"\"\n    gen = (p for p in itertools.permutations(items) if predicate(p))\n    return list(itertools.islice(gen, k))\n\n# Example: first 3 permutations of [1,2,3,4] where sum of first two > 4\nresult = first_k_valid([1,2,3,4], lambda p: p[0] + p[1] > 4, k=3)\n```\n\nMemory: O(n) stack depth vs O(n!) if you materialise all permutations. For n=10, that's 10 stack frames vs 3.6 million tuples.",
     "explanation": "Generators use the 'yield' keyword to suspend execution and resume on next(). itertools.permutations() is itself a C-level generator. itertools.islice() is a lazy 'take' — it pulls from the generator only as many values as needed, so the predicate and islice compose without materialising the full stream. This pattern (generator expression + islice) is the idiomatic Python way to do lazy filtering and early termination on combinatorial sequences.",
     "source": "dsa_python:python_specific:001"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "itertools Recipes",
+    "difficulty": "medium",
+    "question": "Show how to use itertools.chain, itertools.groupby, itertools.product, and itertools.accumulate to solve common interview patterns. Include a sliding window using itertools.",
+    "answer": "```python\nimport itertools\nfrom collections import Counter\n\n# chain — flatten nested iterables\ndef flatten(nested: list[list[int]]) -> list[int]:\n    return list(itertools.chain.from_iterable(nested))\n\n# groupby — group consecutive identical elements (must be sorted first)\ndef group_consecutive(data: list[str]) -> dict[str, int]:\n    sorted_data = sorted(data)\n    return {k: len(list(g)) for k, g in itertools.groupby(sorted_data)}\n\n# product — Cartesian product (replaces nested loops)\ndef all_pairs(rows: range, cols: range) -> list[tuple[int, int]]:\n    return list(itertools.product(rows, cols))\n\n# accumulate — running prefix sums / running max\ndef running_max(nums: list[int]) -> list[int]:\n    return list(itertools.accumulate(nums, max))\n\n# Sliding window with islice:\ndef sliding_windows(seq: list[int], k: int) -> list[tuple[int, ...]]:\n    iters = [itertools.islice(iter(seq), i, None) for i in range(k)]\n    return list(zip(*iters))\n```\n\nAll operations are lazy (return iterators) unless wrapped in list().",
+    "explanation": "itertools provides C-optimized, memory-efficient building blocks for iteration. chain.from_iterable flattens one level of nesting. groupby requires sorted input (unlike SQL GROUP BY). product replaces nested for-loops and is useful for generating test cases. accumulate generalizes prefix sums to any binary function. These are Python-specific interview questions that distinguish senior Python engineers from language-agnostic coders.",
+    "source": "dsa_python:python_specific:002"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "Counter and deque",
+    "difficulty": "medium",
+    "question": "Use collections.Counter and collections.deque to solve: (1) find top-k frequent elements, (2) implement a sliding window maximum. Show both the stdlib approach and the manual approach.",
+    "answer": "```python\nfrom collections import Counter, deque\nimport heapq\n\n# Top-k frequent elements:\ndef top_k_frequent(nums: list[int], k: int) -> list[int]:\n    # O(n + k log n) using Counter.most_common\n    return [val for val, _ in Counter(nums).most_common(k)]\n\ndef top_k_bucket_sort(nums: list[int], k: int) -> list[int]:\n    # O(n) using bucket sort by frequency\n    counts = Counter(nums)\n    buckets: list[list[int]] = [[] for _ in range(len(nums) + 1)]\n    for val, freq in counts.items():\n        buckets[freq].append(val)\n    result: list[int] = []\n    for freq in range(len(buckets) - 1, 0, -1):\n        result.extend(buckets[freq])\n        if len(result) >= k:\n            return result[:k]\n    return result\n\n# Sliding window maximum (monotonic deque):\ndef max_sliding_window(nums: list[int], k: int) -> list[int]:\n    dq: deque[int] = deque()  # indices of elements in decreasing order\n    result: list[int] = []\n    for i, num in enumerate(nums):\n        while dq and dq[0] <= i - k:\n            dq.popleft()  # remove elements outside window\n        while dq and nums[dq[-1]] < num:\n            dq.pop()  # maintain decreasing order\n        dq.append(i)\n        if i >= k - 1:\n            result.append(nums[dq[0]])\n    return result\n```\n\nTop-k: O(n) with bucket sort. Sliding window max: O(n) with monotonic deque.",
+    "explanation": "Counter.most_common(k) uses a heap internally — O(n + k log n). The bucket sort approach is O(n) by grouping elements by frequency. The sliding window maximum uses a monotonic decreasing deque: the front always holds the maximum for the current window, and elements smaller than the new element are removed from the back (they can never be the maximum). deque supports O(1) append/pop from both ends — critical for this algorithm.",
+    "source": "dsa_python:python_specific:003"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "Decorators and Context Managers",
+    "difficulty": "medium",
+    "question": "Implement a memoization decorator from scratch (without functools.lru_cache), a retry decorator with exponential backoff, and a custom context manager for timing code blocks.",
+    "answer": "```python\nimport functools\nimport time\nfrom contextlib import contextmanager\nfrom typing import Any, Callable, TypeVar\n\nF = TypeVar('F', bound=Callable[..., Any])\n\n# Memoization decorator\ndef memoize(func: F) -> F:\n    cache: dict[tuple, Any] = {}\n    @functools.wraps(func)\n    def wrapper(*args: Any) -> Any:\n        if args not in cache:\n            cache[args] = func(*args)\n        return cache[args]\n    return wrapper  # type: ignore\n\n# Retry with exponential backoff\ndef retry(max_retries: int = 3, base_delay: float = 1.0):\n    def decorator(func: F) -> F:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            for attempt in range(max_retries):\n                try:\n                    return func(*args, **kwargs)\n                except Exception:\n                    if attempt == max_retries - 1:\n                        raise\n                    time.sleep(base_delay * (2 ** attempt))\n        return wrapper  # type: ignore\n    return decorator\n\n# Context manager for timing\n@contextmanager\ndef timer(label: str = 'Block'):\n    start = time.perf_counter()\n    yield\n    elapsed = time.perf_counter() - start\n    print(f'{label}: {elapsed:.4f}s')\n\n# Usage:\n@memoize\ndef fib(n: int) -> int:\n    return n if n < 2 else fib(n-1) + fib(n-2)\n\nwith timer('Fibonacci'):\n    result = fib(100)\n```",
+    "explanation": "Decorators are higher-order functions that wrap other functions. functools.wraps preserves the original function's name and docstring. The retry decorator uses a closure to capture max_retries and base_delay. Context managers with @contextmanager use yield to split setup and teardown. The class-based __enter__/__exit__ approach is the alternative. These patterns are asked in senior Python interviews to test understanding of closures, higher-order functions, and Python's execution model.",
+    "source": "dsa_python:python_specific:004"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "asyncio Fundamentals",
+    "difficulty": "hard",
+    "question": "Implement an async HTTP client that fetches multiple URLs concurrently using asyncio.gather. Show the difference between asyncio.gather, asyncio.create_task, and asyncio.wait. When should you use async vs threading vs multiprocessing in Python?",
+    "answer": "```python\nimport asyncio\nimport aiohttp\nfrom typing import Any\n\nasync def fetch_url(session: aiohttp.ClientSession, url: str) -> dict[str, Any]:\n    async with session.get(url) as response:\n        data = await response.json()\n        return {'url': url, 'status': response.status, 'data': data}\n\nasync def fetch_all(urls: list[str]) -> list[dict[str, Any]]:\n    async with aiohttp.ClientSession() as session:\n        # Option 1: gather — runs all concurrently, returns in order\n        results = await asyncio.gather(\n            *(fetch_url(session, url) for url in urls),\n            return_exceptions=True\n        )\n        return [r for r in results if not isinstance(r, Exception)]\n\nasync def fetch_with_semaphore(urls: list[str], max_concurrent: int = 10) -> list:\n    semaphore = asyncio.Semaphore(max_concurrent)\n    async def limited_fetch(session: aiohttp.ClientSession, url: str):\n        async with semaphore:\n            return await fetch_url(session, url)\n    async with aiohttp.ClientSession() as session:\n        tasks = [asyncio.create_task(limited_fetch(session, url)) for url in urls]\n        done, _ = await asyncio.wait(tasks, timeout=30.0)\n        return [t.result() for t in done if not t.cancelled()]\n\n# asyncio: I/O-bound concurrency (network, disk)\n# threading: I/O-bound with legacy sync libraries\n# multiprocessing: CPU-bound (bypasses GIL)\n```",
+    "explanation": "asyncio uses cooperative multitasking (coroutines yield control at await points). gather runs coroutines concurrently and returns results in order. create_task schedules a coroutine for execution. wait provides more control (timeout, return_when). The Semaphore limits concurrency to avoid overwhelming servers. Use asyncio for I/O-bound work (HTTP, DB queries), threading for legacy sync I/O, and multiprocessing for CPU-bound work (the GIL prevents true parallelism in threads). This is a must-know for senior Python roles.",
+    "source": "dsa_python:python_specific:005"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "GIL and Multiprocessing",
+    "difficulty": "hard",
+    "question": "Explain the GIL (Global Interpreter Lock) in CPython. When does it matter and when doesn't it? Show how to use multiprocessing.Pool and concurrent.futures.ProcessPoolExecutor for CPU-bound parallelism.",
+    "answer": "```python\nimport multiprocessing\nfrom concurrent.futures import ProcessPoolExecutor, as_completed\nimport math\n\n# CPU-bound task\ndef is_prime(n: int) -> bool:\n    if n < 2:\n        return False\n    for i in range(2, int(math.sqrt(n)) + 1):\n        if n % i == 0:\n            return False\n    return True\n\n# multiprocessing.Pool\ndef find_primes_pool(numbers: list[int]) -> list[int]:\n    with multiprocessing.Pool() as pool:\n        results = pool.map(is_prime, numbers)\n    return [n for n, is_p in zip(numbers, results) if is_p]\n\n# ProcessPoolExecutor (preferred — integrates with futures API)\ndef find_primes_executor(numbers: list[int]) -> list[int]:\n    primes: list[int] = []\n    with ProcessPoolExecutor() as executor:\n        future_to_num = {executor.submit(is_prime, n): n for n in numbers}\n        for future in as_completed(future_to_num):\n            if future.result():\n                primes.append(future_to_num[future])\n    return primes\n\n# When GIL doesn't matter:\n# - I/O operations (network, disk) release the GIL\n# - NumPy/Pandas operations release the GIL (C extensions)\n# - asyncio (cooperative multitasking, single thread)\n```",
+    "explanation": "The GIL ensures only one thread executes Python bytecode at a time. It matters for CPU-bound Python code (pure loops, math) but not for I/O (the GIL is released during I/O waits) or C extensions (NumPy releases it during array operations). multiprocessing bypasses the GIL by using separate processes with their own Python interpreters. ProcessPoolExecutor is the modern API — it returns Future objects and supports as_completed for processing results as they arrive. For data engineering, the GIL rarely matters because pandas/numpy/pyspark all release it.",
+    "source": "dsa_python:python_specific:006"
   }
 ]
