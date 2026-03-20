@@ -302,6 +302,7 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_study_plans_active ON study_plans(active);
 	CREATE INDEX IF NOT EXISTS idx_question_attempts_quiz_question_id ON question_attempts(quiz_question_id);
 	CREATE INDEX IF NOT EXISTS idx_question_attempts_progress_id ON question_attempts(progress_id);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_questions_source_dedup ON quiz_questions(topic_id, source) WHERE source != '';
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("tutor: migrate: %w", err)
@@ -411,8 +412,21 @@ func (s *Store) UpdateTopicStatus(id int64, status string) error {
 
 // ---------- Quiz Questions ----------
 
-// CreateQuizQuestion inserts a new quiz question.
+// CreateQuizQuestion inserts a new quiz question. If source is non-empty and a question
+// with the same (topic_id, source) already exists, the existing question is returned (dedup).
 func (s *Store) CreateQuizQuestion(topicID int64, difficulty, questionText, answerText, explanation, source string) (*QuizQuestion, error) {
+	// If source is non-empty, check for existing question with same source for this topic.
+	if source != "" {
+		var existingID int64
+		err := s.db.QueryRow(
+			"SELECT id FROM quiz_questions WHERE topic_id = ? AND source = ?",
+			topicID, source,
+		).Scan(&existingID)
+		if err == nil {
+			return s.GetQuizQuestion(existingID)
+		}
+	}
+
 	res, err := s.db.Exec(
 		"INSERT INTO quiz_questions (topic_id, difficulty, question_text, answer_text, explanation, source) VALUES (?, ?, ?, ?, ?, ?)",
 		topicID, difficulty, questionText, answerText, explanation, source,

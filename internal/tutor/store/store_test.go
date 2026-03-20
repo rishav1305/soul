@@ -142,11 +142,11 @@ func TestQuizAndDrill(t *testing.T) {
 	}
 
 	// Create questions.
-	q1, err := s.CreateQuizQuestion(topic.ID, "easy", "What is an int?", "A numeric type", "Built-in integer", "manual")
+	q1, err := s.CreateQuizQuestion(topic.ID, "easy", "What is an int?", "A numeric type", "Built-in integer", "manual:001")
 	if err != nil {
 		t.Fatalf("CreateQuizQuestion: %v", err)
 	}
-	q2, err := s.CreateQuizQuestion(topic.ID, "medium", "What is a slice?", "A dynamic array", "Backed by array", "manual")
+	q2, err := s.CreateQuizQuestion(topic.ID, "medium", "What is a slice?", "A dynamic array", "Backed by array", "manual:002")
 	if err != nil {
 		t.Fatalf("CreateQuizQuestion q2: %v", err)
 	}
