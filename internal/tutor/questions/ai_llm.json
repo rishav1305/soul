@@ -1,0 +1,52 @@
+[
+  {
+    "module": "ai",
+    "category": "transformers",
+    "topic": "Self-Attention",
+    "difficulty": "hard",
+    "question": "Explain the self-attention mechanism in a Transformer. Walk through the Query, Key, Value computation for a single attention head, including the scaled dot-product formula. Why is the scaling factor sqrt(d_k) necessary?",
+    "answer": "Self-attention computes a weighted sum of Value vectors, where the weights are determined by the compatibility between Query and Key vectors.\n\nFor input matrix X (seq_len × d_model):\n1. Project to Q, K, V:\n   Q = X · W_Q  (seq_len × d_k)\n   K = X · W_K  (seq_len × d_k)\n   V = X · W_V  (seq_len × d_v)\n\n2. Compute attention scores (scaled dot-product):\n   Attention(Q, K, V) = softmax(Q·K^T / sqrt(d_k)) · V\n\nScaling reason: Q·K^T produces values with variance proportional to d_k. Without scaling, large d_k causes the dot products to enter the flat regions of softmax (near 0 or 1), making gradients vanish during training. Dividing by sqrt(d_k) normalises the variance back to ~1.\n\nMulti-head extends this by running h parallel attention heads with smaller projections (d_k = d_model/h), then concatenating:\n   MultiHead(Q,K,V) = Concat(head_1,...,head_h) · W_O",
+    "explanation": "The key insight is that attention is differentiable memory lookup: Q is the query, K is the index, and V is the content retrieved. Positional encodings are added to X before projection because attention itself is permutation-equivariant. The causal mask used in decoders sets future positions to -inf before softmax, forcing autoregressive generation.",
+    "source": "ai_llm:transformers:001"
+  },
+  {
+    "module": "ai",
+    "category": "rag",
+    "topic": "RAG Chunking Strategies",
+    "difficulty": "medium",
+    "question": "You are building a RAG pipeline with LangChain over a 500-page technical PDF. Compare fixed-size chunking, recursive character splitting, and semantic chunking. When does each strategy produce better retrieval results?",
+    "answer": "Three main strategies with LangChain:\n\n1. Fixed-size chunking (CharacterTextSplitter):\n```python\nfrom langchain.text_splitter import CharacterTextSplitter\nsplitter = CharacterTextSplitter(chunk_size=512, chunk_overlap=50)\n```\nFast, predictable token budget. Poor for structured docs — splits mid-sentence or mid-table.\n\n2. Recursive character splitting (RecursiveCharacterTextSplitter):\n```python\nfrom langchain.text_splitter import RecursiveCharacterTextSplitter\nsplitter = RecursiveCharacterTextSplitter(\n    chunk_size=512, chunk_overlap=50,\n    separators=['\\n\\n', '\\n', '. ', ' ', '']\n)\n```\nTries paragraph → sentence → word boundaries in order. Best default choice for prose.\n\n3. Semantic chunking (SemanticChunker, langchain-experimental):\n```python\nfrom langchain_experimental.text_splitter import SemanticChunker\nfrom langchain_openai import OpenAIEmbeddings\nsplitter = SemanticChunker(OpenAIEmbeddings(), breakpoint_threshold_type='percentile')\n```\nGroups sentences with high embedding similarity. Best for long-form docs with varied topics, but 3-5x slower and costs embedding API calls.\n\nRule of thumb: recursive for most cases; semantic when topics shift abruptly; fixed only for code/logs where structure is uniform.",
+    "explanation": "Chunk overlap (10-15% of chunk size) prevents context from being cut at boundaries. For technical PDFs, also consider parent-child chunking: store small chunks for retrieval precision, but return the parent chunk for LLM context. Always set chunk size relative to your embedding model's context window (e.g., 512 tokens for sentence-transformers, 8191 for text-embedding-3-large).",
+    "source": "ai_llm:rag:001"
+  },
+  {
+    "module": "ai",
+    "category": "llm_fundamentals",
+    "topic": "Model Quantization",
+    "difficulty": "medium",
+    "question": "Explain the difference between GPTQ, GGUF/llama.cpp quantization, and bitsandbytes (NF4/INT8) for deploying LLMs. When would you choose each approach, and what are the quality vs. latency trade-offs?",
+    "answer": "Three dominant quantization approaches:\n\n1. bitsandbytes (NF4/INT8) — QLoRA-friendly:\n```python\nfrom transformers import BitsAndBytesConfig\nbnb_config = BitsAndBytesConfig(\n    load_in_4bit=True,\n    bnb_4bit_quant_type='nf4',       # Normal Float 4 — better for normal-distributed weights\n    bnb_4bit_use_double_quant=True,  # Nested quantization saves ~0.4 bits/param\n    bnb_4bit_compute_dtype=torch.bfloat16\n)\nmodel = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=bnb_config)\n```\nBest for: fine-tuning (QLoRA), fast experimentation. Requires CUDA. ~2x memory reduction (4-bit), ~10-15% quality degradation on benchmarks.\n\n2. GPTQ — post-training quantization:\nStatically quantises weights layer-by-layer using calibration data. Produces .safetensors with group-wise quantization. Supported by AutoGPTQ, vLLM, TGI. Better quality than bitsandbytes at same bit width; requires calibration dataset.\n\n3. GGUF/llama.cpp — CPU + mixed-device inference:\nPortable format supporting Q4_K_M, Q5_K_M, Q8_0 variants. Runs on CPU with optional GPU offloading. Use with Ollama or llama-cpp-python. Best for: Mac M-series, local deployment without CUDA.\n\nChoice: GGUF for local/edge; GPTQ for production GPU inference; bitsandbytes for QLoRA fine-tuning.",
+    "explanation": "Quality ranking at 4-bit: GPTQ ≈ NF4 > INT4. Latency ranking: GGUF on GPU < GPTQ < bitsandbytes (bitsandbytes dequantizes on the fly). For production, AWQ (Activation-aware Weight Quantization) is increasingly preferred over GPTQ — it selects which weights to protect based on activation magnitude, yielding better perplexity at Q4.",
+    "source": "ai_llm:llm_fundamentals:001"
+  },
+  {
+    "module": "ai",
+    "category": "multi_agent",
+    "topic": "LangGraph Multi-Agent Design",
+    "difficulty": "hard",
+    "question": "Design a multi-agent research workflow using LangGraph where a Supervisor agent routes tasks to specialist subagents (web search, code execution, summarisation). How do you implement handoffs, shared state, and conditional routing?",
+    "answer": "LangGraph models agents as a StateGraph. Handoffs use Command objects:\n\n```python\nfrom typing import Annotated, TypedDict\nfrom langgraph.graph import StateGraph, START, END\nfrom langgraph.prebuilt import create_react_agent\nfrom langgraph.types import Command\n\nclass ResearchState(TypedDict):\n    messages: Annotated[list, 'messages']  # reducer: append\n    next_agent: str\n    final_answer: str\n\n# Supervisor decides routing\ndef supervisor_node(state: ResearchState) -> Command:\n    # Call LLM to decide next step\n    decision = llm.invoke(state['messages'])\n    if 'search' in decision.content:\n        return Command(goto='web_search_agent', update={'next_agent': 'web_search'})\n    elif 'code' in decision.content:\n        return Command(goto='code_agent', update={'next_agent': 'code'})\n    else:\n        return Command(goto=END, update={'final_answer': decision.content})\n\n# Build graph\ngraph = StateGraph(ResearchState)\ngraph.add_node('supervisor', supervisor_node)\ngraph.add_node('web_search_agent', web_search_node)\ngraph.add_node('code_agent', code_node)\ngraph.add_edge(START, 'supervisor')\n# Agents return to supervisor after completion\ngraph.add_edge('web_search_agent', 'supervisor')\ngraph.add_edge('code_agent', 'supervisor')\n\napp = graph.compile(checkpointer=MemorySaver())\n```\n\nShared state is passed as the TypedDict; annotated fields use reducers to merge updates (e.g., 'messages' appends rather than replaces).",
+    "explanation": "Key design decisions: (1) Supervisor-as-router vs peer-to-peer — supervisor is easier to debug; (2) State schema — use Annotated with add_messages reducer for chat history; (3) Checkpointing with MemorySaver for resume on failure; (4) Command(goto=...) is the LangGraph v0.2+ API for conditional routing, replacing conditional_edges for dynamic dispatch. For parallel subagents, use Send() to fan out to multiple nodes simultaneously.",
+    "source": "ai_llm:multi_agent:001"
+  },
+  {
+    "module": "ai",
+    "category": "mlops",
+    "topic": "vLLM PagedAttention",
+    "difficulty": "hard",
+    "question": "Explain how vLLM's PagedAttention mechanism improves GPU memory utilisation for serving LLMs compared to a naive KV-cache implementation. What are the throughput and latency implications for batched inference?",
+    "answer": "Naive KV-cache problem: pre-allocates max_seq_len * num_layers * 2 * num_heads * head_dim tensors per request. For a 70B model with 4K context, this is ~1.6GB per request — severely limiting batch size.\n\nPagedAttention solution (inspired by OS virtual memory):\n- Divides KV cache into fixed-size blocks (e.g., 16 tokens each)\n- Maintains a block table mapping logical sequence positions to physical GPU memory pages\n- Pages are allocated on-demand as tokens are generated\n- Non-contiguous physical memory is allowed — the attention kernel handles the indirection\n\n```python\n# vLLM usage — PagedAttention is transparent to users\nfrom vllm import LLM, SamplingParams\n\nllm = LLM(model='meta-llama/Llama-3-8B', \n          gpu_memory_utilization=0.90,  # fraction of GPU for KV cache\n          max_num_batched_tokens=32768)\n\nparams = SamplingParams(temperature=0.8, max_tokens=512)\noutputs = llm.generate(prompts, params)  # continuous batching\n```\n\nThroughput improvement: 2-4x higher throughput vs HuggingFace Transformers due to:\n1. Near-zero KV cache fragmentation (99%+ utilisation vs ~20-40% with pre-allocation)\n2. Continuous batching — new requests join in-flight batches, not after completion\n3. Prefix caching — shared prompt prefixes reuse pages across requests",
+    "explanation": "The memory fragmentation problem in naive KV caches is analogous to external fragmentation in memory allocators. PagedAttention's block granularity (16 tokens) means worst-case 15 wasted token slots per sequence — far better than max_seq_len waste. For production, vLLM's continuous batching (also called iteration-level scheduling) is what enables true high-throughput serving; it replaces static batching where the server waits for all requests in a batch to finish before starting new ones.",
+    "source": "ai_llm:mlops:001"
+  }
+]

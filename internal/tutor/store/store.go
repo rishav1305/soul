@@ -321,11 +321,12 @@ func (s *Store) CreateTopic(module, category, name, difficulty, contentPath stri
 	if err != nil {
 		return nil, fmt.Errorf("tutor: create topic: %w", err)
 	}
-	id, _ := res.LastInsertId()
-	if id == 0 {
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
 		// Already existed — fetch by name.
 		return s.GetTopicByName(module, category, name)
 	}
+	id, _ := res.LastInsertId()
 	return s.GetTopic(id)
 }
 

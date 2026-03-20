@@ -1,0 +1,52 @@
+[
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Two Pointers",
+    "difficulty": "medium",
+    "question": "Given a sorted array of integers and a target sum, find two numbers that add up to the target. Return their indices. What is the optimal approach and what is its time and space complexity?",
+    "answer": "Use two pointers starting at opposite ends of the sorted array. Move the left pointer right when the sum is too small, and the right pointer left when the sum is too large.\n\n```python\ndef two_sum_sorted(nums: list[int], target: int) -> tuple[int, int]:\n    left, right = 0, len(nums) - 1\n    while left < right:\n        current = nums[left] + nums[right]\n        if current == target:\n            return (left, right)\n        elif current < target:\n            left += 1\n        else:\n            right -= 1\n    return (-1, -1)\n```\n\nTime: O(n), Space: O(1). The sorted property guarantees convergence without a hash map.",
+    "explanation": "Two pointers exploit the sorted order to eliminate possibilities in O(1) per step instead of O(n). The invariant is: if the sum is less than target, increasing the left pointer is the only way to increase the sum; if greater, decreasing the right pointer is the only way to decrease it. This is more space-efficient than a hash map approach (O(n) space) and equally fast.",
+    "source": "dsa_python:arrays:001"
+  },
+  {
+    "module": "dsa",
+    "category": "arrays",
+    "topic": "Sliding Window",
+    "difficulty": "medium",
+    "question": "Find the maximum sum of any contiguous subarray of length k in an array of integers. What sliding window pattern applies, and how does it differ from a naive O(n*k) solution?",
+    "answer": "Use a fixed-size sliding window: compute the sum of the first k elements, then slide by subtracting the element leaving the window and adding the element entering it.\n\n```python\ndef max_subarray_sum(nums: list[int], k: int) -> int:\n    if len(nums) < k:\n        return 0\n    window_sum = sum(nums[:k])\n    max_sum = window_sum\n    for i in range(k, len(nums)):\n        window_sum += nums[i] - nums[i - k]\n        max_sum = max(max_sum, window_sum)\n    return max_sum\n```\n\nTime: O(n), Space: O(1). The naive approach recomputes the sum from scratch each time — O(n*k) total.",
+    "explanation": "The sliding window avoids redundant computation by maintaining a running sum. When the window moves one step right, only one element enters and one leaves. Python's built-in sum() for the initial window is idiomatic. For variable-size windows (e.g., longest subarray with sum <= k), use a deque or two-pointer variant instead.",
+    "source": "dsa_python:arrays:002"
+  },
+  {
+    "module": "dsa",
+    "category": "hash_maps",
+    "topic": "Frequency Counting",
+    "difficulty": "easy",
+    "question": "Given two strings, determine if one is an anagram of the other. Show two Pythonic approaches using collections.Counter and collections.defaultdict, and explain their trade-offs.",
+    "answer": "Approach 1 — Counter (most Pythonic):\n```python\nfrom collections import Counter\n\ndef is_anagram(s: str, t: str) -> bool:\n    return Counter(s) == Counter(t)\n```\n\nApproach 2 — defaultdict (explicit control):\n```python\nfrom collections import defaultdict\n\ndef is_anagram_dd(s: str, t: str) -> bool:\n    if len(s) != len(t):\n        return False\n    freq: dict[str, int] = defaultdict(int)\n    for c in s:\n        freq[c] += 1\n    for c in t:\n        freq[c] -= 1\n    return all(v == 0 for v in freq.values())\n```\n\nBoth are O(n) time. Counter is more concise; defaultdict gives you fine-grained control and is faster when you need early-exit or streaming.",
+    "explanation": "Counter internally uses a C-optimized hash map. Counter subtraction (Counter(s) - Counter(t)) is also valid for multiset difference. The defaultdict(int) pattern is preferred when you need to combine frequency counting with other logic, or when working with generators where you can't afford two passes. For sorted string comparison (sorted(s) == sorted(t)), time is O(n log n) — worse for large inputs.",
+    "source": "dsa_python:hash_maps:001"
+  },
+  {
+    "module": "dsa",
+    "category": "trees",
+    "topic": "BFS Level Order",
+    "difficulty": "medium",
+    "question": "Implement level-order traversal of a binary tree using collections.deque, returning a list of lists where each inner list contains values at that level. Why is deque preferred over a list for this?",
+    "answer": "```python\nfrom collections import deque\nfrom typing import Optional\n\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\ndef level_order(root: Optional[TreeNode]) -> list[list[int]]:\n    if not root:\n        return []\n    result: list[list[int]] = []\n    queue: deque[TreeNode] = deque([root])\n    while queue:\n        level_size = len(queue)\n        level: list[int] = []\n        for _ in range(level_size):\n            node = queue.popleft()\n            level.append(node.val)\n            if node.left:\n                queue.append(node.left)\n            if node.right:\n                queue.append(node.right)\n        result.append(level)\n    return result\n```\n\ndeque.popleft() is O(1); list.pop(0) is O(n) because it shifts all elements. For large trees this is the difference between O(n) and O(n^2) total work.",
+    "explanation": "The level_size snapshot at the start of each iteration is the key pattern — it lets you process exactly one level before moving on. This pattern generalises to any BFS problem where you need level boundaries (e.g., shortest path in a grid, word ladder). Always import deque from collections; never use a plain list as a queue in Python.",
+    "source": "dsa_python:trees:001"
+  },
+  {
+    "module": "dsa",
+    "category": "python_specific",
+    "topic": "Generators and itertools",
+    "difficulty": "hard",
+    "question": "You need to generate all permutations of a list lazily (without materialising them all at once), then take only the first k that satisfy a predicate. Implement this using a generator function and itertools.islice. What are the memory advantages over list-based approaches?",
+    "answer": "```python\nimport itertools\nfrom typing import Generator\n\ndef permutations_lazy(items: list) -> Generator[tuple, None, None]:\n    \"\"\"Yield permutations one at a time without storing all of them.\"\"\"\n    if len(items) <= 1:\n        yield tuple(items)\n        return\n    for i, item in enumerate(items):\n        rest = items[:i] + items[i+1:]\n        for perm in permutations_lazy(rest):\n            yield (item,) + perm\n\ndef first_k_valid(items: list, predicate, k: int) -> list[tuple]:\n    \"\"\"Return first k permutations satisfying predicate.\"\"\"\n    gen = (p for p in itertools.permutations(items) if predicate(p))\n    return list(itertools.islice(gen, k))\n\n# Example: first 3 permutations of [1,2,3,4] where sum of first two > 4\nresult = first_k_valid([1,2,3,4], lambda p: p[0] + p[1] > 4, k=3)\n```\n\nMemory: O(n) stack depth vs O(n!) if you materialise all permutations. For n=10, that's 10 stack frames vs 3.6 million tuples.",
+    "explanation": "Generators use the 'yield' keyword to suspend execution and resume on next(). itertools.permutations() is itself a C-level generator. itertools.islice() is a lazy 'take' — it pulls from the generator only as many values as needed, so the predicate and islice compose without materialising the full stream. This pattern (generator expression + islice) is the idiomatic Python way to do lazy filtering and early termination on combinatorial sequences.",
+    "source": "dsa_python:python_specific:001"
+  }
+]
