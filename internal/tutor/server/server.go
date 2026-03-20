@@ -75,6 +75,7 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/tutor/plan", s.handleCreatePlan)
 	s.mux.HandleFunc("PATCH /api/tutor/plan", s.handleUpdatePlan)
 	s.mux.HandleFunc("POST /api/tutor/import", s.handleImport)
+	s.mux.HandleFunc("POST /api/tutor/evaluate", s.handleEvaluate)
 	s.mux.HandleFunc("POST /api/tools/{name}/execute", s.handleToolExecute)
 
 	// Build middleware chain.
@@ -401,6 +402,67 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		QuestionID int64  `json:"question_id"`
+		Answer     string `json:"answer"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	if input.QuestionID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "question_id is required"})
+		return
+	}
+	if input.Answer == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "answer is required"})
+		return
+	}
+
+	// Look up the question to determine which module to use.
+	question, err := s.store.GetQuizQuestion(input.QuestionID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "question not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Determine module from topic.
+	topic, err := s.store.GetTopic(question.TopicID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Dispatch to the right module's drill evaluator.
+	drillInput := map[string]interface{}{
+		"question_id": float64(input.QuestionID),
+		"answer":      input.Answer,
+	}
+
+	var result *modules.ToolResult
+	switch topic.Module {
+	case "dsa":
+		result, err = s.modules.DSA.Drill(drillInput)
+	case "ai":
+		result, err = s.modules.AI.DrillTheory(drillInput)
+	case "sysdesign":
+		result, err = s.modules.SystemDesign.Drill(drillInput)
+	default:
+		result, err = s.modules.DSA.Drill(drillInput)
+	}
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, result.Data)
+}
+
 func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	toolName := r.PathValue("name")
 	if toolName == "" {
@@ -454,6 +516,13 @@ func (s *Server) handleToolExecute(w http.ResponseWriter, r *http.Request) {
 	// Progress tools
 	case "progress":
 		result, err = s.modules.Progress.Progress(input)
+	// System Design tools
+	case "sysdesign_learn":
+		result, err = s.modules.SystemDesign.Learn(input)
+	case "sysdesign_drill":
+		result, err = s.modules.SystemDesign.Drill(input)
+	case "sysdesign_generate":
+		result, err = s.modules.SystemDesign.GenerateContent(input)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unknown tool: %s", toolName)})
 		return
