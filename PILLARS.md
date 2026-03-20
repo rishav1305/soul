@@ -114,6 +114,213 @@ Every action is observable, every state change is traceable.
 **CLI Reporting:**
 - `soul-chat metrics usage` — page views by page, feature actions by type, total event count
 
+---
+
+## Adding a New Product
+
+Every product in soul-v2 follows the same architecture: a standalone Go server with SQLite storage, REST API, Claude tool definitions, and a frontend page — all wired through the chat server's product routing system.
+
+### Current Products (14 servers)
+
+```
+cmd/chat     :3002   cmd/tasks    :3004   cmd/tutor    :3006   cmd/projects :3008
+cmd/observe  :3010   cmd/infra    :3012   cmd/quality  :3014   cmd/data     :3016
+cmd/docs     :3018   cmd/scout    :3020   cmd/sentinel :3022   cmd/mesh     :3024
+cmd/bench    :3026   cmd/mcp      :3028
+```
+
+Next available port: **3030**
+
+### Step-by-Step Checklist
+
+#### 1. Backend — Server Binary
+
+Create the server entrypoint and internal package:
+
+```
+cmd/{product}/main.go                    Server CLI entrypoint
+internal/{product}/
+  server/server.go                       HTTP server + REST API
+  store/store.go                         SQLite CRUD (optional)
+```
+
+**Pattern to follow:** Copy from `internal/bench/server/server.go` for a simple product, or `internal/scout/server/server.go` for a complex one.
+
+Server must:
+- Read `SOUL_{PRODUCT}_HOST` and `SOUL_{PRODUCT}_PORT` env vars
+- Serve REST API at `/api/tools/{tool_name}/execute`
+- Return JSON responses
+
+#### 2. Backend — Tool Definitions + Context
+
+Create the product context file:
+
+```
+internal/chat/context/{product}.go
+```
+
+**Pattern to follow:** Copy from `internal/chat/context/bench.go`
+
+```go
+package context
+
+import "github.com/rishav1305/soul-v2/internal/chat/stream"
+
+func {product}Context() ProductContext {
+    return ProductContext{
+        System: `You are connected to {Product Name}. {Description}.
+
+Key capabilities:
+- {Capability 1}
+- {Capability 2}`,
+        Tools: []stream.Tool{
+            {
+                Name:        "{tool_name}",
+                Description: "{what it does}",
+                InputSchema: mustJSON(`{"type":"object","properties":{...},"required":[...]}`),
+            },
+        },
+    }
+}
+```
+
+#### 3. Backend — Register in Context Provider
+
+Edit `internal/chat/context/context.go` — add the product to the provider map:
+
+```go
+"{product}": {product}Context(),
+```
+
+#### 4. Backend — Register in Dispatcher
+
+Edit `internal/chat/context/dispatch.go` — add dispatch cases for each tool:
+
+```go
+case "{tool_name}":
+    // Route to product server REST API
+```
+
+#### 5. Backend — Chat Server Proxy
+
+Edit `internal/chat/server/server.go`:
+
+1. Add proxy field: `{product}Proxy *simpleProxy`
+2. Add option function: `WithProductProxy() Option`
+3. Register API route: `/api/{product}/` → proxy to product server
+
+#### 6. Backend — Wire in Main
+
+Edit `cmd/chat/main.go` — add the proxy option when starting the chat server.
+
+#### 7. Environment Variables
+
+Add to `CLAUDE.md` environment table and to your shell:
+
+```
+SOUL_{PRODUCT}_HOST   127.0.0.1     {Product} server bind address
+SOUL_{PRODUCT}_PORT   {next port}   {Product} server port
+SOUL_{PRODUCT}_URL    http://127.0.0.1:{port}   {Product} server URL (for chat proxy)
+```
+
+#### 8. Frontend — Page + Route
+
+```
+web/src/pages/{Product}Page.tsx          Product page component
+web/src/hooks/use{Product}.ts            API hook (optional)
+web/src/components/{product}/            Product-specific components (optional)
+```
+
+Add route in `web/src/router.tsx`:
+
+```tsx
+{
+    path: '{product}',
+    lazy: () => import('./pages/{Product}Page'),
+},
+```
+
+Add nav item in `web/src/layouts/AppLayout.tsx`.
+
+#### 9. Frontend — Types
+
+If the product has new types, add to `specs/{product}.yaml` and run `make types` to generate `web/src/lib/types.ts`.
+
+#### 10. Build System
+
+Add to `Makefile`:
+- Build target for the new server binary
+- Include in `make build` and `make serve`
+
+#### 11. Update CLAUDE.md
+
+Add to the Architecture section:
+- New `cmd/` and `internal/` entries
+- New env vars
+- New route in the routes list
+- Tool count update
+
+#### 12. Tests
+
+Required tests before merge:
+
+| Test | File | What |
+|------|------|------|
+| Unit tests | `internal/{product}/server/*_test.go` | Every public function |
+| Unit tests | `internal/{product}/store/*_test.go` | CRUD operations |
+| Context test | `internal/chat/context/context_test.go` | Product registered, tools defined |
+| Integration | `tests/integration/{product}_test.go` | REST API contracts |
+
+#### 13. Role Integration
+
+After the product ships, integrate with the role system (see `~/soul-roles/GUIDE.md`):
+
+1. **Decide:** New role or existing role operates this product?
+2. **Update CLAUDE.md** of the operating role — add knowledge sources, KPIs
+3. **Update Dev PM** — add to codebase knowledge
+4. **Notify** the operating role via `~/soul-roles/shared/inbox/{role}/`
+5. **Update conference skill** — add to persona domain descriptions
+
+### Product Pillar Compliance
+
+Every new product must satisfy all 6 pillars before merge:
+
+| Pillar | Product Requirement |
+|--------|-------------------|
+| **Performant** | Server memory < 100MB, API response < 200ms |
+| **Robust** | No panic on any input, defined behavior for nil/empty |
+| **Resilient** | Graceful error responses, no silent failures |
+| **Secure** | Parameterized SQL, no hardcoded secrets, input validation |
+| **Sovereign** | SQLite local storage, no external SaaS dependencies |
+| **Transparent** | Structured event logging, metrics queryable via CLI |
+
+### Quick Reference: File Checklist
+
+```
+New files:
+  cmd/{product}/main.go
+  internal/{product}/server/server.go
+  internal/{product}/server/server_test.go
+  internal/{product}/store/store.go          (if stateful)
+  internal/{product}/store/store_test.go     (if stateful)
+  internal/chat/context/{product}.go
+  web/src/pages/{Product}Page.tsx
+  web/src/hooks/use{Product}.ts              (optional)
+  tests/integration/{product}_test.go
+
+Modified files:
+  internal/chat/context/context.go           (register product)
+  internal/chat/context/dispatch.go          (add tool routes)
+  internal/chat/server/server.go             (add proxy)
+  cmd/chat/main.go                           (wire proxy)
+  web/src/router.tsx                         (add route)
+  web/src/layouts/AppLayout.tsx              (add nav item)
+  Makefile                                   (add build target)
+  CLAUDE.md                                  (update architecture + env vars + tool counts)
+```
+
+---
+
 ## Pillar Verification Matrix
 
 | Layer | What it checks | Pillars covered | When it runs |
