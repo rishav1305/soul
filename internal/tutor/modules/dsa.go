@@ -1,12 +1,14 @@
 package modules
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/rishav1305/soul-v2/internal/tutor/eval"
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
 )
 
@@ -14,6 +16,7 @@ import (
 type DSAModule struct {
 	store      *store.Store
 	contentDir string
+	evaluator  *eval.Evaluator
 }
 
 // Learn retrieves a topic and its content for study.
@@ -101,7 +104,7 @@ Write test cases covering:
 func (m *DSAModule) Drill(input map[string]interface{}) (*ToolResult, error) {
 	// Answer mode.
 	if qID, ok := getInt64(input, "question_id"); ok {
-		return m.evaluateAnswer(qID, input)
+		return m.evaluateAnswer(context.Background(), qID, input)
 	}
 
 	// Start mode.
@@ -125,7 +128,8 @@ func (m *DSAModule) Drill(input map[string]interface{}) (*ToolResult, error) {
 }
 
 // evaluateAnswer checks an answer against a quiz question, records the attempt, and updates SM2.
-func (m *DSAModule) evaluateAnswer(questionID int64, input map[string]interface{}) (*ToolResult, error) {
+// Uses Claude evaluator if available, falls back to word-overlap scoring.
+func (m *DSAModule) evaluateAnswer(ctx context.Context, questionID int64, input map[string]interface{}) (*ToolResult, error) {
 	answer, _ := input["answer"].(string)
 	if answer == "" {
 		return nil, fmt.Errorf("dsa: drill answer requires 'answer' field")
@@ -136,14 +140,45 @@ func (m *DSAModule) evaluateAnswer(questionID int64, input map[string]interface{
 		return nil, fmt.Errorf("dsa: get question: %w", err)
 	}
 
-	// Evaluate: normalize both strings, check word overlap >= 50%.
-	correct := evaluateWordOverlap(answer, question.AnswerText, 0.5)
+	var (
+		correct   bool
+		score     float64
+		quality   int
+		feedback  string
+		keyMissed []string
+		keyHit    []string
+	)
 
-	score := 0.0
-	quality := 2 // SM2 quality for incorrect.
-	if correct {
-		score = 100.0
-		quality = 4
+	// Use Claude evaluator if available, else fall back to word overlap.
+	if m.evaluator != nil {
+		result, err := m.evaluator.Evaluate(ctx, question.QuestionText, question.AnswerText, answer)
+		if err == nil {
+			correct = result.Correct
+			score = result.Score
+			quality = result.Quality
+			feedback = result.Feedback
+			keyMissed = result.KeyMissed
+			keyHit = result.KeyHit
+		} else {
+			// Evaluator error — fall back to word overlap.
+			correct = evaluateWordOverlap(answer, question.AnswerText, 0.5)
+			if correct {
+				score = 100.0
+				quality = 4
+			} else {
+				score = 0.0
+				quality = 2
+			}
+		}
+	} else {
+		correct = evaluateWordOverlap(answer, question.AnswerText, 0.5)
+		if correct {
+			score = 100.0
+			quality = 4
+		} else {
+			score = 0.0
+			quality = 2
+		}
 	}
 
 	// Record progress.
@@ -190,6 +225,11 @@ func (m *DSAModule) evaluateAnswer(questionID int64, input map[string]interface{
 		Data: map[string]interface{}{
 			"status":      status,
 			"correct":     correct,
+			"score":       score,
+			"quality":     quality,
+			"feedback":    feedback,
+			"keyMissed":   keyMissed,
+			"keyHit":      keyHit,
 			"answer":      question.AnswerText,
 			"explanation": question.Explanation,
 			"nextReview":  sm2.NextReview.Format("2006-01-02"),

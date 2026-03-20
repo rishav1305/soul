@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul-v2/internal/tutor/eval"
 	"github.com/rishav1305/soul-v2/internal/tutor/modules"
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
 )
@@ -23,6 +24,7 @@ type Server struct {
 	store      *store.Store
 	modules    *modules.Registry
 	metrics    *metrics.EventLogger
+	evaluator  *eval.Evaluator
 	mux        *http.ServeMux
 	httpServer *http.Server
 	host       string
@@ -34,11 +36,12 @@ type Server struct {
 // Option configures the Server.
 type Option func(*Server)
 
-func WithStore(s *store.Store) Option       { return func(srv *Server) { srv.store = s } }
-func WithHost(h string) Option              { return func(srv *Server) { srv.host = h } }
-func WithPort(p int) Option                 { return func(srv *Server) { srv.port = p } }
-func WithContentDir(d string) Option        { return func(srv *Server) { srv.contentDir = d } }
+func WithStore(s *store.Store) Option           { return func(srv *Server) { srv.store = s } }
+func WithHost(h string) Option                  { return func(srv *Server) { srv.host = h } }
+func WithPort(p int) Option                     { return func(srv *Server) { srv.port = p } }
+func WithContentDir(d string) Option            { return func(srv *Server) { srv.contentDir = d } }
 func WithMetrics(l *metrics.EventLogger) Option { return func(srv *Server) { srv.metrics = l } }
+func WithEvaluator(e *eval.Evaluator) Option    { return func(srv *Server) { srv.evaluator = e } }
 
 // New creates a new tutor Server.
 func New(opts ...Option) *Server {
@@ -53,7 +56,7 @@ func New(opts ...Option) *Server {
 	}
 
 	// Create module registry.
-	s.modules = modules.NewRegistry(s.store, s.contentDir)
+	s.modules = modules.NewRegistry(s.store, s.contentDir, s.evaluator)
 
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
