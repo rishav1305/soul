@@ -47,7 +47,7 @@ export function MessageList({ messages, isStreaming, onSend, onEdit, onRetry, se
             Ask me anything about your codebase, or pick a suggestion below.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2.5 max-w-md w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-md w-full">
           {SUGGESTIONS.map((prompt) => (
             <button
               key={prompt}
@@ -71,7 +71,7 @@ export function MessageList({ messages, isStreaming, onSend, onEdit, onRetry, se
         className="h-full overflow-y-auto px-4 py-4"
         onScroll={handleScroll}
       >
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:gap-4">
           {messages.map((msg, idx) => {
             const isLastMessage = idx === messages.length - 1;
             const isStreamingMessage =

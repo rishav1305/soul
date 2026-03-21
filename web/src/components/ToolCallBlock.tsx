@@ -134,7 +134,7 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
         </div>
       )}
       <ToolIcon name={tool.name} className={`shrink-0 ${statusColor}`} />
-      <span className="text-fg-secondary">{tool.name}</span>
+      <span className="text-fg-secondary truncate max-w-[120px] sm:max-w-none">{tool.name}</span>
       {context && (
         <span
           className="text-soul/70 truncate cursor-pointer hover:text-soul hover:underline"
@@ -167,12 +167,12 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
           data-testid="tool-call-block"
-          className="flex items-center gap-1.5 text-left w-full h-7 group cursor-pointer"
+          className="flex items-center gap-1.5 text-left w-full h-8 sm:h-7 group cursor-pointer"
         >
           {pillContent}
         </button>
       ) : (
-        <div data-testid="tool-call-block" className="flex items-center gap-1.5 w-full h-7">
+        <div data-testid="tool-call-block" className="flex items-center gap-1.5 w-full h-8 sm:h-7">
           {pillContent}
         </div>
       )}
@@ -197,7 +197,7 @@ export function ToolCallBlock({ tool }: ToolCallBlockProps) {
                 : tool.output} />
             ) : (
               <div className="max-h-60 overflow-y-auto">
-                <pre className="p-2 text-fg-muted text-[11px] whitespace-pre-wrap leading-relaxed">
+                <pre className="p-2 text-fg-muted text-xs sm:text-[11px] whitespace-pre-wrap leading-relaxed">
                   {tool.output.length > MAX_OUTPUT
                     ? tool.output.slice(0, MAX_OUTPUT) + `\n... (${outputLines} lines total)`
                     : tool.output}

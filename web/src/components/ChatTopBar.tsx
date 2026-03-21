@@ -17,16 +17,16 @@ function Dropdown({ open, onClose, children }: { open: boolean; onClose: () => v
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
   }, [open, onClose]);
 
   if (!open) return null;
   return (
-    <div ref={ref} className="absolute top-full right-0 mt-1.5 z-50 w-72 bg-deep border border-border-default rounded-xl shadow-xl shadow-black/40 overflow-hidden">
+    <div ref={ref} className="mt-1.5 z-50 w-72 max-sm:fixed max-sm:left-2 max-sm:right-2 max-sm:w-auto sm:absolute sm:top-full sm:right-0 bg-deep border border-border-default rounded-xl shadow-xl shadow-black/40 overflow-hidden">
       {children}
     </div>
   );
@@ -74,7 +74,8 @@ export function ChatTopBar({
   const closeRunning = useCallback(() => setRunningOpen(false), []);
   const closeUnread = useCallback(() => setUnreadOpen(false), []);
 
-  const btnBase = 'h-8 px-2.5 rounded-md text-xs flex items-center gap-1.5 bg-surface border border-border-subtle text-fg-muted hover:text-fg transition-colors cursor-pointer';
+  // Mobile: square icon-only buttons (w-8 h-8). Desktop: h-8 with padding and text.
+  const btnBase = 'w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-md text-xs flex items-center justify-center sm:justify-start gap-1.5 bg-surface border border-border-subtle text-fg-muted hover:text-fg transition-colors cursor-pointer';
 
   return (
     <div data-testid="chat-topbar">
@@ -83,13 +84,13 @@ export function ChatTopBar({
         <button
           data-testid="chat-new-btn"
           onClick={onCreateSession}
-          className="h-8 px-2.5 rounded-md text-xs flex items-center gap-1.5 bg-[#7c3aed] text-white hover:bg-[#6d28d9] transition-colors cursor-pointer"
+          className="w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-md text-xs flex items-center justify-center sm:justify-start gap-1.5 bg-[#7c3aed] text-white hover:bg-[#6d28d9] transition-colors cursor-pointer"
         >
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
             <line x1="8" y1="2" x2="8" y2="14" />
             <line x1="2" y1="8" x2="14" y2="8" />
           </svg>
-          New
+          <span className="hidden sm:inline">New</span>
         </button>
 
         {/* Running — with dropdown */}
@@ -97,14 +98,14 @@ export function ChatTopBar({
           <button
             data-testid="chat-running-btn"
             onClick={() => { setRunningOpen(prev => !prev); setUnreadOpen(false); }}
-            className={`${btnBase} ${runningOpen ? 'bg-elevated text-fg' : ''}`}
+            className={`${btnBase} relative ${runningOpen ? 'bg-elevated text-fg' : ''}`}
           >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={runningCount > 0 ? 'animate-spin' : ''}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`shrink-0 ${runningCount > 0 ? 'animate-spin' : ''}`}>
               <circle cx="8" cy="8" r="6" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
             </svg>
-            <span>Running</span>
+            <span className="hidden sm:inline">Running</span>
             {runningCount > 0 && (
-              <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-medium px-1">
+              <span className="absolute -top-1.5 -right-1.5 sm:static sm:top-auto sm:right-auto min-w-[16px] h-[16px] sm:min-w-[18px] sm:h-[18px] flex items-center justify-center rounded-full bg-amber-500/20 text-amber-400 text-[9px] sm:text-[10px] font-medium px-0.5 sm:px-1">
                 {runningCount}
               </span>
             )}
@@ -130,14 +131,14 @@ export function ChatTopBar({
           <button
             data-testid="chat-unread-btn"
             onClick={() => { setUnreadOpen(prev => !prev); setRunningOpen(false); }}
-            className={`${btnBase} ${unreadOpen ? 'bg-elevated text-fg' : ''}`}
+            className={`${btnBase} relative ${unreadOpen ? 'bg-elevated text-fg' : ''}`}
           >
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="shrink-0">
               <circle cx="8" cy="8" r="5" fill="#7c3aed" />
             </svg>
-            <span>Unread</span>
+            <span className="hidden sm:inline">Unread</span>
             {unreadCount > 0 && (
-              <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-purple-500/20 text-purple-400 text-[10px] font-medium px-1">
+              <span className="absolute -top-1.5 -right-1.5 sm:static sm:top-auto sm:right-auto min-w-[16px] h-[16px] sm:min-w-[18px] sm:h-[18px] flex items-center justify-center rounded-full bg-purple-500/20 text-purple-400 text-[9px] sm:text-[10px] font-medium px-0.5 sm:px-1">
                 {unreadCount}
               </span>
             )}
@@ -164,11 +165,11 @@ export function ChatTopBar({
           onClick={onToggleSessions}
           className={`${btnBase} ${sessionsOpen ? 'bg-elevated text-fg' : ''}`}
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
             <circle cx="8" cy="8" r="6" />
             <polyline points="8,4.5 8,8 11,9.5" />
           </svg>
-          History
+          <span className="hidden sm:inline">History</span>
         </button>
       </TopBar>
     </div>

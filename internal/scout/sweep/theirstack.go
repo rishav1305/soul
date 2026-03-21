@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -162,6 +163,7 @@ func (c *TheirStackClient) Search(cfg *SweepConfig, cursor string, offset int) (
 	if err != nil {
 		return nil, fmt.Errorf("theirstack: marshal request: %w", err)
 	}
+	log.Printf("theirstack: request body: %s", string(encoded))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -195,10 +197,13 @@ func (c *TheirStackClient) Search(cfg *SweepConfig, cursor string, offset int) (
 		return nil, fmt.Errorf("theirstack: unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	log.Printf("theirstack: response status=%d body=%s", resp.StatusCode, string(respBody[:min(len(respBody), 500)]))
+
 	var result SearchResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("theirstack: unmarshal response: %w", err)
 	}
+	log.Printf("theirstack: parsed %d jobs", len(result.Jobs))
 	return &result, nil
 }
 

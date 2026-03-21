@@ -84,7 +84,7 @@ function CopyBtn({ content }: { content: string }) {
       type="button"
       onClick={handleCopy}
       data-testid="copy-message-btn"
-      className="opacity-0 group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
+      className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
       title="Copy message"
     >
       {copied ? (
@@ -107,7 +107,7 @@ function RetryBtn({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       data-testid="retry-message-btn"
-      className="opacity-0 group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
+      className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
       title="Retry"
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -149,7 +149,7 @@ function EditBtn({ content, onEdit }: { content: string; onEdit: (text: string) 
       type="button"
       onClick={() => setEditing(true)}
       data-testid="edit-message-btn"
-      className="opacity-0 group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
+      className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-fg-muted hover:text-fg cursor-pointer"
       title="Edit and resend"
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -211,13 +211,24 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
   const timeStr = useMemo(() => formatRelativeTime(message.createdAt), [message.createdAt]);
   const badge = message.model && !isUser ? modelLabel(message.model) : null;
 
+  // Extract chat mode prefix from user messages (e.g. "/brainstorm ..." → mode="Brainstorm", displayContent without prefix)
+  const chatModeLabel = useMemo(() => {
+    if (!isUser || !message.content) return null;
+    const match = message.content.match(/^\/(code|architect|brainstorm)\s/i);
+    return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : null;
+  }, [isUser, message.content]);
+  const displayContent = useMemo(() => {
+    if (!chatModeLabel || !message.content) return message.content;
+    return message.content.replace(/^\/\w+\s/, '');
+  }, [chatModeLabel, message.content]);
+
   // Legacy tool_use messages — render as compact tool call
   if (isToolUse) {
     const toolData = parseToolUse(message.content);
     if (toolData) {
       return (
-        <div data-testid="message-bubble" className="flex flex-col items-start animate-fade-in ml-[34px]">
-          <div className="pl-1 border-l border-border-subtle w-full max-w-[85%]">
+        <div data-testid="message-bubble" className="flex flex-col items-start animate-fade-in ml-2 sm:ml-[34px]">
+          <div className="pl-1 border-l border-border-subtle w-full max-w-full sm:max-w-[85%]">
             <ToolCallBlock tool={legacyToolCallData(toolData)} />
           </div>
         </div>
@@ -241,14 +252,16 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
     );
   }
 
+  // Mobile: assistant messages render without bubble/avatar, just content + footer
+  // Desktop: full bubble with avatar header
   return (
     <div
       data-testid="message-bubble"
       className={`group flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-fade-in`}
     >
-      {/* Assistant header: golden diamond + model + tokens */}
+      {/* Assistant header — desktop only: golden diamond + model */}
       {!isUser && (
-        <div className="flex items-center gap-1.5 mb-1">
+        <div className="hidden sm:flex items-center gap-1.5 mb-1">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
             className={isStreaming ? 'drop-shadow-[0_0_6px_var(--color-soul-glow)]' : ''}>
             <defs>
@@ -275,11 +288,18 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
       )}
 
       {/* Message content */}
-      <div className={`min-w-0 max-w-[85%] ${
+      <div className={`relative min-w-0 max-w-full sm:max-w-[85%] ${
         isUser
-          ? 'bg-[#12123a] border border-[#1e1e50] px-4 py-3 text-fg rounded-[16px_16px_4px_16px]'
-          : 'bg-surface border border-border-subtle px-4 py-3 text-fg rounded-[4px_14px_14px_14px]'
+          ? `bg-[#12123a] border border-[#1e1e50] px-2 ${chatModeLabel ? 'pt-4' : 'py-1.5'} pb-1.5 sm:px-4 sm:py-3 ${chatModeLabel ? 'sm:pt-4' : ''} text-fg text-[12px] sm:text-base rounded-[16px_16px_4px_16px]`
+          : 'px-1 py-0 sm:bg-surface sm:border sm:border-border-subtle sm:px-4 sm:py-3 text-fg text-[12px] sm:text-base sm:rounded-[4px_14px_14px_14px]'
       }`}>
+        {/* Chat mode label — sits on the border like a fieldset legend */}
+        {isUser && chatModeLabel && (
+          <span className="absolute -top-2.5 left-3 px-2 py-0.5 text-[10px] font-mono font-medium uppercase tracking-wider bg-[#12123a] text-[#7c6aed] border border-[#1e1e50] rounded-md">
+            {chatModeLabel}
+          </span>
+        )}
+
         {/* Thinking block above text for assistant */}
         {!isUser && message.thinking && (
           <ThinkingBlock content={message.thinking} isStreaming={isStreaming && !message.content} />
@@ -289,10 +309,10 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
         {message.content && (
           isUser ? (
             <p className="whitespace-pre-wrap break-words text-fg leading-relaxed">
-              {searchQuery ? <HighlightText text={message.content} query={searchQuery} /> : message.content}
+              {searchQuery ? <HighlightText text={displayContent} query={searchQuery} /> : displayContent}
             </p>
           ) : (
-            <div className="leading-[1.7]">
+            <div className="leading-[1.15] sm:leading-[1.7]">
               <Markdown content={message.content} />
             </div>
           )
@@ -321,9 +341,24 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
 
       </div>
 
-      {/* Metadata footer */}
-      <div className={`flex items-center gap-2 mt-1.5 text-[10px] text-fg-muted ${isUser ? '' : ''}`}>
-        <span>{timeStr}</span>
+      {/* Footer */}
+      <div className={`flex items-center gap-2 mt-1 sm:mt-1.5 text-[10px] text-fg-muted`}>
+        {/* User: timestamp + edit/retry */}
+        {isUser && <span>{timeStr}</span>}
+        {/* Assistant: model + tokens (serves as "response complete" signal) */}
+        {!isUser && !isStreaming && (
+          <>
+            {badge && <span className="font-mono text-fg-muted/70">{badge}</span>}
+            {message.usage && (
+              <>
+                <span className="text-fg-muted/40">{'\u00B7'}</span>
+                <span className="font-mono text-fg-muted/60">
+                  {formatTokens(message.usage.inputTokens)} {'\u2192'} {formatTokens(message.usage.outputTokens)}
+                </span>
+              </>
+            )}
+          </>
+        )}
         {message.content && <CopyBtn content={message.content} />}
         {isUser && onEdit && (
           <EditBtn content={message.content} onEdit={(newText) => onEdit(message.id, newText)} />

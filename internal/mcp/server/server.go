@@ -112,6 +112,7 @@ func New(opts ...Option) *Server {
 		"/token",
 		"/register",
 		"/health",
+		"/", // Allow authless MCP access — OAuth is optional for now
 	}
 	handler = auth.AuthMiddleware(s.secret, skipPaths)(handler)
 	handler = auth.OriginMiddleware([]string{

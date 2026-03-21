@@ -18,9 +18,9 @@ export function TopBar({ title, children }: TopBarProps) {
   return (
     <div
       data-testid="top-bar"
-      className="h-10 flex items-center justify-between px-3 border-b border-border-subtle bg-deep"
+      className="h-10 flex items-center justify-between pl-11 md:pl-3 pr-3 border-b border-border-subtle bg-deep sticky top-0 z-20"
     >
-      {/* Left: diamond + title + status */}
+      {/* Left: diamond + title + status (pl-11 on mobile leaves space for Sidebar hamburger) */}
       <div className="flex items-center gap-2">
         <svg width="14" height="14" viewBox="0 0 16 16" className="shrink-0">
           <defs>

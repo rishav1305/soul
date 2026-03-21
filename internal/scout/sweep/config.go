@@ -23,17 +23,76 @@ type SweepConfig struct {
 }
 
 func DefaultConfig() *SweepConfig {
-	remote := true
 	return &SweepConfig{
-		JobTitleOr:          []string{"software engineer", "full stack developer", "backend engineer", "golang developer"},
-		JobCountryCodeOr:    []string{"IN", "US", "GB", "DE", "NL", "SG"},
-		JobTechnologySlugOr: []string{"go", "react", "typescript", "python", "postgresql"},
-		Remote:              &remote,
-		PostedAtMaxAgeDays:  7,
-		Limit:               50,
-		IntervalHours:       24,
-		CreditBudget:        50,
-		AutoScoreThreshold:  70,
+		JobTitleOr: []string{
+			// AI/ML Core
+			"ai engineer", "ml engineer", "machine learning engineer",
+			"artificial intelligence engineer", "deep learning engineer",
+			"llm engineer", "generative ai engineer", "nlp engineer",
+			"applied scientist", "research engineer", "ai research engineer",
+			"applied ml engineer", "computer vision engineer",
+			// Platform & Architecture
+			"ai architect", "ml architect", "ai solutions architect",
+			"ai platform engineer", "ml platform engineer",
+			"mlops engineer", "ai infrastructure engineer",
+			// Senior/Staff/Lead
+			"senior ai engineer", "staff ml engineer", "principal ml engineer",
+			"ai tech lead", "ai team lead", "lead ml engineer",
+			"head of ai", "head of machine learning",
+			// Full Stack + AI Hybrid
+			"full stack ai engineer", "ai product engineer",
+			"ai developer", "ai software engineer",
+			// Data Science (senior)
+			"senior data scientist", "lead data scientist",
+			"staff data scientist", "principal data scientist",
+			// Broader senior engineering (catches AI-adjacent)
+			"senior software engineer", "staff software engineer",
+			"principal engineer", "senior backend engineer",
+			"senior full stack engineer",
+		},
+		JobTitleNot: []string{
+			"intern", "internship", "junior", "entry level",
+			"fresher", "trainee", "associate", "graduate",
+		},
+		// SeniorityOr omitted — TheirStack filters by title match, not seniority field.
+		// Senior/staff/lead already covered by JobTitleOr entries.
+		JobCountryCodeOr: []string{
+			"IN",             // India — primary
+			"US", "CA",       // North America — remote
+			"GB", "DE", "NL", // Europe — remote-friendly
+			"SG", "AE",       // Asia — accessible timezone
+			"AU",             // Pacific
+		},
+		JobTechnologySlugOr: []string{
+			// AI/ML Frameworks
+			"python", "pytorch", "tensorflow", "jax",
+			"huggingface", "transformers", "langchain", "llamaindex",
+			// LLM & GenAI
+			"openai", "anthropic", "claude", "gpt",
+			"llm", "rag", "vector-database",
+			"pinecone", "weaviate", "chromadb", "qdrant",
+			// ML Infrastructure
+			"mlflow", "kubeflow", "ray", "dvc",
+			"wandb", "weights-and-biases",
+			// Backend (your strengths)
+			"go", "golang", "fastapi", "flask",
+			"postgresql", "redis", "elasticsearch",
+			// Infrastructure
+			"kubernetes", "docker", "aws", "gcp", "azure",
+			"terraform",
+			// Frontend (your stack)
+			"react", "typescript", "nextjs",
+		},
+		JobLocationPatternOr: []string{
+			"remote", "india", "delhi", "bangalore", "bengaluru",
+			"hyderabad", "mumbai", "pune", "gurgaon", "gurugram",
+			"noida",
+		},
+		PostedAtMaxAgeDays: 7,
+		Limit:              50,
+		IntervalHours:      24,
+		CreditBudget:       50,
+		AutoScoreThreshold: 70,
 	}
 }
 

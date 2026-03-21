@@ -27,7 +27,11 @@ export function ThinkingToggle({ value, onChange }: ThinkingToggleProps) {
       title={`Thinking: ${current.label} (click to cycle)`}
       data-testid="thinking-toggle"
     >
-      <span aria-hidden="true">&#129504;</span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z" />
+        <path d="M6 14h4" />
+      </svg>
+      <span className="hidden sm:inline">Think ·</span>
       <span>{current.label}</span>
     </button>
   );

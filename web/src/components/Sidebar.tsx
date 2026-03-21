@@ -319,6 +319,7 @@ export function Sidebar() {
     setMobileOpen(prev => !prev);
   }, []);
 
+
   function navLinkClass({ isActive }: { isActive: boolean }) {
     if (collapsed && !mobileOpen) {
       return [
@@ -405,7 +406,7 @@ export function Sidebar() {
       {/* Mobile hamburger button */}
       <button
         data-testid="sidebar-hamburger"
-        className="md:hidden fixed top-3 left-3 z-50 flex items-center justify-center w-9 h-9 rounded-lg bg-surface border border-border-subtle text-fg-muted hover:text-fg transition-colors"
+        className="md:hidden fixed top-1.5 left-2 z-50 flex items-center justify-center w-8 h-8 rounded-lg text-fg-muted hover:text-fg transition-colors cursor-pointer"
         onClick={toggleMobile}
         aria-label="Toggle navigation"
       >
@@ -434,7 +435,7 @@ export function Sidebar() {
             onClick={closeMobile}
           />
           <aside
-            className="md:hidden fixed top-0 left-0 bottom-0 w-[260px] bg-deep border-r border-border-subtle z-50 flex flex-col sidebar-transition"
+            className="md:hidden fixed top-0 left-0 bottom-0 w-[min(85vw,280px)] bg-deep border-r border-border-subtle z-50 flex flex-col sidebar-transition"
           >
             {sidebarContent}
           </aside>

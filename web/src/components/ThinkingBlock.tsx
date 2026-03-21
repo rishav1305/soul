@@ -30,7 +30,7 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
           type="button"
           onClick={() => setExpanded(true)}
           data-testid="thinking-toggle"
-          className="flex items-center gap-1.5 text-[11px] text-fg-muted hover:text-fg-secondary transition-colors cursor-pointer bg-surface border border-border-subtle rounded-md px-2.5 py-1"
+          className="flex items-center gap-1.5 text-xs sm:text-[11px] text-fg-muted hover:text-fg-secondary transition-colors cursor-pointer bg-surface border border-border-subtle rounded-md px-2.5 py-1"
         >
           <LightbulbIcon streaming={false} />
           <span className="font-mono">Extended thinking</span>
@@ -47,7 +47,7 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
   // Expanded (streaming or user expanded)
   return (
     <div className="mb-2">
-      <div className={`border rounded-lg p-3 max-w-[380px] ${
+      <div className={`border rounded-lg p-3 max-w-full sm:max-w-[380px] ${
         isStreaming ? 'border-soul/25 bg-surface' : 'border-border-subtle bg-surface'
       }`}>
         <button
@@ -57,7 +57,7 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
           className="flex items-center gap-1.5 w-full text-left cursor-pointer mb-1.5"
         >
           <LightbulbIcon streaming={isStreaming} />
-          <span className={`text-[11px] font-mono font-semibold tracking-wide ${isStreaming ? 'text-soul' : 'text-fg-muted'}`}>
+          <span className={`text-xs sm:text-[11px] font-mono font-semibold tracking-wide ${isStreaming ? 'text-soul' : 'text-fg-muted'}`}>
             Extended thinking{isStreaming ? '...' : ''}
           </span>
           <div className="flex-1" />
@@ -68,7 +68,7 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
           )}
         </button>
         <div className="border-l-2 border-soul/20 pl-2 max-h-48 overflow-y-auto">
-          <pre className="text-[11px] text-fg-muted font-mono whitespace-pre-wrap leading-relaxed">
+          <pre className="text-xs sm:text-[11px] text-fg-muted font-mono whitespace-pre-wrap leading-relaxed">
             {content}
             {isStreaming && <span className="inline-block w-1 h-1 rounded-full bg-soul ml-1 align-middle animate-pulse" />}
           </pre>
