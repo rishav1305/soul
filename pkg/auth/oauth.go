@@ -192,13 +192,21 @@ var refreshBackoff = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.
 // Token returns a valid access token. It refreshes if the cached token is
 // nearing expiry, and falls back to disk if refresh fails.
 // Token values are never logged.
+// If credentials have not been explicitly loaded, Token lazily calls Load()
+// on first use so callers do not need to call Load() before Token().
 func (s *OAuthTokenSource) Token() (string, error) {
 	s.mu.RLock()
 	creds := s.creds
 	s.mu.RUnlock()
 
 	if creds == nil {
-		return "", fmt.Errorf("no credentials loaded — call Load() first")
+		// Lazy-load credentials on first use — avoid requiring callers to
+		// explicitly call Load() before Token().
+		var err error
+		creds, err = s.Load()
+		if err != nil {
+			return "", fmt.Errorf("load credentials: %w", err)
+		}
 	}
 
 	// Fast path: valid and not near expiry.
