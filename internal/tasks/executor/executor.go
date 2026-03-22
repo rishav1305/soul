@@ -79,7 +79,7 @@ func (e *Executor) Start(ctx context.Context, taskID int64) error {
 	}
 
 	workflow := ClassifyWorkflow(task.Title, task.Description)
-	if err := e.store.AddActivity(taskID, "task.started", map[string]interface{}{"workflow": workflow}); err != nil {
+	if _, err := e.store.AddActivity(taskID, "task.started", map[string]interface{}{"workflow": workflow}); err != nil {
 		return err
 	}
 
@@ -106,7 +106,7 @@ func (e *Executor) Stop(taskID int64) error {
 	if _, err := e.store.Update(taskID, map[string]interface{}{"stage": "blocked"}); err != nil {
 		return err
 	}
-	if err := e.store.AddActivity(taskID, "task.stopped", nil); err != nil {
+	if _, err := e.store.AddActivity(taskID, "task.stopped", nil); err != nil {
 		return err
 	}
 	return nil
@@ -147,7 +147,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 	iterLimit := phases.MaxIterations(workflow)
 	log.Printf("[executor] task %d: workflow=%s limit=%d title=%q", taskID, workflow, iterLimit, task.Title)
 
-	_ = e.store.AddActivity(taskID, "executor.classify", map[string]interface{}{
+	_, _ = e.store.AddActivity(taskID, "executor.classify", map[string]interface{}{
 		"workflow":        workflow,
 		"iteration_limit": iterLimit,
 	})
@@ -175,7 +175,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 		}
 		defer wt.Cleanup()
 		workDir = wt.Dir
-		_ = e.store.AddActivity(taskID, "executor.worktree", map[string]interface{}{
+		_, _ = e.store.AddActivity(taskID, "executor.worktree", map[string]interface{}{
 			"dir":    wt.Dir,
 			"branch": wt.Branch,
 		})
@@ -191,13 +191,13 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 	if e.client != nil {
 		tools := NewToolSet(workDir, e.store)
 		agent := NewAgentLoop(e.client, tools, taskID, iterLimit, func(eventType string, data map[string]interface{}) {
-			_ = e.store.AddActivity(taskID, "agent."+eventType, data)
+			_, _ = e.store.AddActivity(taskID, "agent."+eventType, data)
 		})
 
 		sysPrompt := buildSystemPrompt(task, workflow)
 		userPrompt := buildUserPrompt(task)
 
-		_ = e.store.AddActivity(taskID, "executor.agent_start", nil)
+		_, _ = e.store.AddActivity(taskID, "executor.agent_start", nil)
 		result, err := agent.Run(ctx, sysPrompt, userPrompt)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -208,7 +208,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 			return
 		}
 
-		_ = e.store.AddActivity(taskID, "executor.agent_done", map[string]interface{}{
+		_, _ = e.store.AddActivity(taskID, "executor.agent_done", map[string]interface{}{
 			"iterations":    result.Iterations,
 			"hit_limit":     result.HitLimit,
 			"input_tokens":  result.TotalInputTokens,
@@ -225,7 +225,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 	// Run L1 verification if we have a real working directory.
 	if workDir != "." {
 		vr := VerifyL1(ctx, workDir)
-		_ = e.store.AddActivity(taskID, "executor.verify_l1", map[string]interface{}{
+		_, _ = e.store.AddActivity(taskID, "executor.verify_l1", map[string]interface{}{
 			"passed": vr.Passed,
 			"errors": vr.Errors,
 		})
@@ -243,7 +243,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 			e.markBlocked(taskID, fmt.Sprintf("commit failed: %v", err))
 			return
 		}
-		_ = e.store.AddActivity(taskID, "executor.commit", map[string]interface{}{
+		_, _ = e.store.AddActivity(taskID, "executor.commit", map[string]interface{}{
 			"hash": hash,
 		})
 		log.Printf("[executor] task %d: committed %s", taskID, hash)
@@ -251,8 +251,8 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 
 	// Move to validation.
 	_, _ = e.store.Update(taskID, map[string]interface{}{"stage": "validation"})
-	_ = e.store.AddActivity(taskID, "executor.complete", map[string]interface{}{
-		"workflow":   workflow,
+	_, _ = e.store.AddActivity(taskID, "executor.complete", map[string]interface{}{
+		"workflow": workflow,
 	})
 	log.Printf("[executor] task %d: complete → validation", taskID)
 }
@@ -260,7 +260,7 @@ func (e *Executor) run(ctx context.Context, taskID int64) {
 // markBlocked transitions a task to blocked with a reason.
 func (e *Executor) markBlocked(taskID int64, reason string) {
 	_, _ = e.store.Update(taskID, map[string]interface{}{"stage": "blocked"})
-	_ = e.store.AddActivity(taskID, "task.blocked", map[string]interface{}{"reason": reason})
+	_, _ = e.store.AddActivity(taskID, "task.blocked", map[string]interface{}{"reason": reason})
 }
 
 // buildSystemPrompt constructs the system prompt for the agent.

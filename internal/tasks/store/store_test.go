@@ -133,7 +133,7 @@ func TestAddActivity_And_ListActivity(t *testing.T) {
 	s := newTestStore(t)
 	task, _ := s.Create("Task", "", "")
 
-	err := s.AddActivity(task.ID, "task.created", map[string]interface{}{"by": "user"})
+	_, err := s.AddActivity(task.ID, "task.created", map[string]interface{}{"by": "user"})
 	if err != nil {
 		t.Fatalf("AddActivity: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestAddActivity_And_ListActivity(t *testing.T) {
 func TestDelete_RemovesTaskAndActivity(t *testing.T) {
 	s := newTestStore(t)
 	task, _ := s.Create("Doomed", "", "")
-	s.AddActivity(task.ID, "task.created", nil)
+	_, _ = s.AddActivity(task.ID, "task.created", nil)
 
 	err := s.Delete(task.ID)
 	if err != nil {
@@ -304,11 +304,11 @@ func TestInsertComment(t *testing.T) {
 	s := newTestStore(t)
 	task := createTask(t, s, "Comment task")
 
-	id, err := s.InsertComment(task.ID, "user", "feedback", "Looks good")
+	cmt, err := s.InsertComment(task.ID, "user", "feedback", "Looks good")
 	if err != nil {
 		t.Fatalf("InsertComment: %v", err)
 	}
-	if id == 0 {
+	if cmt.ID == 0 {
 		t.Error("expected non-zero comment ID")
 	}
 }
@@ -339,11 +339,11 @@ func TestCommentsAfter(t *testing.T) {
 	s := newTestStore(t)
 	task := createTask(t, s, "Comment task")
 
-	id1, _ := s.InsertComment(task.ID, "user", "feedback", "User comment")
+	cmt1, _ := s.InsertComment(task.ID, "user", "feedback", "User comment")
 	s.InsertComment(task.ID, "soul", "reply", "Soul comment")
 	s.InsertComment(task.ID, "user", "feedback", "Another user comment")
 
-	comments, err := s.CommentsAfter(id1)
+	comments, err := s.CommentsAfter(cmt1.ID)
 	if err != nil {
 		t.Fatalf("CommentsAfter: %v", err)
 	}
@@ -385,7 +385,10 @@ func TestMigration_TablesExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seq column query: %v", err)
 	}
-	// seq should be 0 (default) until we wire nextSeq into Create in Task 4.
+	// seq should be nonzero now that Create stamps it via nextSeqTx.
+	if seq == 0 {
+		t.Errorf("seq should be nonzero after Create")
+	}
 }
 
 func TestCountByStage(t *testing.T) {
@@ -404,5 +407,195 @@ func TestCountByStage(t *testing.T) {
 	}
 	if counts["active"] != 1 {
 		t.Errorf("active = %d, want 1", counts["active"])
+	}
+}
+
+func TestNextSeq_Monotonic(t *testing.T) {
+	s := newTestStore(t)
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq1, err := s.nextSeqTx(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq2, err := s.nextSeqTx(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+	if seq1 != 1 || seq2 != 2 {
+		t.Errorf("seq1=%d seq2=%d, want 1, 2", seq1, seq2)
+	}
+}
+
+func TestOnChange_Create(t *testing.T) {
+	s := newTestStore(t)
+	var gotEvent string
+	var gotPayload any
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+		gotPayload = payload
+	}
+	task, err := s.Create("test", "desc", "general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotEvent != "task.created" {
+		t.Errorf("event = %q, want task.created", gotEvent)
+	}
+	if p, ok := gotPayload.(*Task); !ok || p.ID != task.ID {
+		t.Errorf("payload mismatch")
+	}
+}
+
+func TestOnChange_Update_StageChanged(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.Update(task.ID, map[string]interface{}{"stage": "active"})
+	if gotEvent != "task.stage_changed" {
+		t.Errorf("event = %q, want task.stage_changed", gotEvent)
+	}
+}
+
+func TestOnChange_Update_SubstepChanged(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.Update(task.ID, map[string]interface{}{"substep": "reviewing"})
+	if gotEvent != "task.substep_changed" {
+		t.Errorf("event = %q, want task.substep_changed", gotEvent)
+	}
+}
+
+func TestOnChange_Update_OtherField(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.Update(task.ID, map[string]interface{}{"title": "new title"})
+	if gotEvent != "task.updated" {
+		t.Errorf("event = %q, want task.updated", gotEvent)
+	}
+}
+
+func TestOnChange_Update_MultiField_Priority(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.Update(task.ID, map[string]interface{}{
+		"stage": "active", "substep": "reviewing", "title": "new",
+	})
+	if gotEvent != "task.stage_changed" {
+		t.Errorf("event = %q, want task.stage_changed (priority)", gotEvent)
+	}
+}
+
+func TestOnChange_Delete(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	var gotPayload any
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+		gotPayload = payload
+	}
+	s.Delete(task.ID)
+	if gotEvent != "task.deleted" {
+		t.Errorf("event = %q, want task.deleted", gotEvent)
+	}
+	if p, ok := gotPayload.(TaskDeleted); !ok || p.ID != task.ID {
+		t.Errorf("payload = %v, want TaskDeleted{ID: %d}", gotPayload, task.ID)
+	}
+}
+
+func TestAddActivity_ReturnsActivity(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	act, err := s.AddActivity(task.ID, "task.started", map[string]interface{}{"reason": "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if act.ID == 0 || act.TaskID != task.ID || act.EventType != "task.started" {
+		t.Errorf("unexpected activity: %+v", act)
+	}
+}
+
+func TestInsertComment_ReturnsComment(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	cmt, err := s.InsertComment(task.ID, "user", "feedback", "looks good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmt.ID == 0 || cmt.TaskID != task.ID || cmt.Body != "looks good" {
+		t.Errorf("unexpected comment: %+v", cmt)
+	}
+}
+
+func TestOnChange_AddActivity(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.AddActivity(task.ID, "test.event", nil)
+	if gotEvent != "task.activity" {
+		t.Errorf("event = %q, want task.activity", gotEvent)
+	}
+}
+
+func TestOnChange_InsertComment(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var gotEvent string
+	s.OnChange = func(event string, payload any) {
+		gotEvent = event
+	}
+	s.InsertComment(task.ID, "user", "feedback", "test")
+	if gotEvent != "task.comment" {
+		t.Errorf("event = %q, want task.comment", gotEvent)
+	}
+}
+
+func TestCreate_SetsSeq(t *testing.T) {
+	s := newTestStore(t)
+	t1, _ := s.Create("first", "", "")
+	t2, _ := s.Create("second", "", "")
+	var seq1, seq2 int64
+	s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", t1.ID).Scan(&seq1)
+	s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", t2.ID).Scan(&seq2)
+	if seq1 == 0 || seq2 == 0 {
+		t.Errorf("seq should be nonzero: seq1=%d seq2=%d", seq1, seq2)
+	}
+	if seq2 <= seq1 {
+		t.Errorf("seq2 (%d) should be > seq1 (%d)", seq2, seq1)
+	}
+}
+
+func TestUpdate_BumpsSeq(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	var seqBefore int64
+	s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", task.ID).Scan(&seqBefore)
+	s.Update(task.ID, map[string]interface{}{"title": "updated"})
+	var seqAfter int64
+	s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", task.ID).Scan(&seqAfter)
+	if seqAfter <= seqBefore {
+		t.Errorf("seq should increase: before=%d after=%d", seqBefore, seqAfter)
 	}
 }

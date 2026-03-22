@@ -156,7 +156,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log activity.
-	s.store.AddActivity(task.ID, "task.created", map[string]interface{}{
+	_, _ = s.store.AddActivity(task.ID, "task.created", map[string]interface{}{
 		"title": task.Title,
 	})
 
@@ -377,12 +377,12 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		body.Type = "feedback"
 	}
 
-	commentID, err := s.store.InsertComment(id, body.Author, body.Type, body.Body)
+	cmt, err := s.store.InsertComment(id, body.Author, body.Type, body.Body)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": commentID})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": cmt.ID})
 }
 
 func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
