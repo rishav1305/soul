@@ -51,7 +51,9 @@ CEO always occupies the left column (~25% width). Selected agents fill a dynamic
 | 8      | 3       | 3+3+2    | CEO + 3 columns (3, 3, 2) |
 | 9      | 3       | 3        | CEO + 3 columns, 3 rows each (today) |
 
-### Algorithm
+### Algorithm — Round-Robin Column Fill
+
+Agents are distributed across columns using round-robin assignment (not slicing), which naturally balances columns:
 
 ```
 num_agents = len(selected_agents)
@@ -62,12 +64,19 @@ elif num_agents <= 6:
 else:
     cols = 3
 
-# Distribute agents across columns (fill left-to-right, top-to-bottom)
-per_col = ceil(num_agents / cols)
-for c in range(cols):
-    agents_in_col = selected_agents[c*per_col : (c+1)*per_col]
-    # Create column, split into len(agents_in_col) rows
+# Round-robin: agent[i] goes to column (i % cols)
+columns = [[] for _ in range(cols)]
+for i, agent in enumerate(selected_agents):
+    columns[i % cols].append(agent)
 ```
+
+This yields the correct distribution for every count:
+
+| Count | cols | Distribution | Columns |
+|-------|------|-------------|---------|
+| 5 | 2 | 3+2 | [0,2,4], [1,3] |
+| 7 | 3 | 3+2+2 | [0,3,6], [1,4], [2,5] |
+| 8 | 3 | 3+3+2 | [0,3,6], [1,4,7], [2,5] |
 
 Agents are assigned to the grid in the order they appear in the `--agents` flag (or in `[[agents]]` order when launching all).
 
@@ -102,19 +111,61 @@ Agents are assigned to the grid in the order they appear in the `--agents` flag 
 
 ## Detailed Behavior
 
-### Flag Parsing
+### Agent Name Extraction from TOML
+
+Extract valid agent names from `[[agents]]` blocks only (not `[team]` or `[layout]`):
 
 ```bash
-SELECTED_AGENTS=()   # empty = all
+ALL_AGENTS_STR=$(python3 -c "
+import re
+txt = open('$TOML').read()
+# Split into [[agents]] blocks, extract name from each
+blocks = re.split(r'\[\[agents\]\]', txt)[1:]  # skip preamble
+names = []
+for b in blocks:
+    m = re.search(r'name\s*=\s*\"(\w+)\"', b)
+    if m: names.append(m.group(1))
+print(' '.join(names))
+")
+read -ra ALL_AGENTS <<< "$ALL_AGENTS_STR"
+```
+
+This also extracts per-agent machine type into an associative array for later use:
+
+```bash
+declare -A AGENT_MACHINE
+eval "$(python3 -c "
+import re
+txt = open('$TOML').read()
+blocks = re.split(r'\[\[agents\]\]', txt)[1:]
+for b in blocks:
+    nm = re.search(r'name\s*=\s*\"(\w+)\"', b)
+    mc = re.search(r'machine\s*=\s*\"(\w[\w-]*)\"', b)
+    if nm and mc:
+        print(f'AGENT_MACHINE[{nm.group(1)}]={mc.group(1)}')
+")"
+```
+
+### Flag Parsing
+
+`--all` is a boolean flag that forces all agents. It takes precedence regardless of argument order. `--agents` is rejected if `--all` is also present.
+
+```bash
+SELECTED_AGENTS=()
+USE_ALL=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --agents)
+            if [[ -z "${2:-}" || "$2" == --* ]]; then
+                echo "Error: --agents requires a comma-separated list of agent names" >&2
+                exit 1
+            fi
             IFS=',' read -ra SELECTED_AGENTS <<< "$2"
             shift 2
             ;;
         --all)
-            SELECTED_AGENTS=()  # explicit all
+            USE_ALL=true
             shift
             ;;
         *)
@@ -123,34 +174,70 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-```
 
-When `SELECTED_AGENTS` is empty after parsing, populate it with all agent names from the TOML (preserving order).
+# --all always wins, regardless of argument order
+if $USE_ALL; then
+    SELECTED_AGENTS=()
+fi
 
-### Agent Name Extraction from TOML
+# Empty = all agents (backward-compatible default)
+if [[ ${#SELECTED_AGENTS[@]} -eq 0 ]]; then
+    SELECTED_AGENTS=("${ALL_AGENTS[@]}")
+fi
 
-```bash
-ALL_AGENTS=$(python3 -c "
-import re
-txt = open('$TOML').read()
-print(' '.join(re.findall(r'name\s*=\s*\"(\w+)\"', txt)))
-")
+# Deduplicate (preserving first-seen order)
+declare -A _seen
+DEDUPED=()
+for agent in "${SELECTED_AGENTS[@]}"; do
+    if [[ -z "${_seen[$agent]:-}" ]]; then
+        _seen[$agent]=1
+        DEDUPED+=("$agent")
+    fi
+done
+SELECTED_AGENTS=("${DEDUPED[@]}")
 ```
 
 ### Validation
 
 ```bash
 for agent in "${SELECTED_AGENTS[@]}"; do
-    if ! echo "$ALL_AGENTS" | grep -qw "$agent"; then
-        echo "Error: unknown agent '$agent'. Valid agents: $ALL_AGENTS" >&2
+    if [[ -z "${AGENT_MACHINE[$agent]:-}" ]]; then
+        echo "Error: unknown agent '$agent'. Valid agents: ${ALL_AGENTS[*]}" >&2
         exit 1
     fi
 done
+
+# Guard: empty after dedup (e.g., --agents "")
+if [[ ${#SELECTED_AGENTS[@]} -eq 0 ]]; then
+    echo "Error: no agents specified" >&2
+    exit 1
+fi
+```
+
+### Conditional SSH Pre-flight
+
+Only SSH to titan-pc if at least one selected agent has `machine = "titan-pc"`:
+
+```bash
+NEEDS_REMOTE=false
+for agent in "${SELECTED_AGENTS[@]}"; do
+    if [[ "${AGENT_MACHINE[$agent]}" != "local" ]]; then
+        NEEDS_REMOTE=true
+        break
+    fi
+done
+
+if $NEEDS_REMOTE; then
+    echo "Checking titan-pc mounts..."
+    ssh "$PC" "sudo systemctl start soul-mounts.service 2>/dev/null" || true
+fi
 ```
 
 ### Dynamic Layout Creation
 
-Replace the current hardcoded pane creation with a function:
+Replace the current hardcoded pane creation with a function that uses correct tmux split percentages.
+
+**tmux split semantics:** `-l X%` means "give the NEW pane X% of the CURRENT pane's size." So to split a remaining area into N equal parts, each successive split uses `100 * remaining / (remaining + 0)` — specifically, the last split is always 50%, the one before it is 66%, etc.
 
 ```bash
 create_dynamic_layout() {
@@ -162,35 +249,68 @@ create_dynamic_layout() {
     else                       cols=3
     fi
 
-    local per_col=$(( (num + cols - 1) / cols ))
-
-    # Create session with CEO pane
+    # Create session — initial pane becomes CEO
     tmux new-session -d -s "$SESSION" -n "soul"
+    CEO=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
 
-    # Create agent columns by splitting horizontally from the right
-    # Calculate widths: CEO gets 25%, agent columns share the rest equally
-    local agent_pct=$(( 75 / cols ))
-    local col_panes=()
+    # Horizontal splits: CEO keeps 25%, agents get 75%
+    # Split percentages for N agent columns (applied to remaining space):
+    #   1 col: split at 75%
+    #   2 cols: split at 75%, then split right pane at 50%
+    #   3 cols: split at 75%, then right at 66%, then rightmost at 50%
+    local H_SPLITS_1=(75)
+    local H_SPLITS_2=(75 50)
+    local H_SPLITS_3=(75 66 50)
 
-    # First horizontal split creates column 1
-    local remain_pct=75
+    local -a col_panes=()
+    local splits_ref="H_SPLITS_${cols}[@]"
+    local -a splits=("${!splits_ref}")
+
+    local last_pane="$CEO"
     for (( c=0; c<cols; c++ )); do
-        if (( c == 0 )); then
-            tmux split-window -h -t "$SESSION" -l "${remain_pct}%"
-            col_panes[$c]=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
-        else
-            local split_pct=$(( 100 * (cols - c) / (cols - c + 1)  ))
-            # ... split from previous column
-        fi
-        remain_pct=$(( remain_pct - agent_pct ))
+        tmux split-window -h -t "$last_pane" -l "${splits[$c]}%"
+        col_panes[$c]=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
+        last_pane="${col_panes[$c]}"
     done
 
-    # Split each column vertically into rows
-    # Assign PANE_MAP[agent_name] = pane_id for later use
+    # Round-robin assign agents to columns
+    local -a col_agents
+    for (( c=0; c<cols; c++ )); do col_agents[$c]=""; done
+    for (( i=0; i<num; i++ )); do
+        local c_idx=$(( i % cols ))
+        col_agents[$c_idx]+="${SELECTED_AGENTS[$i]} "
+    done
+
+    # Vertical splits within each column
+    # Split percentages for N rows (applied to remaining space):
+    #   1 row: no split needed
+    #   2 rows: split at 50%
+    #   3 rows: split at 66%, then bottom at 50%
+    declare -A PANE_MAP
+    for (( c=0; c<cols; c++ )); do
+        local -a agents_in_col=(${col_agents[$c]})
+        local n_rows=${#agents_in_col[@]}
+        local -a row_panes=("${col_panes[$c]}")  # first row = the column pane itself
+
+        if (( n_rows == 2 )); then
+            tmux split-window -v -t "${col_panes[$c]}" -l '50%'
+            row_panes+=($(tmux display-message -t "$SESSION" -p '#{pane_id}'))
+        elif (( n_rows == 3 )); then
+            local mid=$(tmux split-window -v -t "${col_panes[$c]}" -l '66%' -P -F '#{pane_id}')
+            tmux split-window -v -t "$mid" -l '50%'
+            local bot=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
+            row_panes+=("$mid" "$bot")
+        fi
+
+        for (( r=0; r<n_rows; r++ )); do
+            PANE_MAP["${agents_in_col[$r]}"]="${row_panes[$r]}"
+            tmux select-pane -t "${row_panes[$r]}" -T "${agents_in_col[$r]^}"  # capitalize title
+        done
+    done
+
+    tmux select-pane -t "$CEO" -T "CEO"
 }
 ```
-
-The exact split math will be implemented precisely — the spec captures the intent: dynamic columns and rows based on agent count.
 
 ### Selective Launch Loop
 
@@ -199,9 +319,8 @@ Replace the hardcoded launch sequence with:
 ```bash
 for agent in "${SELECTED_AGENTS[@]}"; do
     local pane="${PANE_MAP[$agent]}"
-    local machine=$(get_agent_machine "$agent")  # from TOML
 
-    if [[ "$machine" == "local" ]]; then
+    if [[ "${AGENT_MACHINE[$agent]}" == "local" ]]; then
         launch_local_agent "$pane" "$agent"
     else
         launch_remote_agent "$pane" "$agent"
@@ -238,11 +357,12 @@ for agent in SELECTED_AGENTS:
 | Case | Behavior |
 |------|----------|
 | `--agents ""` (empty string) | Error: no agents specified |
-| `--agents friday,friday` (duplicate) | Deduplicate silently, launch once |
+| `--agents friday,friday` (duplicate) | Deduplicate silently (first-seen order), launch once |
 | `--agents` with no value | Error: --agents requires a comma-separated list |
-| `--agents` + `--all` together | `--all` wins (launch all) |
-| Only remote agents selected | titan-pc mounts still start, no local agent launches |
-| Only local agents selected | SSH pre-flight skipped for titan-pc |
+| `--agents X --all` or `--all --agents X` | `--all` wins regardless of order (launch all) |
+| Only remote agents selected | titan-pc mounts start, no local cgroup launches |
+| Only local agents selected | SSH pre-flight to titan-pc skipped entirely |
+| Re-running `soul-team` while session exists | Existing `soul-team` tmux session killed first (pre-existing behavior) |
 
 ## Testing
 
@@ -261,6 +381,15 @@ Manual testing only (bash script, not unit-testable in the traditional sense):
 ## Future: TUI Picker (Backlog)
 
 Interactive checkbox picker using `gum choose --no-limit` or `fzf --multi`, shown when running `soul-team` without flags. Not in this iteration — deferred to backlog.
+
+## Known Limitations (Acceptable)
+
+These are pre-existing behaviors that become more visible under selective spawning but are intentionally left as-is:
+
+- **Inbox/comms initialization is always all-9:** The `mkdir` loops for native inboxes, ClawTeam inboxes, and live comms directories create dirs for all agents regardless of selection. This is harmless (empty dirs are cheap) and ensures agents can receive messages even when not running.
+- **`soul-msg broadcast` targets all 9:** Broadcast messages are delivered to all agent inboxes, even if only 2 are running. Non-running agents accumulate unread messages — this is by design (they'll process them on next launch).
+- **`soul-monitor` pane count includes CEO:** `tmux list-panes | wc -l` shows total panes (CEO + agents). With 2 agents, it shows 3. Cosmetic only.
+- **Sidecar iteration source changes:** The sidecar loop changes from a hardcoded 10-agent list to `team-lead + SELECTED_AGENTS`. This is intentional — sidecars for non-running agents would fail to detect state.
 
 ## Non-Goals
 
