@@ -97,23 +97,28 @@ The executor's `store.Update(id, {stage: "validation"})` automatically broadcast
 
 The cursor is an opaque token encoding a monotonic sequence number (not a wall-clock timestamp). This avoids SQLite's second-precision `CURRENT_TIMESTAMP` losing same-second writes.
 
-**Implementation:** Add an auto-increment `seq INTEGER` column to the `tasks` table. Each `Update()` bumps `seq` to `MAX(seq) + 1` (or use a global sequence table). The cursor encodes the last-seen `seq` value. The sync query becomes `WHERE seq > ?` — no datetime conversion, no precision issues.
+**Implementation:** Add a `seq INTEGER` column to the `tasks` table. A global counter in `sync_meta` table provides monotonic sequence numbers — `Store.nextSeq()` increments and returns the next value atomically within the calling transaction. Every `Create()`, `Update()`, and `Delete()` (tombstone) calls `nextSeq()` to stamp the mutation. The cursor encodes the last-seen `seq` value. The sync query becomes `WHERE seq > ?` — no datetime conversion, no precision issues.
+
+**Cursor format:** The cursor is an opaque base64-encoded JSON token: `{"seq": <int>, "ts": <unix_seconds>}`. The server issues it; the client passes it back unchanged. The `seq` is for delta queries; the `ts` is for staleness detection.
 
 **Behavior:**
-- `cursor` empty or omitted → full task list (`fullSync: true`), response includes current max `seq` as cursor
-- Otherwise → `WHERE seq > ?` query + tombstone lookup for deleted IDs
-- If `now - tombstone_retention (24h)` has elapsed since the cursor's creation time (tracked in a `cursor_meta` field or inferred from `seq` gap), return full list with `fullSync: true`
+- `cursor` empty or omitted → full task list (`fullSync: true`), response includes a new cursor
+- Otherwise → decode cursor, run stale check, then `WHERE seq > ?` query + tombstone `WHERE seq > ?`
 
-**Stale detection rule:** The server tracks `retention_start_seq` — the `seq` value at `now - 24h`. If the client's cursor `seq < retention_start_seq`, tombstones may be pruned and the response is `fullSync: true`. When no tombstones exist, the same rule applies — an empty tombstone table with a stale cursor still triggers full sync.
+**Stale detection rule (single algorithm):** If `now - cursor.ts > 24h`, tombstones may have been pruned and the delta is unreliable. Return `fullSync: true` with a fresh cursor. This is the **only** staleness check — no seq-gap inference, no `retention_start_seq` lookup. The 24h threshold matches `PruneTombstones` retention.
 
-**Race-safety:** The `serverTime` watermark is replaced by `cursor` (seq-based). The server computes the cursor **before** executing the query (snapshot the current max `seq`), so writes that arrive during query execution will be included in the next sync, not lost in a query-window gap.
+**Race-safety:** The sync handler:
+1. Snapshots `currentSeq = Store.MaxSeq()` **before** running the delta query
+2. Runs `ListModifiedSince(cursor.seq)` and `ListDeletedSince(cursor.seq)`
+3. Returns `cursor = {seq: currentSeq, ts: now}`
+
+Writes that arrive between step 1 and 2 will have `seq > currentSeq` and be picked up on the next sync. No writes are lost.
 
 ### Store Additions
 
 - `Store.ListModifiedSince(seq int64) ([]Task, error)` — `WHERE seq > ?`
 - `Store.ListDeletedSince(seq int64) ([]int64, error)` — reads from tombstone table `WHERE seq > ?`
-- `Store.MaxSeq() (int64, error)` — returns current max sequence number
-- `Store.RetentionStartSeq() (int64, error)` — returns seq at `now - 24h` (for stale detection)
+- `Store.MaxSeq() (int64, error)` — returns current max sequence number from `sync_meta`
 - `Store.AllCommentsAfterID(taskID, lastID int64) ([]Comment, error)` — all authors, no filter
 - `Store.ActivityAfterID(taskID, lastID int64) ([]Activity, error)` — activity entries after given ID, ascending order
 
@@ -135,7 +140,7 @@ ALTER TABLE tasks ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX idx_tasks_seq ON tasks(seq);
 ```
 
-A global sequence counter is maintained via a `sync_meta` table:
+**Global sequence counter** (`sync_meta` table):
 ```sql
 CREATE TABLE IF NOT EXISTS sync_meta (
   key TEXT PRIMARY KEY,
@@ -144,9 +149,9 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 -- Initialize: INSERT OR IGNORE INTO sync_meta VALUES ('seq', 0);
 ```
 
-`Store.nextSeq()` increments and returns the next value atomically within the calling transaction.
+`Store.nextSeq()` does `UPDATE sync_meta SET value = value + 1 WHERE key = 'seq' RETURNING value` within the calling transaction. This is the **only** mechanism for generating sequence numbers — no `MAX(seq) + 1` queries on the tasks table.
 
-- `Store.Delete()` wraps tombstone insert + task delete in a single `BEGIN/COMMIT` transaction to prevent inconsistent state
+- `Store.Delete()` wraps `nextSeq()` + tombstone insert + task delete in a single `BEGIN/COMMIT` transaction
 - `Store.PruneTombstones()` deletes rows older than 24h
 - Pruning runs once on server startup, then every hour via background goroutine
 
@@ -213,12 +218,21 @@ function useTaskSync(options?: {
   refresh: () => void;     // manual force-refresh
 
   // Actions (HTTP mutations — optimistic update + sync)
-  createTask: (task: Partial<Task>) => Promise<Task>;
+  createTask: (input: CreateTaskInput) => Promise<Task>;
   updateTask: (id: number, fields: Partial<Task>) => Promise<Task>;
   deleteTask: (id: number) => Promise<void>;
   startTask: (id: number) => Promise<void>;
   stopTask: (id: number) => Promise<void>;
   addComment: (id: number, body: string) => Promise<void>;
+}
+```
+
+**`CreateTaskInput`** — narrow input to avoid leaking server-owned fields (`id`, `seq`, `createdAt`, `stage`):
+```typescript
+interface CreateTaskInput {
+  title: string;
+  description?: string;
+  product?: string;
 }
 ```
 
@@ -287,11 +301,13 @@ function useTaskSync(options?: {
 
 | File | Change |
 |---|---|
-| `internal/tasks/store/store.go` | Add `OnChange` callback, wire into `Create`, `Update`, `Delete`, `AddActivity`, `InsertComment` |
-| `internal/tasks/store/store.go` | Add `ListModifiedSince`, `ListDeletedSince`, `PruneTombstones` methods |
-| `internal/tasks/store/store.go` | Add `task_tombstones` table to schema migration |
+| `internal/tasks/store/store.go` | Add `OnChange` callback, `nextSeq()`, wire into `Create`, `Update`, `Delete`, `AddActivity`, `InsertComment`; change `AddActivity`/`InsertComment` signatures to return inserted objects |
+| `internal/tasks/store/store.go` | Add `ListModifiedSince`, `ListDeletedSince`, `MaxSeq`, `PruneTombstones` methods |
+| `internal/tasks/store/store.go` | Add `task_tombstones`, `sync_meta` tables + `seq` column on tasks to schema migration |
+| `internal/tasks/store/types.go` | **New file** — `TaskDeleted`, `TaskActivity`, `TaskComment` payload structs |
+| `internal/tasks/store/cursor.go` | **New file** — `EncodeCursor(seq, ts)` / `DecodeCursor(token)` — base64 JSON encode/decode |
 | `internal/tasks/server/server.go` | Wire `store.OnChange` → `broadcaster.Broadcast` at startup |
-| `internal/tasks/server/server.go` | Add `GET /api/tasks/sync` handler |
+| `internal/tasks/server/server.go` | Add `GET /api/tasks/sync` handler with cursor decode + stale detection |
 | `internal/tasks/server/server.go` | Add `?after=` param support to activity and comments endpoints |
 | `internal/tasks/server/server.go` | Remove manual `Broadcast` calls from `handleCreateTask`, `handleUpdateTask`, `handleStartTask` (now automatic via store hook) |
 
@@ -312,18 +328,24 @@ function useTaskSync(options?: {
 
 ### Backend
 
-- `store_test.go`: Verify `OnChange` fires correct event types for each mutation
-- `store_test.go`: Test `ListModifiedSince` returns only changed tasks, `ListDeletedSince` returns tombstoned IDs
-- `store_test.go`: Test `PruneTombstones` removes old entries, preserves recent ones
-- `server_test.go`: Test `/api/tasks/sync` endpoint with various `since` values including stale (>24h)
-- `server_test.go`: Test `?after=` params on activity and comments endpoints
+- `store_test.go`: Verify `OnChange` fires correct event types and typed payloads for each mutation
+- `store_test.go`: Test `nextSeq()` returns monotonically increasing values across concurrent transactions
+- `store_test.go`: Test `ListModifiedSince(seq)` returns only tasks with `seq > given`, `ListDeletedSince(seq)` returns tombstoned IDs
+- `store_test.go`: Test `PruneTombstones` removes entries older than 24h, preserves recent ones
+- `store_test.go`: Test `AddActivity` and `InsertComment` return inserted objects (not just error)
+- `server_test.go`: Test `/api/tasks/sync` endpoint — no cursor (full sync), valid cursor (delta), stale cursor >24h (full sync)
+- `server_test.go`: Test cursor format: decode base64 → valid `{seq, ts}` JSON
+- `server_test.go`: Test `?after=` params on activity and comments endpoints return ascending ID order
 - Integration: Verify store hook → SSE broadcast → WS relay pipeline end-to-end
 
 ### Frontend
 
 - `useTaskSync.test.ts`: Mock WS events update state immediately
 - `useTaskSync.test.ts`: Mock heartbeat fetches delta and merges correctly
-- `useTaskSync.test.ts`: Verify `updatedAt` ordering prevents stale overwrites
+- `useTaskSync.test.ts`: Verify `seq`-based ordering prevents stale overwrites (skip if local `seq` >= incoming)
+- `useTaskSync.test.ts`: Verify `fullSync: true` replaces entire task map (not merge)
+- `useTaskSync.test.ts`: Activity/comment dedup by ID on both WS and heartbeat paths
 - `useTaskSync.test.ts`: Tab visibility pauses/resumes heartbeat
 - `useTaskSync.test.ts`: WS reconnect triggers immediate sync
+- `useTaskSync.test.ts`: Action methods (createTask, updateTask, etc.) do optimistic update + rollback on error
 - E2E: Create task via API, verify Kanban updates within 2s (WS path) and within 35s (heartbeat path)
