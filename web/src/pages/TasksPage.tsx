@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useTasks } from '../hooks/useTasks';
+import { useTaskSync } from '../hooks/useTaskSync';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
 import { TaskCard } from '../components/TaskCard';
@@ -16,7 +16,7 @@ const COLUMNS: { stage: TaskStage; label: string; color: string }[] = [
 export function TasksPage() {
   usePerformance('TasksPage');
   useEffect(() => { reportUsage('page.view', { page: 'tasks' }); }, []);
-  const { tasks, loading, error, createTask, startTask, stopTask } = useTasks();
+  const { tasks, loading, error, createTask, startTask, stopTask } = useTaskSync({ mode: 'kanban' });
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -26,12 +26,12 @@ export function TasksPage() {
     if (!newTitle.trim()) return;
     setCreating(true);
     try {
-      await createTask(newTitle.trim(), newDesc.trim());
+      await createTask({ title: newTitle.trim(), description: newDesc.trim() });
       setNewTitle('');
       setNewDesc('');
       setShowCreate(false);
     } catch {
-      // Error surfaced via useTasks.error state
+      // Error surfaced via useTaskSync.error state
     } finally {
       setCreating(false);
     }

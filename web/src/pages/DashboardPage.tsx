@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router';
-import { useTasks } from '../hooks/useTasks';
+import { useTaskSync } from '../hooks/useTaskSync';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
 import type { TaskStage } from '../lib/types';
@@ -24,7 +24,7 @@ const STAGE_LABELS: Record<TaskStage, string> = {
 export function DashboardPage() {
   usePerformance('DashboardPage');
   useEffect(() => { reportUsage('page.view', { page: 'dashboard' }); }, []);
-  const { tasks, loading, error } = useTasks();
+  const { tasks, loading, error } = useTaskSync({ mode: 'kanban' });
 
   const counts = (Object.keys(STAGE_LABELS) as TaskStage[]).map(stage => ({
     stage,
