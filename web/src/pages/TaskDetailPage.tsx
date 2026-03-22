@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { reportError, reportUsage } from '../lib/telemetry';
 import { usePerformance } from '../hooks/usePerformance';
@@ -25,21 +25,27 @@ export function TaskDetailPage() {
     mode: 'detail',
   });
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const handleStart = async () => {
     if (!taskId) return;
+    setActionError(null);
     try {
       await startTask(taskId);
     } catch (err) {
       reportError('TaskDetailPage.start', err);
+      setActionError(err instanceof Error ? err.message : 'Failed to start task');
     }
   };
 
   const handleStop = async () => {
     if (!taskId) return;
+    setActionError(null);
     try {
       await stopTask(taskId);
     } catch (err) {
       reportError('TaskDetailPage.stop', err);
+      setActionError(err instanceof Error ? err.message : 'Failed to stop task');
     }
   };
 
@@ -81,6 +87,9 @@ export function TaskDetailPage() {
           </div>
 
           {/* Actions */}
+          {actionError && (
+            <div data-testid="action-error" className="text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">{actionError}</div>
+          )}
           <div className="flex gap-2">
             {(task.stage === 'backlog' || task.stage === 'blocked') && (
               <button

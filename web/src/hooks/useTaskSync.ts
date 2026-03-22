@@ -115,6 +115,10 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       setTaskMap(map);
       cursorRef.current = resp.cursor;
       setError(null);
+      // If initial sync succeeds, server is reachable — set connected so pages
+      // mounting after WS is already up don't stay stale (they missed ws:connected).
+      setConnected(true);
+      wasConnectedRef.current = true;
 
       if (mode === 'detail' && taskId) {
         const [acts, cmts] = await Promise.all([
