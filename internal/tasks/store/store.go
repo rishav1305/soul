@@ -148,6 +148,45 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("tasks: migrate comments: %w", err)
 	}
 
+	// Add seq column to tasks (ignore if already exists).
+	_, err = s.db.Exec("ALTER TABLE tasks ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("tasks: migrate seq column: %w", err)
+	}
+
+	// Create seq index.
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_seq ON tasks(seq)"); err != nil {
+		return fmt.Errorf("tasks: migrate seq index: %w", err)
+	}
+
+	// Tombstone table for tracking deleted task IDs.
+	const tombstoneSchema = `
+	CREATE TABLE IF NOT EXISTS task_tombstones (
+		id INTEGER NOT NULL,
+		seq INTEGER NOT NULL,
+		deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_tombstones_seq ON task_tombstones(seq);
+	CREATE INDEX IF NOT EXISTS idx_tombstones_deleted_at ON task_tombstones(deleted_at);
+	`
+	if _, err := s.db.Exec(tombstoneSchema); err != nil {
+		return fmt.Errorf("tasks: migrate tombstones: %w", err)
+	}
+
+	// Global monotonic sequence counter.
+	const syncMetaSchema = `
+	CREATE TABLE IF NOT EXISTS sync_meta (
+		key TEXT PRIMARY KEY,
+		value INTEGER NOT NULL
+	);
+	`
+	if _, err := s.db.Exec(syncMetaSchema); err != nil {
+		return fmt.Errorf("tasks: migrate sync_meta: %w", err)
+	}
+	if _, err := s.db.Exec("INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('seq', 0)"); err != nil {
+		return fmt.Errorf("tasks: init sync_meta seq: %w", err)
+	}
+
 	return nil
 }
 

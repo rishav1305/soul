@@ -356,6 +356,38 @@ func TestCommentsAfter(t *testing.T) {
 	}
 }
 
+func TestMigration_TablesExist(t *testing.T) {
+	s := newTestStore(t)
+
+	// Verify sync_meta table exists and has initial seq=0.
+	var val int64
+	err := s.db.QueryRow("SELECT value FROM sync_meta WHERE key = 'seq'").Scan(&val)
+	if err != nil {
+		t.Fatalf("sync_meta query: %v", err)
+	}
+	if val != 0 {
+		t.Errorf("initial seq = %d, want 0", val)
+	}
+
+	// Verify task_tombstones table exists.
+	_, err = s.db.Exec("SELECT id, seq, deleted_at FROM task_tombstones LIMIT 0")
+	if err != nil {
+		t.Fatalf("task_tombstones not created: %v", err)
+	}
+
+	// Verify seq column on tasks.
+	task, err := s.Create("test", "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var seq int64
+	err = s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", task.ID).Scan(&seq)
+	if err != nil {
+		t.Fatalf("seq column query: %v", err)
+	}
+	// seq should be 0 (default) until we wire nextSeq into Create in Task 4.
+}
+
 func TestCountByStage(t *testing.T) {
 	s := newTestStore(t)
 	s.Create("A", "", "")
