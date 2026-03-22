@@ -175,8 +175,16 @@ export function useChat(): UseChatReturn {
 
   const handleMessage = useCallback(
     (type: OutboundMessageType, data: unknown, sessionID: string, messageId?: string) => {
+      // Forward task events to useTaskSync via DOM event.
+      // Task events are not in OutboundMessageType — check raw string before typed switch.
+      if ((type as string)?.startsWith('task.')) {
+        window.dispatchEvent(new CustomEvent('ws:task-event', { detail: { type, data } }));
+        return;
+      }
+
       switch (type) {
         case 'connection.ready': {
+          window.dispatchEvent(new Event('ws:connected'));
           setAuthError(false);
           if (sessionIDRef.current) {
             // RECONNECT — session ID already set. Re-subscribe and refresh history.
@@ -589,6 +597,12 @@ export function useChat(): UseChatReturn {
   );
 
   const { status, send, reconnectAttempt, reconnect, authError: wsAuthError } = useWebSocket({ onMessage: handleMessage });
+
+  useEffect(() => {
+    if (status === 'disconnected' || status === 'error') {
+      window.dispatchEvent(new Event('ws:disconnected'));
+    }
+  }, [status]);
 
   // Store send in a ref so the connection.ready handler can use it.
   const sendRef = useRef(send);
