@@ -25,7 +25,7 @@ Every `Store` mutation triggers an automatic SSE broadcast. No caller needs to m
 
 ### Store Changes
 
-Add `OnChange func(event string, task Task)` callback field to the `Store` struct. Wire it to `broadcaster.Broadcast()` in the tasks server at startup.
+Add `OnChange func(event string, payload any)` callback field to the `Store` struct. Wire it to `broadcaster.Broadcast()` in the tasks server at startup. The `payload` parameter is typed per event — each store method constructs the appropriate payload struct before calling `OnChange`.
 
 **Mutation hooks:**
 
@@ -39,17 +39,41 @@ Add `OnChange func(event string, task Task)` callback field to the `Store` struc
 | `AddActivity()` | New activity entry | `task.activity` |
 | `InsertComment()` | New comment | `task.comment` |
 
+**Multi-field PATCH priority:** When a single `Update()` call changes multiple fields, emit exactly one event using this priority order: `task.stage_changed` > `task.substep_changed` > `task.updated`. The payload always includes the full updated task, so the client sees all field changes regardless of which event type fires.
+
 ### Event Payloads
 
-| Event | Payload |
-|---|---|
-| `task.created` | Full task JSON |
-| `task.updated` | Full task JSON |
-| `task.stage_changed` | Full task JSON |
-| `task.substep_changed` | Full task JSON |
-| `task.deleted` | `{"id": <int>}` |
-| `task.activity` | `{"taskId": <int>, "activity": <Activity>}` |
-| `task.comment` | `{"taskId": <int>, "comment": <Comment>}` |
+Each event carries a typed payload. Store methods must return the inserted/updated object so it can be passed to `OnChange`.
+
+| Event | Payload Type | Payload |
+|---|---|---|
+| `task.created` | `Task` | Full task JSON |
+| `task.updated` | `Task` | Full task JSON |
+| `task.stage_changed` | `Task` | Full task JSON |
+| `task.substep_changed` | `Task` | Full task JSON |
+| `task.deleted` | `TaskDeleted` | `{"id": <int>}` |
+| `task.activity` | `TaskActivity` | `{"taskId": <int>, "activity": <Activity>}` |
+| `task.comment` | `TaskComment` | `{"taskId": <int>, "comment": <Comment>}` |
+
+**Required store method changes:**
+- `AddActivity()` must return the inserted `Activity` (currently returns only `error`) — change signature to `AddActivity(...) (Activity, error)`, do an `INSERT ... RETURNING *` or re-read after insert
+- `InsertComment()` must return the inserted `Comment` (currently returns only `error`) — same pattern
+- `Delete()` must capture the task ID before deletion for the `TaskDeleted` payload
+
+**Payload structs** (new, in `store/types.go`):
+```go
+type TaskDeleted struct {
+    ID int64 `json:"id"`
+}
+type TaskActivity struct {
+    TaskID   int64    `json:"taskId"`
+    Activity Activity `json:"activity"`
+}
+type TaskComment struct {
+    TaskID  int64   `json:"taskId"`
+    Comment Comment `json:"comment"`
+}
+```
 
 ### Key Benefit
 
@@ -59,39 +83,68 @@ The executor's `store.Update(id, {stage: "validation"})` automatically broadcast
 
 ### New Endpoint
 
-`GET /api/tasks/sync?since=<unix_ms>`
+`GET /api/tasks/sync?cursor=<opaque_token>`
 
 **Response:**
 ```json
 {
-  "tasks": [/* tasks modified after `since` */],
-  "deleted": [/* task IDs deleted after `since` */],
-  "serverTime": 1711108800000,
+  "tasks": [/* tasks modified since cursor */],
+  "deleted": [/* task IDs deleted since cursor */],
+  "cursor": "1711108800.42",
   "fullSync": false
 }
 ```
 
+The cursor is an opaque token encoding a monotonic sequence number (not a wall-clock timestamp). This avoids SQLite's second-precision `CURRENT_TIMESTAMP` losing same-second writes.
+
+**Implementation:** Add an auto-increment `seq INTEGER` column to the `tasks` table. Each `Update()` bumps `seq` to `MAX(seq) + 1` (or use a global sequence table). The cursor encodes the last-seen `seq` value. The sync query becomes `WHERE seq > ?` — no datetime conversion, no precision issues.
+
 **Behavior:**
-- `since=0` or omitted → full task list (`fullSync: true`)
-- Otherwise → `WHERE updated_at > datetime(? / 1000, 'unixepoch')` query (converts Unix ms to SQLite DATETIME format) + tombstone lookup for deleted IDs
-- If `since` is older than the oldest tombstone (>24h stale), return full list with `fullSync: true`
+- `cursor` empty or omitted → full task list (`fullSync: true`), response includes current max `seq` as cursor
+- Otherwise → `WHERE seq > ?` query + tombstone lookup for deleted IDs
+- If `now - tombstone_retention (24h)` has elapsed since the cursor's creation time (tracked in a `cursor_meta` field or inferred from `seq` gap), return full list with `fullSync: true`
+
+**Stale detection rule:** The server tracks `retention_start_seq` — the `seq` value at `now - 24h`. If the client's cursor `seq < retention_start_seq`, tombstones may be pruned and the response is `fullSync: true`. When no tombstones exist, the same rule applies — an empty tombstone table with a stale cursor still triggers full sync.
+
+**Race-safety:** The `serverTime` watermark is replaced by `cursor` (seq-based). The server computes the cursor **before** executing the query (snapshot the current max `seq`), so writes that arrive during query execution will be included in the next sync, not lost in a query-window gap.
 
 ### Store Additions
 
-- `Store.ListModifiedSince(since time.Time) ([]Task, error)` — `WHERE updated_at > datetime(? / 1000, 'unixepoch')`
-- `Store.ListDeletedSince(since time.Time) ([]int64, error)` — reads from tombstone table
+- `Store.ListModifiedSince(seq int64) ([]Task, error)` — `WHERE seq > ?`
+- `Store.ListDeletedSince(seq int64) ([]int64, error)` — reads from tombstone table `WHERE seq > ?`
+- `Store.MaxSeq() (int64, error)` — returns current max sequence number
+- `Store.RetentionStartSeq() (int64, error)` — returns seq at `now - 24h` (for stale detection)
 - `Store.AllCommentsAfterID(taskID, lastID int64) ([]Comment, error)` — all authors, no filter
-- `Store.ActivityAfterID(taskID, lastID int64) ([]Activity, error)` — activity entries after given ID
+- `Store.ActivityAfterID(taskID, lastID int64) ([]Activity, error)` — activity entries after given ID, ascending order
 
 ### Tombstone Table
 
 ```sql
 CREATE TABLE IF NOT EXISTS task_tombstones (
   id INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
   deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX idx_tombstones_seq ON task_tombstones(seq);
 CREATE INDEX idx_tombstones_deleted_at ON task_tombstones(deleted_at);
 ```
+
+**Sequence column on tasks table:**
+```sql
+ALTER TABLE tasks ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_tasks_seq ON tasks(seq);
+```
+
+A global sequence counter is maintained via a `sync_meta` table:
+```sql
+CREATE TABLE IF NOT EXISTS sync_meta (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+);
+-- Initialize: INSERT OR IGNORE INTO sync_meta VALUES ('seq', 0);
+```
+
+`Store.nextSeq()` increments and returns the next value atomically within the calling transaction.
 
 - `Store.Delete()` wraps tombstone insert + task delete in a single `BEGIN/COMMIT` transaction to prevent inconsistent state
 - `Store.PruneTombstones()` deletes rows older than 24h
@@ -116,10 +169,12 @@ useTaskSync
 ├── WS event path (real-time)
 │   └── useChat.ts onMessage → window 'ws:task-event' → apply to state
 ├── Heartbeat path (reconciliation)
-│   ├── Kanban: GET /api/tasks/sync?since= every 30s
-│   └── Detail: GET /api/tasks/{id}/activity?after= + /comments?after= every 5s
+│   ├── Kanban: GET /api/tasks/sync?cursor= every 30s
+│   └── Detail: GET /api/tasks/{id} + /activity?after= + /comments?after= every 5s (parallel)
+├── Actions (HTTP mutations)
+│   └── create/update/delete/start/stop/addComment → optimistic update → HTTP → reconcile
 └── State
-    └── Map<taskId, Task> + per-task activity[] + comments[]
+    └── Map<taskId, Task> + per-task activity[] + comments[] + error + connected
 ```
 
 ### WS Event Wiring
@@ -140,27 +195,45 @@ if (type?.startsWith('task.')) {
 
 ### Hook API
 
+The hook is split into two concerns: **sync** (real-time state) and **actions** (mutations). Both are returned from the same hook so pages have a single import.
+
 ```typescript
 function useTaskSync(options?: {
   taskId?: number;
   mode?: 'kanban' | 'detail';
 }): {
+  // State (real-time via WS + heartbeat)
   tasks: Task[];           // all tasks (kanban mode)
   task: Task | null;       // single task (detail mode)
   activities: Activity[];  // detail mode only
   comments: Comment[];     // detail mode only
   loading: boolean;
+  error: string | null;    // connection/fetch error state
+  connected: boolean;      // WS connection status
   refresh: () => void;     // manual force-refresh
+
+  // Actions (HTTP mutations — optimistic update + sync)
+  createTask: (task: Partial<Task>) => Promise<Task>;
+  updateTask: (id: number, fields: Partial<Task>) => Promise<Task>;
+  deleteTask: (id: number) => Promise<void>;
+  startTask: (id: number) => Promise<void>;
+  stopTask: (id: number) => Promise<void>;
+  addComment: (id: number, body: string) => Promise<void>;
 }
 ```
 
+**Action behavior:** Each action does an optimistic local state update, fires the HTTP request, then lets the WS event or next heartbeat reconcile the final state. On HTTP error, the optimistic update is rolled back and `error` is set.
+
 ### Behavior
 
-1. **On mount:** Full fetch (`since=0`), store `serverTime`
+1. **On mount:** Full fetch (no cursor), store returned `cursor`
 2. **WS events:** Apply immediately to local state
 3. **Heartbeat timer:**
-   - `kanban` mode → 30s interval, calls `/api/tasks/sync?since=lastServerTime`, merges delta
-   - `detail` mode → 5s interval, fetches activity + comments delta via `?after=` params
+   - `kanban` mode → 30s interval, calls `/api/tasks/sync?cursor=`, merges delta
+   - `detail` mode → 5s interval, fetches three things in parallel:
+     - `GET /api/tasks/{id}` — task fields (stage, substep, metadata) for when WS is down
+     - `GET /api/tasks/{id}/activity?after=<lastActivityId>` — new activity entries
+     - `GET /api/tasks/{id}/comments?after=<lastCommentId>` — new comments
 4. **On WS reconnect:** Immediate delta sync to catch anything missed during disconnect
 5. **Tab visibility:** Pause heartbeat when hidden, immediate sync on tab focus
 
@@ -170,6 +243,7 @@ function useTaskSync(options?: {
 - `useTaskEvents` → absorbed into `useTaskSync` internals, no longer exported
 - `TasksPage` → switch to `useTaskSync({ mode: 'kanban' })`
 - `TaskDetailPage` → switch to `useTaskSync({ taskId, mode: 'detail' })`
+- `DashboardPage` → switch from `useTasks` to `useTaskSync({ mode: 'kanban' })` (uses task counts by stage)
 
 ## Section 4: Error Handling & Edge Cases
 
@@ -179,11 +253,17 @@ function useTaskSync(options?: {
 - On WS reconnect, `useTaskSync` triggers immediate delta sync
 - If both WS and HTTP fail, show "connection lost" indicator, backoff heartbeat (exponential up to 60s)
 
-### Event Ordering
+### Event Ordering & Merge Semantics
 
-- WS events and heartbeat can arrive out of order
-- Resolution: compare `updatedAt` — skip update if local copy is newer
-- Activities and comments are append-only with sequential IDs — natural ordering
+**Task updates** (WS events and heartbeat can arrive out of order):
+- Resolution: compare `seq` — skip update if local `seq` is >= incoming `seq`
+- On `fullSync: true`, replace the entire local task map (not merge)
+
+**Activity/comments** (append-only):
+- Delta endpoints (`?after=`) return entries in **ascending ID order** (oldest first). The current `ListActivity` query uses `ORDER BY id DESC` (newest first) — delta endpoints must use `ORDER BY id ASC` explicitly.
+- **WS merge:** On `task.activity` / `task.comment` event, append to the end of the local array. Deduplicate by `id` — if an entry with the same `id` already exists, skip.
+- **Heartbeat merge:** Append delta results to the end of the local array. Same dedup rule.
+- **Display order:** The UI component is responsible for display ordering (e.g., `activities.toReversed()` for newest-first in the timeline). The internal state array is always in ascending ID order.
 
 ### Tombstone Expiry
 
@@ -226,6 +306,7 @@ function useTaskSync(options?: {
 | `web/src/hooks/useTaskEvents.ts` | Remove (absorbed into useTaskSync) |
 | `web/src/pages/TasksPage.tsx` | Switch from `useTasks` to `useTaskSync({ mode: 'kanban' })` |
 | `web/src/pages/TaskDetailPage.tsx` | Switch to `useTaskSync({ taskId, mode: 'detail' })` |
+| `web/src/pages/DashboardPage.tsx` | Switch from `useTasks` to `useTaskSync({ mode: 'kanban' })` |
 
 ## Testing Strategy
 
