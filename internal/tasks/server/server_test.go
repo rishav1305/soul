@@ -261,3 +261,118 @@ func TestStopTask_NotRunning(t *testing.T) {
 		t.Errorf("status = %d, want 409", rec.Code)
 	}
 }
+
+func TestSyncEndpoint_FullSync(t *testing.T) {
+	srv := newTestServer(t)
+	srv.store.Create("task1", "", "")
+	srv.store.Create("task2", "", "")
+
+	req := httptest.NewRequest("GET", "/api/tasks/sync", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var resp struct {
+		Tasks    []store.Task `json:"tasks"`
+		Deleted  []int64      `json:"deleted"`
+		Cursor   string       `json:"cursor"`
+		FullSync bool         `json:"fullSync"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if !resp.FullSync {
+		t.Error("expected fullSync=true for no cursor")
+	}
+	if len(resp.Tasks) != 2 {
+		t.Errorf("expected 2 tasks, got %d", len(resp.Tasks))
+	}
+	if resp.Cursor == "" {
+		t.Error("expected non-empty cursor")
+	}
+}
+
+func TestSyncEndpoint_DeltaSync(t *testing.T) {
+	srv := newTestServer(t)
+	srv.store.Create("task1", "", "")
+
+	// Full sync to get cursor.
+	req1 := httptest.NewRequest("GET", "/api/tasks/sync", nil)
+	w1 := httptest.NewRecorder()
+	srv.ServeHTTP(w1, req1)
+	var resp1 struct{ Cursor string `json:"cursor"` }
+	json.NewDecoder(w1.Body).Decode(&resp1)
+
+	// Create another task.
+	srv.store.Create("task2", "", "")
+
+	// Delta sync.
+	req2 := httptest.NewRequest("GET", "/api/tasks/sync?cursor="+resp1.Cursor, nil)
+	w2 := httptest.NewRecorder()
+	srv.ServeHTTP(w2, req2)
+
+	var resp2 struct {
+		Tasks    []store.Task `json:"tasks"`
+		FullSync bool         `json:"fullSync"`
+	}
+	json.NewDecoder(w2.Body).Decode(&resp2)
+
+	if resp2.FullSync {
+		t.Error("expected fullSync=false for delta sync")
+	}
+	if len(resp2.Tasks) != 1 || resp2.Tasks[0].Title != "task2" {
+		t.Errorf("expected 1 delta task (task2), got %d", len(resp2.Tasks))
+	}
+}
+
+func TestSyncEndpoint_StaleCursor(t *testing.T) {
+	srv := newTestServer(t)
+	srv.store.Create("task1", "", "")
+
+	stale := store.EncodeCursor(1, 0) // ts=0 (epoch) is definitely >24h ago
+	req := httptest.NewRequest("GET", "/api/tasks/sync?cursor="+stale, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	var resp struct{ FullSync bool `json:"fullSync"` }
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !resp.FullSync {
+		t.Error("expected fullSync=true for stale cursor")
+	}
+}
+
+func TestActivityEndpoint_AfterParam(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	act1, _ := srv.store.AddActivity(task.ID, "evt1", nil)
+	srv.store.AddActivity(task.ID, "evt2", nil)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tasks/%d/activity?after=%d", task.ID, act1.ID), nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	var activities []store.Activity
+	json.NewDecoder(w.Body).Decode(&activities)
+	if len(activities) != 1 || activities[0].EventType != "evt2" {
+		t.Errorf("expected 1 activity (evt2), got %d", len(activities))
+	}
+}
+
+func TestCommentsEndpoint_AfterParam(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	cmt1, _ := srv.store.InsertComment(task.ID, "user", "feedback", "first")
+	srv.store.InsertComment(task.ID, "agent", "response", "second")
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tasks/%d/comments?after=%d", task.ID, cmt1.ID), nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	var comments []store.Comment
+	json.NewDecoder(w.Body).Decode(&comments)
+	if len(comments) != 1 || comments[0].Body != "second" {
+		t.Errorf("expected 1 comment (second), got %d", len(comments))
+	}
+}
