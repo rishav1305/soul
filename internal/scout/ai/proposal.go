@@ -22,9 +22,11 @@ func (s *Service) ProposalGen(ctx context.Context, leadID int64, platform string
 		return "", fmt.Errorf("get lead: %w", err)
 	}
 
-	profile, err := s.fetchProfile()
-	if err != nil {
-		return "", err
+	var profileSection string
+	if s.profileDB != nil {
+		if profile, err := s.fetchProfile(); err == nil {
+			profileSection = fmt.Sprintf("\n\nProfile: %v", profile)
+		}
 	}
 
 	var platformGuide string
@@ -38,7 +40,7 @@ func (s *Service) ProposalGen(ctx context.Context, leadID int64, platform string
 	}
 
 	system := fmt.Sprintf("You are a proposal writing expert. %s", platformGuide)
-	userMsg := fmt.Sprintf("Job: %s at %s\nDescription: %s\n\nProfile: %v", lead.JobTitle, lead.Company, lead.Description, profile)
+	userMsg := fmt.Sprintf("Job: %s at %s\nDescription: %s%s", lead.JobTitle, lead.Company, lead.Description, profileSection)
 
 	return s.sendAndExtractText(ctx, system, userMsg)
 }

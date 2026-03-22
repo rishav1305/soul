@@ -130,11 +130,14 @@ func TestProposalGen_Valid(t *testing.T) {
 	id, _ := st.AddLead(lead)
 
 	sender := &mockSender{response: "Here's my proposal for the Go Engineer role..."}
-	// ProposalGen requires profiledb — but we pass nil, so it should error
+	// ProposalGen degrades gracefully when profiledb is nil — generates from JD alone.
 	svc := New(st, nil, sender, t.TempDir())
-	_, err := svc.ProposalGen(context.Background(), id, "upwork")
-	if err == nil {
-		t.Fatal("expected error when profiledb is nil")
+	result, err := svc.ProposalGen(context.Background(), id, "upwork")
+	if err != nil {
+		t.Fatalf("ProposalGen with nil profiledb: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty proposal when profiledb is nil")
 	}
 }
 
@@ -143,12 +146,16 @@ func TestCoverLetter_NoProfileDB(t *testing.T) {
 	lead := makeTestLead()
 	id, _ := st.AddLead(lead)
 
-	sender := &mockSender{response: "cover letter"}
+	// CoverLetter degrades gracefully when profiledb is nil — generates from JD alone.
+	sender := &mockSender{response: "cover letter from JD only"}
 	svc := New(st, nil, sender, t.TempDir())
 
-	_, err := svc.CoverLetter(context.Background(), id)
-	if err == nil {
-		t.Fatal("expected error when profiledb is nil")
+	result, err := svc.CoverLetter(context.Background(), id)
+	if err != nil {
+		t.Fatalf("CoverLetter with nil profiledb: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty cover letter when profiledb is nil")
 	}
 }
 
