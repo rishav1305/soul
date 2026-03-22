@@ -13,9 +13,12 @@ GREP_ARGS=(
   --include='*.tsx'
   --include='*.json'
   --exclude='package-lock.json'
+  --exclude='*_test.go'   # test files may contain fake key fixtures for testing the scanner itself
   --exclude-dir='node_modules'
   --exclude-dir='.git'
   --exclude-dir='dist'
+  --exclude-dir='.claude'  # worktrees are ephemeral copies — not committed code
+  --exclude-dir='compliance' # compliance/analyzers/ defines regex patterns — not real secrets
   -r
   -n
   -E
