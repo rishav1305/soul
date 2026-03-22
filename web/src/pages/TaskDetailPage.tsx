@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { reportUsage } from '../lib/telemetry';
+import { reportError, reportUsage } from '../lib/telemetry';
 import { usePerformance } from '../hooks/usePerformance';
 import { useTaskSync } from '../hooks/useTaskSync';
 import type { TaskStage } from '../lib/types';
@@ -27,12 +27,20 @@ export function TaskDetailPage() {
 
   const handleStart = async () => {
     if (!taskId) return;
-    await startTask(taskId);
+    try {
+      await startTask(taskId);
+    } catch (err) {
+      reportError('TaskDetailPage.start', err);
+    }
   };
 
   const handleStop = async () => {
     if (!taskId) return;
-    await stopTask(taskId);
+    try {
+      await stopTask(taskId);
+    } catch (err) {
+      reportError('TaskDetailPage.stop', err);
+    }
   };
 
   if (loading) {

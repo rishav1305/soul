@@ -105,7 +105,7 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
     }
   }, []);
 
-  // --- Initial Fetch (defined before WS listener so it can be referenced) ---
+  // --- Sync Functions ---
 
   const doFullSync = useCallback(async () => {
     try {
@@ -133,6 +133,38 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       setLoading(false);
     }
   }, [mode, taskId]);
+
+  // Delta sync using existing cursor — used on reconnect to avoid expensive full sync.
+  const doDeltaSync = useCallback(async () => {
+    if (!cursorRef.current) { doFullSync(); return; }
+    try {
+      const resp = await api.get<SyncResponse>(
+        `/api/tasks/sync?cursor=${encodeURIComponent(cursorRef.current)}`
+      );
+      if (resp.fullSync) {
+        const map = new Map<number, Task>();
+        for (const t of resp.tasks) map.set(t.id, t);
+        setTaskMap(map);
+      } else {
+        for (const t of resp.tasks) applyTaskUpdate(t);
+        for (const id of resp.deleted) applyTaskDelete(id);
+      }
+      cursorRef.current = resp.cursor;
+
+      if (mode === 'detail' && taskId) {
+        const [acts, cmts] = await Promise.all([
+          api.get<TaskActivity[]>(`/api/tasks/${taskId}/activity?after=${lastActivityIdRef.current}`),
+          api.get<Comment[]>(`/api/tasks/${taskId}/comments?after=${lastCommentIdRef.current}`),
+        ]);
+        for (const a of acts) appendActivity(a);
+        for (const c of cmts) appendComment(c);
+      }
+      setError(null);
+    } catch {
+      // Delta failed — fall back to full sync.
+      doFullSync();
+    }
+  }, [mode, taskId, doFullSync, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment]);
 
   // --- WS Event Listener ---
 
@@ -188,7 +220,7 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       const wasDown = !wasConnectedRef.current;
       setConnected(true);
       wasConnectedRef.current = true;
-      if (wasDown && cursorRef.current) doFullSync();
+      if (wasDown && cursorRef.current) doDeltaSync();
     };
     const onDisconnected = () => {
       setConnected(false);
@@ -202,7 +234,7 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       window.removeEventListener('ws:connected', onConnected);
       window.removeEventListener('ws:disconnected', onDisconnected);
     };
-  }, [taskId, mode, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment, doFullSync]);
+  }, [taskId, mode, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment, doDeltaSync]);
 
   useEffect(() => { doFullSync(); }, [doFullSync]);
 
@@ -223,7 +255,8 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
               `/api/tasks/sync?cursor=${encodeURIComponent(cursorRef.current)}`
             );
           } catch (fetchErr) {
-            if (fetchErr instanceof Error && fetchErr.message.includes('400')) {
+            // Check HTTP status code (attached by api.ts) — only reset cursor on 400.
+            if (fetchErr instanceof Error && (fetchErr as Error & { status?: number }).status === 400) {
               cursorRef.current = '';
               resp = await api.get<SyncResponse>('/api/tasks/sync');
             } else {
@@ -324,11 +357,13 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
 
   const tasks = Array.from(taskMap.values());
   const task = taskId ? taskMap.get(taskId) ?? null : null;
+  // Activities are stored ascending (for dedup-by-id merge). Reverse for UI (newest first).
+  const sortedActivities = [...activities].reverse();
 
   return {
     tasks,
     task,
-    activities,
+    activities: sortedActivities,
     comments,
     loading,
     error,

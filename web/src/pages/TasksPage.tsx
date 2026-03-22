@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTaskSync } from '../hooks/useTaskSync';
 import { usePerformance } from '../hooks/usePerformance';
-import { reportUsage } from '../lib/telemetry';
+import { reportError, reportUsage } from '../lib/telemetry';
 import { TaskCard } from '../components/TaskCard';
 import type { TaskStage } from '../lib/types';
 
@@ -104,7 +104,7 @@ export function TasksPage() {
                 </div>
                 <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
                   {columnTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStart={startTask} onStop={stopTask} />
+                    <TaskCard key={task.id} task={task} onStart={(id) => startTask(id).catch(err => reportError('TasksPage.start', err))} onStop={(id) => stopTask(id).catch(err => reportError('TasksPage.stop', err))} />
                   ))}
                 </div>
               </div>

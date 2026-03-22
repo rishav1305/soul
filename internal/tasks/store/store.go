@@ -317,12 +317,7 @@ func (s *Store) Update(id int64, fields map[string]interface{}) (*Task, error) {
 		args = append(args, v)
 	}
 	if len(setClauses) == 0 {
-		task, err := s.Get(id)
-		if err != nil {
-			return nil, err
-		}
-		s.fireOnChange("task.updated", task)
-		return task, nil
+		return s.Get(id)
 	}
 
 	tx, err := s.db.Begin()
