@@ -20,15 +20,15 @@
 | `internal/tasks/store/types.go` | Event payload structs: `TaskDeleted`, `TaskActivity`, `TaskComment` |
 | `internal/tasks/store/cursor.go` | `EncodeCursor` / `DecodeCursor` — base64 JSON `{seq, ts}` |
 | `internal/tasks/store/cursor_test.go` | Cursor encode/decode round-trip + edge cases |
-| `internal/tasks/store/store_test.go` | All store tests (OnChange, seq, delta queries, tombstones, return values) |
-| `internal/tasks/server/server_test.go` | Sync endpoint, delta activity/comments endpoints |
 | `web/src/hooks/useTaskSync.ts` | Unified hook — WS events + heartbeat + actions |
 
 ### Modified files
 | File | Changes |
 |---|---|
 | `internal/tasks/store/store.go` | `OnChange` callback, `nextSeq()`, `seq` column, `sync_meta`/`task_tombstones` tables, wire OnChange into all mutations, change `AddActivity`/`InsertComment` return types, add `ListModifiedSince`/`ListDeletedSince`/`MaxSeq`/`PruneTombstones`/`AllCommentsAfterID`/`ActivityAfterID` |
+| `internal/tasks/store/store_test.go` | Add tests for OnChange, nextSeq, delta queries, tombstones, return value changes |
 | `internal/tasks/server/server.go` | Wire `OnChange→Broadcast`, register `GET /api/tasks/sync`, add `?after=` to activity/comments, remove manual Broadcast calls, start tombstone pruning goroutine |
+| `internal/tasks/server/server_test.go` | Add tests for sync endpoint, delta activity/comments endpoints |
 | `web/src/hooks/useChat.ts` | Forward `task.*` WS messages via `CustomEvent` before the typed switch |
 | `web/src/pages/TasksPage.tsx` | Replace `useTasks` with `useTaskSync({ mode: 'kanban' })` |
 | `web/src/pages/TaskDetailPage.tsx` | Replace manual fetching with `useTaskSync({ taskId, mode: 'detail' })` |
@@ -1480,7 +1480,7 @@ git commit -m "feat(tasks): sync endpoint, OnChange→Broadcast wiring, delta pa
 **Files:**
 - Modify: `web/src/hooks/useChat.ts`
 
-- [ ] **Step 1: Add task event forwarding**
+- [ ] **Step 1: Add task event forwarding + connection state events**
 
 In `useChat.ts`, find the `handleMessage` callback (line 177). Add the following **before** the `switch (type)` block (before `switch (type) {` at line 178):
 
@@ -1491,6 +1491,22 @@ In `useChat.ts`, find the `handleMessage` callback (line 177). Add the following
       window.dispatchEvent(new CustomEvent('ws:task-event', { detail: { type, data } }));
       return;
     }
+```
+
+Also, inside the `connection.ready` case (line 179), add at the top of its block:
+
+```typescript
+    window.dispatchEvent(new Event('ws:connected'));
+```
+
+Then add a `useEffect` after the `useWebSocket` call (around line 591) to broadcast disconnect:
+
+```typescript
+  useEffect(() => {
+    if (status === 'disconnected' || status === 'error') {
+      window.dispatchEvent(new Event('ws:disconnected'));
+    }
+  }, [status]);
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
@@ -1545,7 +1561,7 @@ Expected: no errors (new optional fields won't break existing usage)
 
 ```typescript
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Task, TaskActivity, TaskStage } from '../lib/types';
+import type { Task, TaskActivity } from '../lib/types';
 import { api } from '../lib/api';
 import { reportError, reportUsage } from '../lib/telemetry';
 
@@ -1603,6 +1619,7 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const wasConnectedRef = useRef(false);
 
   const cursorRef = useRef<string>('');
   const lastActivityIdRef = useRef<number>(0);
@@ -1658,7 +1675,6 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
         const detail = (event as CustomEvent).detail;
         if (!detail?.type) return;
         const { type, data } = detail;
-        setConnected(true);
 
         const parse = (d: unknown) => (typeof d === 'string' ? JSON.parse(d) : d);
 
@@ -1676,16 +1692,21 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
             break;
           }
           case 'task.activity': {
-            const payload = parse(data);
-            if (!taskId || payload.taskId === taskId) {
-              appendActivity(payload.activity);
+            // Only accumulate in detail mode — kanban doesn't use activity arrays.
+            if (mode === 'detail' && taskId) {
+              const payload = parse(data);
+              if (payload.taskId === taskId) {
+                appendActivity(payload.activity);
+              }
             }
             break;
           }
           case 'task.comment': {
-            const payload = parse(data);
-            if (!taskId || payload.taskId === taskId) {
-              appendComment(payload.comment);
+            if (mode === 'detail' && taskId) {
+              const payload = parse(data);
+              if (payload.taskId === taskId) {
+                appendComment(payload.comment);
+              }
             }
             break;
           }
@@ -1696,8 +1717,29 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
     };
 
     window.addEventListener('ws:task-event', handler);
-    return () => window.removeEventListener('ws:task-event', handler);
-  }, [taskId, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment]);
+
+    // Track WS connection state via useChat's existing connection.ready event.
+    // useChat dispatches 'ws:connected' on open, 'ws:disconnected' on close.
+    const onConnected = () => {
+      const wasDown = !wasConnectedRef.current;
+      setConnected(true);
+      wasConnectedRef.current = true;
+      // On reconnect (was down, now up), trigger immediate delta sync.
+      if (wasDown && cursorRef.current) doFullSync();
+    };
+    const onDisconnected = () => {
+      setConnected(false);
+      wasConnectedRef.current = false;
+    };
+    window.addEventListener('ws:connected', onConnected);
+    window.addEventListener('ws:disconnected', onDisconnected);
+
+    return () => {
+      window.removeEventListener('ws:task-event', handler);
+      window.removeEventListener('ws:connected', onConnected);
+      window.removeEventListener('ws:disconnected', onDisconnected);
+    };
+  }, [taskId, mode, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment, doFullSync]);
 
   // --- Initial Fetch ---
 
@@ -1749,9 +1791,14 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
               `/api/tasks/sync?cursor=${encodeURIComponent(cursorRef.current)}`
             );
           } catch (fetchErr) {
-            // Bad cursor (400) or network error — reset cursor and do full sync.
-            cursorRef.current = '';
-            resp = await api.get<SyncResponse>('/api/tasks/sync');
+            // Only reset cursor on 400 (bad/corrupt cursor).
+            // Network errors and 5xx should not trigger full sync — just propagate.
+            if (fetchErr instanceof Error && fetchErr.message.includes('400')) {
+              cursorRef.current = '';
+              resp = await api.get<SyncResponse>('/api/tasks/sync');
+            } else {
+              throw fetchErr;
+            }
           }
           if (resp.fullSync) {
             const map = new Map<number, Task>();
