@@ -1271,7 +1271,11 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		if tasks == nil {
 			tasks = []store.Task{}
 		}
-		maxSeq, _ := s.store.MaxSeq()
+		maxSeq, err := s.store.MaxSeq()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read sequence"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"tasks":    tasks,
 			"deleted":  []int64{},
@@ -1282,7 +1286,11 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Snapshot current seq before query.
-	currentSeq, _ := s.store.MaxSeq()
+	currentSeq, err := s.store.MaxSeq()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read sequence"})
+		return
+	}
 
 	tasks, err := s.store.ListModifiedSince(seq)
 	if err != nil {
@@ -1395,10 +1403,13 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 
 **g) Add tombstone pruning goroutine with shutdown** — add a `pruneStop chan struct{}` field to `Server`, initialize in `New()`, and wire into `Start()` and `Shutdown()`:
 
-Add field to Server struct:
+Add fields to Server struct:
 ```go
 pruneStop chan struct{}
+pruneOnce sync.Once
 ```
+
+Add `"sync"` to the import block.
 
 Initialize in `New()`:
 ```go
@@ -1431,10 +1442,10 @@ func (s *Server) Start() error {
 }
 ```
 
-Update `Shutdown()`:
+Update `Shutdown()` — use `sync.Once` to prevent double-close panic:
 ```go
 func (s *Server) Shutdown(ctx context.Context) error {
-	close(s.pruneStop)
+	s.pruneOnce.Do(func() { close(s.pruneStop) })
 	return s.httpServer.Shutdown(ctx)
 }
 ```
@@ -1643,37 +1654,44 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const { type, data } = (event as CustomEvent).detail;
-      setConnected(true);
+      try {
+        const detail = (event as CustomEvent).detail;
+        if (!detail?.type) return;
+        const { type, data } = detail;
+        setConnected(true);
 
-      switch (type) {
-        case 'task.created':
-        case 'task.updated':
-        case 'task.stage_changed':
-        case 'task.substep_changed': {
-          const task = typeof data === 'string' ? JSON.parse(data) : data;
-          applyTaskUpdate(task);
-          break;
-        }
-        case 'task.deleted': {
-          const payload = typeof data === 'string' ? JSON.parse(data) : data;
-          applyTaskDelete(payload.id);
-          break;
-        }
-        case 'task.activity': {
-          const payload = typeof data === 'string' ? JSON.parse(data) : data;
-          if (!taskId || payload.taskId === taskId) {
-            appendActivity(payload.activity);
+        const parse = (d: unknown) => (typeof d === 'string' ? JSON.parse(d) : d);
+
+        switch (type) {
+          case 'task.created':
+          case 'task.updated':
+          case 'task.stage_changed':
+          case 'task.substep_changed': {
+            applyTaskUpdate(parse(data));
+            break;
           }
-          break;
-        }
-        case 'task.comment': {
-          const payload = typeof data === 'string' ? JSON.parse(data) : data;
-          if (!taskId || payload.taskId === taskId) {
-            appendComment(payload.comment);
+          case 'task.deleted': {
+            const payload = parse(data);
+            applyTaskDelete(payload.id);
+            break;
           }
-          break;
+          case 'task.activity': {
+            const payload = parse(data);
+            if (!taskId || payload.taskId === taskId) {
+              appendActivity(payload.activity);
+            }
+            break;
+          }
+          case 'task.comment': {
+            const payload = parse(data);
+            if (!taskId || payload.taskId === taskId) {
+              appendComment(payload.comment);
+            }
+            break;
+          }
         }
+      } catch (err) {
+        reportError('useTaskSync.wsEvent', err);
       }
     };
 
@@ -1693,9 +1711,11 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       setError(null);
 
       if (mode === 'detail' && taskId) {
+        // Use ?after=0 to get ascending order (same as delta path).
+        // Default endpoint returns newest-first which would mismatch delta merge semantics.
         const [acts, cmts] = await Promise.all([
-          api.get<TaskActivity[]>(`/api/tasks/${taskId}/activity`),
-          api.get<Comment[]>(`/api/tasks/${taskId}/comments`),
+          api.get<TaskActivity[]>(`/api/tasks/${taskId}/activity?after=0`),
+          api.get<Comment[]>(`/api/tasks/${taskId}/comments?after=0`),
         ]);
         setActivities(acts);
         setComments(cmts);
@@ -1723,9 +1743,16 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
 
       try {
         if (mode === 'kanban') {
-          const resp = await api.get<SyncResponse>(
-            `/api/tasks/sync?cursor=${encodeURIComponent(cursorRef.current)}`
-          );
+          let resp: SyncResponse;
+          try {
+            resp = await api.get<SyncResponse>(
+              `/api/tasks/sync?cursor=${encodeURIComponent(cursorRef.current)}`
+            );
+          } catch (fetchErr) {
+            // Bad cursor (400) or network error — reset cursor and do full sync.
+            cursorRef.current = '';
+            resp = await api.get<SyncResponse>('/api/tasks/sync');
+          }
           if (resp.fullSync) {
             const map = new Map<number, Task>();
             for (const t of resp.tasks) map.set(t.id, t);
@@ -1754,16 +1781,21 @@ export function useTaskSync(options?: UseTaskSyncOptions): UseTaskSyncReturn {
       }
     };
 
-    const id = setInterval(tick, interval);
+    let timerId: ReturnType<typeof setInterval> | null = setInterval(tick, interval);
 
-    // Tab visibility: pause when hidden, sync on focus.
+    // Tab visibility: pause when hidden, immediate sync + resume on focus.
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') tick();
+      if (document.visibilityState === 'hidden') {
+        if (timerId) { clearInterval(timerId); timerId = null; }
+      } else {
+        tick();
+        if (!timerId) { timerId = setInterval(tick, interval); }
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
-      clearInterval(id);
+      if (timerId) clearInterval(timerId);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [mode, taskId, applyTaskUpdate, applyTaskDelete, appendActivity, appendComment]);
