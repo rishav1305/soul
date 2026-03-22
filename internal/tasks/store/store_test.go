@@ -599,3 +599,120 @@ func TestUpdate_BumpsSeq(t *testing.T) {
 		t.Errorf("seq should increase: before=%d after=%d", seqBefore, seqAfter)
 	}
 }
+
+func TestListModifiedSince(t *testing.T) {
+	s := newTestStore(t)
+	t1, _ := s.Create("first", "", "")
+	t2, _ := s.Create("second", "", "")
+
+	var seq1 int64
+	s.db.QueryRow("SELECT seq FROM tasks WHERE id = ?", t1.ID).Scan(&seq1)
+
+	tasks, err := s.ListModifiedSince(seq1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != t2.ID {
+		t.Errorf("expected only second task, got %d tasks", len(tasks))
+	}
+}
+
+func TestListDeletedSince(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("doomed", "", "")
+	seq, _ := s.MaxSeq()
+	s.Delete(task.ID)
+
+	deleted, err := s.ListDeletedSince(seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || deleted[0] != task.ID {
+		t.Errorf("expected [%d], got %v", task.ID, deleted)
+	}
+}
+
+func TestMaxSeq(t *testing.T) {
+	s := newTestStore(t)
+	seq0, _ := s.MaxSeq()
+	if seq0 != 0 {
+		t.Errorf("initial MaxSeq = %d, want 0", seq0)
+	}
+	s.Create("test", "", "")
+	seq1, _ := s.MaxSeq()
+	if seq1 != 1 {
+		t.Errorf("after create MaxSeq = %d, want 1", seq1)
+	}
+}
+
+func TestPruneTombstones(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("old", "", "")
+	s.Delete(task.ID)
+
+	// Backdate the tombstone to 25h ago.
+	s.db.Exec("UPDATE task_tombstones SET deleted_at = datetime('now', '-25 hours') WHERE id = ?", task.ID)
+
+	pruned, err := s.PruneTombstones()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 1 {
+		t.Errorf("pruned = %d, want 1", pruned)
+	}
+
+	// Verify it's gone.
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM task_tombstones").Scan(&count)
+	if count != 0 {
+		t.Errorf("tombstones remaining = %d, want 0", count)
+	}
+}
+
+func TestPruneTombstones_PreservesRecent(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("recent", "", "")
+	s.Delete(task.ID)
+
+	pruned, _ := s.PruneTombstones()
+	if pruned != 0 {
+		t.Errorf("should not prune recent tombstone, pruned %d", pruned)
+	}
+}
+
+func TestAllCommentsAfterID(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	s.InsertComment(task.ID, "user", "feedback", "first")
+	cmt2, _ := s.InsertComment(task.ID, "agent", "response", "second")
+	cmt3, _ := s.InsertComment(task.ID, "user", "feedback", "third")
+
+	comments, err := s.AllCommentsAfterID(task.ID, cmt2.ID-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("expected 2 comments, got %d", len(comments))
+	}
+	if comments[0].ID != cmt2.ID || comments[1].ID != cmt3.ID {
+		t.Errorf("unexpected order: %d, %d", comments[0].ID, comments[1].ID)
+	}
+	if comments[0].Author != "agent" {
+		t.Errorf("expected agent comment, got %q", comments[0].Author)
+	}
+}
+
+func TestActivityAfterID(t *testing.T) {
+	s := newTestStore(t)
+	task, _ := s.Create("test", "", "")
+	act1, _ := s.AddActivity(task.ID, "task.created", nil)
+	act2, _ := s.AddActivity(task.ID, "task.started", nil)
+
+	activities, err := s.ActivityAfterID(task.ID, act1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activities) != 1 || activities[0].ID != act2.ID {
+		t.Errorf("expected 1 activity (act2), got %d", len(activities))
+	}
+}

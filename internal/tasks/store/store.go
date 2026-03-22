@@ -580,6 +580,111 @@ func (s *Store) RemoveDependency(taskID, dependsOn int64) error {
 	return nil
 }
 
+// MaxSeq returns the current global sequence number.
+func (s *Store) MaxSeq() (int64, error) {
+	var seq int64
+	err := s.db.QueryRow("SELECT value FROM sync_meta WHERE key = 'seq'").Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("tasks: max seq: %w", err)
+	}
+	return seq, nil
+}
+
+// ListModifiedSince returns all tasks with seq > the given value.
+func (s *Store) ListModifiedSince(seq int64) ([]Task, error) {
+	rows, err := s.db.Query(
+		"SELECT id, title, description, stage, workflow, product, substep, metadata, seq, created_at, updated_at FROM tasks WHERE seq > ? ORDER BY seq ASC",
+		seq,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list modified since: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.Seq, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan modified: %w", err)
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
+}
+
+// ListDeletedSince returns IDs of tasks deleted after the given seq.
+func (s *Store) ListDeletedSince(seq int64) ([]int64, error) {
+	rows, err := s.db.Query("SELECT id FROM task_tombstones WHERE seq > ?", seq)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list deleted since: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("tasks: scan tombstone: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// PruneTombstones removes tombstones older than 24 hours. Returns count removed.
+func (s *Store) PruneTombstones() (int64, error) {
+	result, err := s.db.Exec("DELETE FROM task_tombstones WHERE deleted_at < datetime('now', '-24 hours')")
+	if err != nil {
+		return 0, fmt.Errorf("tasks: prune tombstones: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n, nil
+}
+
+// AllCommentsAfterID returns all comments (any author) for a task with id > lastID, ascending.
+func (s *Store) AllCommentsAfterID(taskID, lastID int64) ([]Comment, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, author, type, body, created_at FROM task_comments WHERE task_id = ? AND id > ? ORDER BY id ASC",
+		taskID, lastID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: all comments after: %w", err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan comment: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
+}
+
+// ActivityAfterID returns activity entries for a task with id > lastID, ascending.
+func (s *Store) ActivityAfterID(taskID, lastID int64) ([]Activity, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, event_type, data, created_at FROM task_activity WHERE task_id = ? AND id > ? ORDER BY id ASC",
+		taskID, lastID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: activity after: %w", err)
+	}
+	defer rows.Close()
+
+	var activities []Activity
+	for rows.Next() {
+		var a Activity
+		if err := rows.Scan(&a.ID, &a.TaskID, &a.EventType, &a.Data, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan activity: %w", err)
+		}
+		activities = append(activities, a)
+	}
+	return activities, rows.Err()
+}
+
 // NextReady returns the oldest backlog task whose dependencies are all done.
 func (s *Store) NextReady() (*Task, error) {
 	var t Task
