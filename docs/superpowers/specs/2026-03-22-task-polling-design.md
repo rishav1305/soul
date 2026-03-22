@@ -90,7 +90,7 @@ The executor's `store.Update(id, {stage: "validation"})` automatically broadcast
 {
   "tasks": [/* tasks modified since cursor */],
   "deleted": [/* task IDs deleted since cursor */],
-  "cursor": "1711108800.42",
+  "cursor": "eyJzZXEiOjQyLCJ0cyI6MTcxMTEwODgwMH0=",
   "fullSync": false
 }
 ```
