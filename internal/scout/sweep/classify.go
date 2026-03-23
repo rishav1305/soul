@@ -66,13 +66,18 @@ func ClassifyTier(lead store.Lead, dreamCompanies []DreamCompany) int {
 		return 1
 	}
 
-	// Tier 1: large AI company.
-	if lead.CompanyEmployeeCount > 500 && containsCI(lead.CompanyIndustry, "AI") {
+	// Slugs are needed by both the large-company check and the frontier-tech check below.
+	slugs := strings.ToLower(lead.TechnologySlugs)
+
+	// Tier 1: large company with AI signals.
+	// Matches if industry explicitly says "AI" OR if the technology stack contains
+	// any AI-related tooling — catches enterprises like financial/banking/professional
+	// services companies that hire for AI without calling themselves "AI companies".
+	if lead.CompanyEmployeeCount > 500 && (containsCI(lead.CompanyIndustry, "AI") || hasAITechSlugs(slugs)) {
 		return 1
 	}
 
 	// Tier 1: uses frontier AI provider tech.
-	slugs := strings.ToLower(lead.TechnologySlugs)
 	if strings.Contains(slugs, "anthropic") || strings.Contains(slugs, "openai") || strings.Contains(slugs, "deepmind") {
 		return 1
 	}
