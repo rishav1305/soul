@@ -123,35 +123,70 @@ func (e *Evaluator) evaluateWithClaude(ctx context.Context, questionText, refere
 	return &result, nil
 }
 
+// stopWords is a set of common English words that carry little semantic meaning.
+// Filtering them prevents long reference answers with many connectives from
+// unfairly penalising correct paraphrases.
+var stopWords = map[string]bool{
+	"a": true, "an": true, "the": true, "is": true, "are": true, "was": true,
+	"were": true, "be": true, "been": true, "being": true, "have": true,
+	"has": true, "had": true, "do": true, "does": true, "did": true,
+	"to": true, "of": true, "in": true, "for": true, "on": true, "with": true,
+	"at": true, "by": true, "from": true, "as": true, "it": true, "its": true,
+	"that": true, "this": true, "and": true, "or": true, "but": true, "not": true,
+	"can": true, "will": true, "would": true, "could": true, "should": true,
+	"may": true, "might": true, "must": true, "shall": true, "which": true,
+	"who": true, "what": true, "where": true, "when": true, "how": true,
+	"all": true, "each": true, "any": true, "so": true, "if": true, "into": true,
+	"than": true, "then": true, "they": true, "their": true, "them": true,
+	"there": true, "we": true, "our": true, "us": true, "i": true, "my": true,
+	"you": true, "your": true, "he": true, "she": true, "his": true, "her": true,
+}
+
+// evaluateWordOverlap computes token-F1 score between the reference and user
+// answers after filtering stop words. Token-F1 is the harmonic mean of:
+//   - precision = shared_tokens / user_tokens (penalises off-topic verbosity)
+//   - recall    = shared_tokens / ref_tokens  (penalises missing key concepts)
+//
+// This is fairer than recall-only because a correct, concise paraphrase still
+// scores highly even when it uses fewer words than the reference.
 func (e *Evaluator) evaluateWordOverlap(referenceAnswer, userAnswer string) *Result {
-	refWords := toWordSet(strings.ToLower(referenceAnswer))
-	userWords := toWordSet(strings.ToLower(userAnswer))
+	refWords := toSignificantWordSet(strings.ToLower(referenceAnswer))
+	userWords := toSignificantWordSet(strings.ToLower(userAnswer))
 
 	if len(refWords) == 0 {
 		return &Result{Correct: true, Score: 100, Quality: 5, Feedback: "No reference answer to compare against."}
 	}
 
-	overlap := 0
+	// Collect shared tokens; track which ref words were hit/missed for feedback.
+	shared := 0
 	var keyHit, keyMissed []string
 	for w := range refWords {
 		if userWords[w] {
-			overlap++
+			shared++
 			keyHit = append(keyHit, w)
 		} else {
 			keyMissed = append(keyMissed, w)
 		}
 	}
 
-	ratio := float64(overlap) / float64(len(refWords))
-	score := ratio * 100
-	correct := ratio >= 0.5
+	// Token-F1: harmonic mean of precision and recall.
+	precision := float64(shared) / float64(len(userWords))
+	recall := float64(shared) / float64(len(refWords))
+
+	var f1 float64
+	if precision+recall > 0 {
+		f1 = 2 * precision * recall / (precision + recall)
+	}
+
+	score := f1 * 100
+	correct := f1 >= 0.5
 	quality := scoreToQuality(score)
 
-	feedback := "Evaluated using word overlap (Claude unavailable)."
+	feedback := "Evaluated using token-F1 (Claude unavailable)."
 	if correct {
-		feedback = fmt.Sprintf("%.0f%% keyword match. %s", score, feedback)
+		feedback = fmt.Sprintf("%.0f%% token-F1 match. %s", score, feedback)
 	} else {
-		feedback = fmt.Sprintf("Only %.0f%% keyword match. %s", score, feedback)
+		feedback = fmt.Sprintf("Only %.0f%% token-F1 match. %s", score, feedback)
 	}
 
 	return &Result{
@@ -186,6 +221,40 @@ func toWordSet(s string) map[string]bool {
 	for _, w := range strings.Fields(s) {
 		w = strings.Trim(w, ".,;:!?\"'()[]{}/-")
 		if w != "" {
+			set[w] = true
+		}
+	}
+	return set
+}
+
+// normalizeToken applies minimal morphological normalization so that common
+// inflected forms match their base tokens:
+//   - Strips possessive 's ("go's" → "go")
+//   - Strips plural/verb 's' suffix for words > 4 chars that don't end in "ss"
+//     ("goroutines" → "goroutine", "threads" → "thread")
+//
+// This is intentionally simple — no full stemmer — to avoid false matches.
+func normalizeToken(w string) string {
+	// Strip possessive: "go's" → "go"
+	if strings.HasSuffix(w, "'s") && len(w) > 2 {
+		return w[:len(w)-2]
+	}
+	// Strip plain plural 's' for words longer than 4 chars (skip "ss" endings).
+	if len(w) > 4 && strings.HasSuffix(w, "s") && !strings.HasSuffix(w, "ss") {
+		return w[:len(w)-1]
+	}
+	return w
+}
+
+// toSignificantWordSet builds a word set from s, excluding stop words and
+// normalizing common inflected forms (plurals, possessives).
+// Used by evaluateWordOverlap to focus on semantically meaningful tokens.
+func toSignificantWordSet(s string) map[string]bool {
+	set := make(map[string]bool)
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, ".,;:!?\"'()[]{}/-")
+		w = normalizeToken(w)
+		if w != "" && !stopWords[w] {
 			set[w] = true
 		}
 	}

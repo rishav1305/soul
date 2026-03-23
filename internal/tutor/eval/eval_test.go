@@ -215,6 +215,48 @@ func TestExtractJSON(t *testing.T) {
 	}
 }
 
+// TestTokenF1FairerThanRecall demonstrates the core bug fix:
+// the old recall-only metric would score a correct paraphrase as 0% because
+// it used different words. The new token-F1 metric scores it correctly.
+func TestTokenF1FairerThanRecall(t *testing.T) {
+	e := New(nil) // nil sender → word-overlap path
+	// Reference is verbose with stop words. User answer is a correct paraphrase.
+	result, err := e.Evaluate(context.Background(),
+		"What does a goroutine do?",
+		"A goroutine is a lightweight thread of execution managed by the Go runtime scheduler.",
+		"Goroutines are lightweight threads managed by Go's runtime.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With the old recall-only metric this would score ~20% (misses "a", "is", "of", "by", "the" etc.)
+	// With token F1 + stop-word filtering it should score above 50.
+	if result.Score < 50 {
+		t.Errorf("expected score >= 50 for a correct paraphrase, got %.1f — check token F1 and stop-word filtering", result.Score)
+	}
+	if !result.Correct {
+		t.Errorf("expected correct=true for a correct paraphrase, got false (score=%.1f)", result.Score)
+	}
+}
+
+func TestStopWordsNotPenalised(t *testing.T) {
+	// A reference packed with stop words should not drag down the score.
+	// "The key is that a hash map is a data structure that maps a key to a value."
+	// User says "hash map maps keys to values" — highly overlapping on meaningful words.
+	e := New(nil)
+	result, err := e.Evaluate(context.Background(),
+		"What is a hash map?",
+		"The key is that a hash map is a data structure that maps a key to a value efficiently.",
+		"A hash map is a data structure that maps keys to values.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Score < 60 {
+		t.Errorf("expected score >= 60 when stop words are filtered, got %.1f", result.Score)
+	}
+}
+
 func TestEvaluateNoSenderNilResult(t *testing.T) {
 	// With nil sender and a valid (non-skip) answer, must return word-overlap result, never nil.
 	e := New(nil)
