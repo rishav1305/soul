@@ -88,6 +88,7 @@ func DefaultConfig() *SweepConfig {
 			"hyderabad", "mumbai", "pune", "gurgaon", "gurugram",
 			"noida",
 		},
+		Remote:             boolPtr(true),
 		PostedAtMaxAgeDays: 7,
 		Limit:              50,
 		IntervalHours:      24,
@@ -95,6 +96,8 @@ func DefaultConfig() *SweepConfig {
 		AutoScoreThreshold: 70,
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 func LoadConfig(path string) (*SweepConfig, error) {
 	data, err := os.ReadFile(path)

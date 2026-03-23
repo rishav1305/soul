@@ -12,11 +12,13 @@ import (
 
 // SweepResult holds the outcome of a sweep run.
 type SweepResult struct {
-	NewLeads    int      `json:"newLeads"`
-	Duplicates  int      `json:"duplicates"`
-	Scored      int      `json:"scored"`
-	HighMatches int      `json:"highMatches"`
-	Errors      []string `json:"errors"`
+	NewLeads      int            `json:"newLeads"`
+	Duplicates    int            `json:"duplicates"`
+	Filtered      int            `json:"filtered"`
+	FilterReasons map[string]int `json:"filterReasons,omitempty"`
+	Scored        int            `json:"scored"`
+	HighMatches   int            `json:"highMatches"`
+	Errors        []string       `json:"errors"`
 }
 
 // Scorer scores a lead by ID. Implemented by ai.Service.ScoreLead.
@@ -61,6 +63,15 @@ func RunSweep(client *TheirStackClient, st *store.Store, cfg *SweepConfig, score
 		for _, job := range resp.Jobs {
 			if job.DiscoveredAt > maxDiscoveredAt {
 				maxDiscoveredAt = job.DiscoveredAt
+			}
+
+			if filtered, reason := ShouldFilter(job, st); filtered {
+				result.Filtered++
+				if result.FilterReasons == nil {
+					result.FilterReasons = make(map[string]int)
+				}
+				result.FilterReasons[string(reason)]++
+				continue
 			}
 
 			lead := JobToLead(job)

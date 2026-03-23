@@ -22,8 +22,8 @@ func newTestSweepStore(t *testing.T) *store.Store {
 
 const twoJobsResponse = `{
 	"data": [
-		{"id": 1, "job_title": "Go Dev", "company": "Acme", "discovered_at": "2026-03-17T10:00:00Z", "employment_statuses": ["full_time"], "technology_slugs": ["go"], "keyword_slugs": []},
-		{"id": 2, "job_title": "React Dev", "company": "Beta", "discovered_at": "2026-03-17T11:00:00Z", "employment_statuses": ["contract"], "technology_slugs": ["react"], "keyword_slugs": []}
+		{"id": 1, "job_title": "LLM Engineer", "company": "Acme", "discovered_at": "2026-03-17T10:00:00Z", "employment_statuses": ["full_time"], "technology_slugs": ["langchain", "go"], "keyword_slugs": [], "company_domain": "acme-llm.io", "seniority": "senior", "company_object": {"employee_count": 100, "industry": "Software", "domain": "acme-llm.io"}},
+		{"id": 2, "job_title": "AI Engineer", "company": "Beta", "discovered_at": "2026-03-17T11:00:00Z", "employment_statuses": ["contract"], "technology_slugs": ["openai", "react"], "keyword_slugs": [], "company_domain": "beta-ai.io", "seniority": "senior", "company_object": {"employee_count": 200, "industry": "Software", "domain": "beta-ai.io"}}
 	],
 	"metadata": {"total_results": 2}
 }`
