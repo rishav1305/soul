@@ -144,7 +144,7 @@ func TestCommentsAfter_ExcludesSoul(t *testing.T) {
 	// Insert a mix of user and soul comments.
 	s.InsertComment(task.ID, "user", "feedback", "User comment 1")
 	s.InsertComment(task.ID, "soul", "auto", "Soul reply")
-	id3, _ := s.InsertComment(task.ID, "user", "feedback", "User comment 2")
+	cmt3, _ := s.InsertComment(task.ID, "user", "feedback", "User comment 2")
 
 	// CommentsAfter(0) should only return user comments.
 	comments, err := s.CommentsAfter(0)
@@ -160,12 +160,12 @@ func TestCommentsAfter_ExcludesSoul(t *testing.T) {
 		}
 	}
 
-	// CommentsAfter(id3) should return nothing since id3 is the last user comment.
-	comments, err = s.CommentsAfter(id3)
+	// CommentsAfter(cmt3.ID) should return nothing since cmt3 is the last user comment.
+	comments, err = s.CommentsAfter(cmt3.ID)
 	if err != nil {
-		t.Fatalf("CommentsAfter(%d): %v", id3, err)
+		t.Fatalf("CommentsAfter(%d): %v", cmt3.ID, err)
 	}
 	if len(comments) != 0 {
-		t.Errorf("expected 0 comments after id %d, got %d", id3, len(comments))
+		t.Errorf("expected 0 comments after id %d, got %d", cmt3.ID, len(comments))
 	}
 }

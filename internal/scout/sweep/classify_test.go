@@ -280,3 +280,63 @@ func TestClassifyTier_NoDreamCompanies(t *testing.T) {
 		t.Errorf("no dream companies + anthropic domain = tier %d, want 3", tier)
 	}
 }
+
+// Regression tests for large enterprise companies (Deutsche Bank, Amazon, Wells Fargo
+// style) that were incorrectly classified as Tier 3 because their industry field does
+// not contain "AI" even though they use AI technology and have 500+ employees.
+
+func TestClassifyTier_LargeEnterpriseWithAITech_Tier1(t *testing.T) {
+	tests := []struct {
+		name     string
+		industry string
+		slugs    string
+	}{
+		{"financial services with python/pytorch", "Financial Services", `["python","pytorch","langchain"]`},
+		{"banking with openai SDK", "Banking", `["python","openai","typescript"]`},
+		{"professional services with AI tools", "Professional Services", `["python","tensorflow","huggingface"]`},
+		{"technology with LLM stack", "Technology", `["python","llm","langchain","qdrant"]`},
+		{"retail tech with AI infra", "Retail Technology", `["python","pytorch","mlflow","ray"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lead := store.Lead{
+				CompanyEmployeeCount: 1000,
+				CompanyIndustry:      tt.industry,
+				TechnologySlugs:      tt.slugs,
+				CompanyDomain:        "bigcorp.com",
+			}
+			tier := ClassifyTier(lead, dreamCompanies())
+			if tier != 1 {
+				t.Errorf("1000 employees + %q industry + AI tech slugs = tier %d, want 1", tt.industry, tier)
+			}
+		})
+	}
+}
+
+func TestClassifyTier_LargeEnterpriseNoAITech_NotTier1(t *testing.T) {
+	// Large company with no AI tech signals should NOT be Tier 1.
+	lead := store.Lead{
+		CompanyEmployeeCount: 1000,
+		CompanyIndustry:      "Financial Services",
+		TechnologySlugs:      `["java","spring","oracle"]`,
+		CompanyDomain:        "legacy-bank.com",
+	}
+	tier := ClassifyTier(lead, dreamCompanies())
+	if tier == 1 {
+		t.Errorf("1000 employees + Financial Services + NO AI tech = tier %d, want 2 or 3", tier)
+	}
+}
+
+func TestClassifyTier_LargeEnterpriseAITech_BoundaryEmployee(t *testing.T) {
+	// Exactly 500 employees with AI tech — boundary: must be > 500 to qualify.
+	lead := store.Lead{
+		CompanyEmployeeCount: 500,
+		CompanyIndustry:      "Financial Services",
+		TechnologySlugs:      `["python","pytorch"]`,
+		CompanyDomain:        "boundary.com",
+	}
+	tier := ClassifyTier(lead, dreamCompanies())
+	if tier == 1 {
+		t.Errorf("exactly 500 employees + AI tech = tier %d, want 2 or 3 (boundary is >500)", tier)
+	}
+}

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
-import { api } from '../lib/api';
 import { reportError, reportUsage } from '../lib/telemetry';
 import { usePerformance } from '../hooks/usePerformance';
-import type { Task, TaskActivity, TaskStage } from '../lib/types';
+import { useTaskSync } from '../hooks/useTaskSync';
+import type { TaskStage } from '../lib/types';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 
 const STAGE_COLORS: Record<TaskStage, string> = {
@@ -18,51 +18,34 @@ export function TaskDetailPage() {
   usePerformance('TaskDetailPage');
   const { id } = useParams<{ id: string }>();
   useEffect(() => { reportUsage('page.view', { page: 'task_detail', taskId: id }); }, [id]);
-  const [task, setTask] = useState<Task | null>(null);
-  const [activities, setActivities] = useState<TaskActivity[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!id) return;
-    setLoading(true);
-    Promise.all([
-      api.get<Task>(`/api/tasks/${id}`),
-      api.get<TaskActivity[]>(`/api/tasks/${id}/activity`),
-    ])
-      .then(([t, acts]) => {
-        setTask(t);
-        setActivities(acts);
-        setError(null);
-      })
-      .catch(err => {
-        reportError('TaskDetailPage.load', err);
-        setError(err.message);
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+  const taskId = id ? Number(id) : undefined;
+  const { task, activities, loading, error, startTask, stopTask } = useTaskSync({
+    taskId,
+    mode: 'detail',
+  });
+
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleStart = async () => {
-    if (!id) return;
+    if (!taskId) return;
+    setActionError(null);
     try {
-      await api.post(`/api/tasks/${id}/start`);
-      const t = await api.get<Task>(`/api/tasks/${id}`);
-      setTask(t);
+      await startTask(taskId);
     } catch (err) {
       reportError('TaskDetailPage.start', err);
-      setError(err instanceof Error ? err.message : 'Start failed');
+      setActionError(err instanceof Error ? err.message : 'Failed to start task');
     }
   };
 
   const handleStop = async () => {
-    if (!id) return;
+    if (!taskId) return;
+    setActionError(null);
     try {
-      await api.post(`/api/tasks/${id}/stop`);
-      const t = await api.get<Task>(`/api/tasks/${id}`);
-      setTask(t);
+      await stopTask(taskId);
     } catch (err) {
       reportError('TaskDetailPage.stop', err);
-      setError(err instanceof Error ? err.message : 'Stop failed');
+      setActionError(err instanceof Error ? err.message : 'Failed to stop task');
     }
   };
 
@@ -104,6 +87,9 @@ export function TaskDetailPage() {
           </div>
 
           {/* Actions */}
+          {actionError && (
+            <div data-testid="action-error" className="text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">{actionError}</div>
+          )}
           <div className="flex gap-2">
             {(task.stage === 'backlog' || task.stage === 'blocked') && (
               <button

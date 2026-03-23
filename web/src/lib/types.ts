@@ -429,7 +429,9 @@ export interface Task {
   stage: TaskStage;
   workflow: string;
   product: string;
+  substep: string;
   metadata: string;
+  seq: number;
   createdAt: string;
   updatedAt: string;
 }

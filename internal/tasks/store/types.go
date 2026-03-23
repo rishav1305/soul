@@ -1,5 +1,22 @@
 package store
 
+// TaskDeleted is the OnChange payload for task.deleted events.
+type TaskDeleted struct {
+	ID int64 `json:"id"`
+}
+
+// TaskActivity is the OnChange payload for task.activity events.
+type TaskActivity struct {
+	TaskID   int64    `json:"taskId"`
+	Activity Activity `json:"activity"`
+}
+
+// TaskComment is the OnChange payload for task.comment events.
+type TaskComment struct {
+	TaskID  int64   `json:"taskId"`
+	Comment Comment `json:"comment"`
+}
+
 // Substep represents a task substep within the active stage.
 type Substep string
 

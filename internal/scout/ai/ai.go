@@ -42,9 +42,10 @@ func (s *Service) fetchProfile() (map[string]interface{}, error) {
 }
 
 // sendAndExtractText sends a request and returns the text content.
+// Model is left empty so the stream client uses its default (currently
+// claude-haiku-4-5-20251001, the only model accessible via OAuth beta).
 func (s *Service) sendAndExtractText(ctx context.Context, system string, userMsg string) (string, error) {
 	req := &stream.Request{
-		Model:     "claude-sonnet-4-6",
 		MaxTokens: 4096,
 		System:    system,
 		Messages: []stream.Message{

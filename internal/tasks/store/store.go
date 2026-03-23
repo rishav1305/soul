@@ -30,6 +30,7 @@ type Task struct {
 	Product     string    `json:"product,omitempty"`
 	Substep     string    `json:"substep,omitempty"`
 	Metadata    string    `json:"metadata,omitempty"`
+	Seq         int64     `json:"seq"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -55,8 +56,9 @@ type Activity struct {
 
 // Store provides SQLite-backed task CRUD.
 type Store struct {
-	db     *sql.DB
-	dbPath string
+	db       *sql.DB
+	dbPath   string
+	OnChange func(event string, payload any)
 }
 
 // Open creates a new Store with the given database path.
@@ -148,21 +150,319 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("tasks: migrate comments: %w", err)
 	}
 
+	// Add seq column to tasks (ignore if already exists).
+	_, err = s.db.Exec("ALTER TABLE tasks ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("tasks: migrate seq column: %w", err)
+	}
+
+	// Create seq index.
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_seq ON tasks(seq)"); err != nil {
+		return fmt.Errorf("tasks: migrate seq index: %w", err)
+	}
+
+	// Tombstone table for tracking deleted task IDs.
+	const tombstoneSchema = `
+	CREATE TABLE IF NOT EXISTS task_tombstones (
+		id INTEGER NOT NULL,
+		seq INTEGER NOT NULL,
+		deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_tombstones_seq ON task_tombstones(seq);
+	CREATE INDEX IF NOT EXISTS idx_tombstones_deleted_at ON task_tombstones(deleted_at);
+	`
+	if _, err := s.db.Exec(tombstoneSchema); err != nil {
+		return fmt.Errorf("tasks: migrate tombstones: %w", err)
+	}
+
+	// Global monotonic sequence counter.
+	const syncMetaSchema = `
+	CREATE TABLE IF NOT EXISTS sync_meta (
+		key TEXT PRIMARY KEY,
+		value INTEGER NOT NULL
+	);
+	`
+	if _, err := s.db.Exec(syncMetaSchema); err != nil {
+		return fmt.Errorf("tasks: migrate sync_meta: %w", err)
+	}
+	if _, err := s.db.Exec("INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('seq', 0)"); err != nil {
+		return fmt.Errorf("tasks: init sync_meta seq: %w", err)
+	}
+
 	return nil
 }
 
-// InsertComment adds a comment to a task.
-func (s *Store) InsertComment(taskID int64, author, typ, body string) (int64, error) {
+// nextSeqTx atomically increments and returns the global sequence counter within a transaction.
+func (s *Store) nextSeqTx(tx *sql.Tx) (int64, error) {
+	var seq int64
+	err := tx.QueryRow("UPDATE sync_meta SET value = value + 1 WHERE key = 'seq' RETURNING value").Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("tasks: next seq: %w", err)
+	}
+	return seq, nil
+}
+
+// fireOnChange calls the OnChange hook if set.
+func (s *Store) fireOnChange(event string, payload any) {
+	if s.OnChange != nil {
+		s.OnChange(event, payload)
+	}
+}
+
+// Create inserts a new task with the given title, description, and product.
+func (s *Store) Create(title, description, product string) (*Task, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("tasks: create begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	seq, err := s.nextSeqTx(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := tx.Exec(
+		"INSERT INTO tasks (title, description, product, seq) VALUES (?, ?, ?, ?)",
+		title, description, product, seq,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: create: %w", err)
+	}
+
+	id, _ := res.LastInsertId()
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("tasks: create commit: %w", err)
+	}
+
+	task, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	s.fireOnChange("task.created", task)
+	return task, nil
+}
+
+// Get retrieves a task by ID.
+func (s *Store) Get(id int64) (*Task, error) {
+	var t Task
+	err := s.db.QueryRow(
+		"SELECT id, title, description, stage, workflow, product, substep, metadata, seq, created_at, updated_at FROM tasks WHERE id = ?",
+		id,
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.Seq, &t.CreatedAt, &t.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("tasks: not found: %d", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tasks: get: %w", err)
+	}
+	return &t, nil
+}
+
+// List returns tasks, optionally filtered by stage and/or product.
+func (s *Store) List(stage, product string) ([]Task, error) {
+	query := "SELECT id, title, description, stage, workflow, product, substep, metadata, seq, created_at, updated_at FROM tasks"
+	var conditions []string
+	var args []interface{}
+
+	if stage != "" {
+		conditions = append(conditions, "stage = ?")
+		args = append(args, stage)
+	}
+	if product != "" {
+		conditions = append(conditions, "product = ?")
+		args = append(args, product)
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY updated_at DESC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.Seq, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan: %w", err)
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
+}
+
+// Update modifies task fields. Allowed keys: title, description, stage, workflow, product, substep, metadata.
+func (s *Store) Update(id int64, fields map[string]interface{}) (*Task, error) {
+	if stage, ok := fields["stage"]; ok {
+		if sv, ok := stage.(string); ok && !validStages[sv] {
+			return nil, fmt.Errorf("tasks: invalid stage: %q", sv)
+		}
+	}
+
+	var setClauses []string
+	var args []interface{}
+	allowed := map[string]bool{"title": true, "description": true, "stage": true, "workflow": true, "product": true, "substep": true, "metadata": true}
+
+	for k, v := range fields {
+		if !allowed[k] {
+			continue
+		}
+		setClauses = append(setClauses, k+" = ?")
+		args = append(args, v)
+	}
+	if len(setClauses) == 0 {
+		return s.Get(id)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("tasks: update begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	seq, err := s.nextSeqTx(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	setClauses = append(setClauses, "seq = ?")
+	args = append(args, seq)
+	setClauses = append(setClauses, "updated_at = CURRENT_TIMESTAMP")
+	args = append(args, id)
+
+	result, err := tx.Exec(
+		"UPDATE tasks SET "+strings.Join(setClauses, ", ")+" WHERE id = ?",
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: update: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return nil, fmt.Errorf("tasks: not found: %d", id)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("tasks: update commit: %w", err)
+	}
+
+	task, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Classify event by priority: stage_changed > substep_changed > updated.
+	var eventType string
+	if _, ok := fields["stage"]; ok {
+		eventType = "task.stage_changed"
+	} else if _, ok := fields["substep"]; ok {
+		eventType = "task.substep_changed"
+	} else {
+		eventType = "task.updated"
+	}
+
+	s.fireOnChange(eventType, task)
+	return task, nil
+}
+
+// Delete removes a task and its activity (cascading foreign key).
+func (s *Store) Delete(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("tasks: delete begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	seq, err := s.nextSeqTx(tx)
+	if err != nil {
+		return err
+	}
+
+	result, err := tx.Exec("DELETE FROM tasks WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("tasks: delete: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("tasks: not found: %d", id)
+	}
+
+	if _, err := tx.Exec(
+		"INSERT INTO task_tombstones (id, seq) VALUES (?, ?)",
+		id, seq,
+	); err != nil {
+		return fmt.Errorf("tasks: insert tombstone: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("tasks: delete commit: %w", err)
+	}
+
+	s.fireOnChange("task.deleted", TaskDeleted{ID: id})
+	return nil
+}
+
+// AddActivity appends an activity entry for a task and returns the created Activity.
+func (s *Store) AddActivity(taskID int64, eventType string, data map[string]interface{}) (Activity, error) {
+	dataJSON := "{}"
+	if data != nil {
+		b, err := json.Marshal(data)
+		if err != nil {
+			return Activity{}, fmt.Errorf("tasks: marshal activity data: %w", err)
+		}
+		dataJSON = string(b)
+	}
+	res, err := s.db.Exec(
+		"INSERT INTO task_activity (task_id, event_type, data) VALUES (?, ?, ?)",
+		taskID, eventType, dataJSON,
+	)
+	if err != nil {
+		return Activity{}, fmt.Errorf("tasks: add activity: %w", err)
+	}
+	actID, _ := res.LastInsertId()
+
+	var act Activity
+	err = s.db.QueryRow(
+		"SELECT id, task_id, event_type, data, created_at FROM task_activity WHERE id = ?",
+		actID,
+	).Scan(&act.ID, &act.TaskID, &act.EventType, &act.Data, &act.CreatedAt)
+	if err != nil {
+		return Activity{}, fmt.Errorf("tasks: get activity: %w", err)
+	}
+
+	s.fireOnChange("task.activity", TaskActivity{TaskID: taskID, Activity: act})
+	return act, nil
+}
+
+// InsertComment adds a comment to a task and returns the created Comment.
+func (s *Store) InsertComment(taskID int64, author, typ, body string) (Comment, error) {
 	createdAt := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.Exec(
 		"INSERT INTO task_comments (task_id, author, type, body, created_at) VALUES (?, ?, ?, ?, ?)",
 		taskID, author, typ, body, createdAt,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("tasks: insert comment: %w", err)
+		return Comment{}, fmt.Errorf("tasks: insert comment: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return id, nil
+
+	cmt := Comment{
+		ID:        id,
+		TaskID:    taskID,
+		Author:    author,
+		Type:      typ,
+		Body:      body,
+		CreatedAt: createdAt,
+	}
+
+	s.fireOnChange("task.comment", TaskComment{TaskID: taskID, Comment: cmt})
+	return cmt, nil
 }
 
 // GetComments returns all comments for a task, ordered by created_at ASC.
@@ -207,144 +507,6 @@ func (s *Store) CommentsAfter(lastID int64) ([]Comment, error) {
 		comments = append(comments, c)
 	}
 	return comments, rows.Err()
-}
-
-// Create inserts a new task with the given title, description, and product.
-func (s *Store) Create(title, description, product string) (*Task, error) {
-	res, err := s.db.Exec(
-		"INSERT INTO tasks (title, description, product) VALUES (?, ?, ?)",
-		title, description, product,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("tasks: create: %w", err)
-	}
-	id, _ := res.LastInsertId()
-	return s.Get(id)
-}
-
-// Get retrieves a task by ID.
-func (s *Store) Get(id int64) (*Task, error) {
-	var t Task
-	err := s.db.QueryRow(
-		"SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at FROM tasks WHERE id = ?",
-		id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("tasks: not found: %d", id)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("tasks: get: %w", err)
-	}
-	return &t, nil
-}
-
-// List returns tasks, optionally filtered by stage and/or product.
-func (s *Store) List(stage, product string) ([]Task, error) {
-	query := "SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at FROM tasks"
-	var conditions []string
-	var args []interface{}
-
-	if stage != "" {
-		conditions = append(conditions, "stage = ?")
-		args = append(args, stage)
-	}
-	if product != "" {
-		conditions = append(conditions, "product = ?")
-		args = append(args, product)
-	}
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-	query += " ORDER BY updated_at DESC"
-
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("tasks: list: %w", err)
-	}
-	defer rows.Close()
-
-	var tasks []Task
-	for rows.Next() {
-		var t Task
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("tasks: scan: %w", err)
-		}
-		tasks = append(tasks, t)
-	}
-	return tasks, rows.Err()
-}
-
-// Update modifies task fields. Allowed keys: title, description, stage, workflow, product, substep, metadata.
-func (s *Store) Update(id int64, fields map[string]interface{}) (*Task, error) {
-	if stage, ok := fields["stage"]; ok {
-		if sv, ok := stage.(string); ok && !validStages[sv] {
-			return nil, fmt.Errorf("tasks: invalid stage: %q", sv)
-		}
-	}
-
-	var setClauses []string
-	var args []interface{}
-	allowed := map[string]bool{"title": true, "description": true, "stage": true, "workflow": true, "product": true, "substep": true, "metadata": true}
-
-	for k, v := range fields {
-		if !allowed[k] {
-			continue
-		}
-		setClauses = append(setClauses, k+" = ?")
-		args = append(args, v)
-	}
-	if len(setClauses) == 0 {
-		return s.Get(id)
-	}
-
-	setClauses = append(setClauses, "updated_at = CURRENT_TIMESTAMP")
-	args = append(args, id)
-
-	result, err := s.db.Exec(
-		"UPDATE tasks SET "+strings.Join(setClauses, ", ")+" WHERE id = ?",
-		args...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("tasks: update: %w", err)
-	}
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return nil, fmt.Errorf("tasks: not found: %d", id)
-	}
-	return s.Get(id)
-}
-
-// Delete removes a task and its activity (cascading foreign key).
-func (s *Store) Delete(id int64) error {
-	result, err := s.db.Exec("DELETE FROM tasks WHERE id = ?", id)
-	if err != nil {
-		return fmt.Errorf("tasks: delete: %w", err)
-	}
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("tasks: not found: %d", id)
-	}
-	return nil
-}
-
-// AddActivity appends an activity entry for a task.
-func (s *Store) AddActivity(taskID int64, eventType string, data map[string]interface{}) error {
-	dataJSON := "{}"
-	if data != nil {
-		b, err := json.Marshal(data)
-		if err != nil {
-			return fmt.Errorf("tasks: marshal activity data: %w", err)
-		}
-		dataJSON = string(b)
-	}
-	_, err := s.db.Exec(
-		"INSERT INTO task_activity (task_id, event_type, data) VALUES (?, ?, ?)",
-		taskID, eventType, dataJSON,
-	)
-	if err != nil {
-		return fmt.Errorf("tasks: add activity: %w", err)
-	}
-	return nil
 }
 
 // ListActivity returns activity entries for a task, newest first.
@@ -413,11 +575,116 @@ func (s *Store) RemoveDependency(taskID, dependsOn int64) error {
 	return nil
 }
 
+// MaxSeq returns the current global sequence number.
+func (s *Store) MaxSeq() (int64, error) {
+	var seq int64
+	err := s.db.QueryRow("SELECT value FROM sync_meta WHERE key = 'seq'").Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("tasks: max seq: %w", err)
+	}
+	return seq, nil
+}
+
+// ListModifiedSince returns all tasks with seq > the given value.
+func (s *Store) ListModifiedSince(seq int64) ([]Task, error) {
+	rows, err := s.db.Query(
+		"SELECT id, title, description, stage, workflow, product, substep, metadata, seq, created_at, updated_at FROM tasks WHERE seq > ? ORDER BY seq ASC",
+		seq,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list modified since: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.Seq, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan modified: %w", err)
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
+}
+
+// ListDeletedSince returns IDs of tasks deleted after the given seq.
+func (s *Store) ListDeletedSince(seq int64) ([]int64, error) {
+	rows, err := s.db.Query("SELECT id FROM task_tombstones WHERE seq > ?", seq)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list deleted since: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("tasks: scan tombstone: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// PruneTombstones removes tombstones older than 24 hours. Returns count removed.
+func (s *Store) PruneTombstones() (int64, error) {
+	result, err := s.db.Exec("DELETE FROM task_tombstones WHERE deleted_at < datetime('now', '-24 hours')")
+	if err != nil {
+		return 0, fmt.Errorf("tasks: prune tombstones: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n, nil
+}
+
+// AllCommentsAfterID returns all comments (any author) for a task with id > lastID, ascending.
+func (s *Store) AllCommentsAfterID(taskID, lastID int64) ([]Comment, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, author, type, body, created_at FROM task_comments WHERE task_id = ? AND id > ? ORDER BY id ASC",
+		taskID, lastID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: all comments after: %w", err)
+	}
+	defer rows.Close()
+
+	var comments []Comment
+	for rows.Next() {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Type, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan comment: %w", err)
+		}
+		comments = append(comments, c)
+	}
+	return comments, rows.Err()
+}
+
+// ActivityAfterID returns activity entries for a task with id > lastID, ascending.
+func (s *Store) ActivityAfterID(taskID, lastID int64) ([]Activity, error) {
+	rows, err := s.db.Query(
+		"SELECT id, task_id, event_type, data, created_at FROM task_activity WHERE task_id = ? AND id > ? ORDER BY id ASC",
+		taskID, lastID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: activity after: %w", err)
+	}
+	defer rows.Close()
+
+	var activities []Activity
+	for rows.Next() {
+		var a Activity
+		if err := rows.Scan(&a.ID, &a.TaskID, &a.EventType, &a.Data, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan activity: %w", err)
+		}
+		activities = append(activities, a)
+	}
+	return activities, rows.Err()
+}
+
 // NextReady returns the oldest backlog task whose dependencies are all done.
 func (s *Store) NextReady() (*Task, error) {
 	var t Task
 	err := s.db.QueryRow(`
-		SELECT id, title, description, stage, workflow, product, substep, metadata, created_at, updated_at
+		SELECT id, title, description, stage, workflow, product, substep, metadata, seq, created_at, updated_at
 		FROM tasks t
 		WHERE t.stage = 'backlog'
 		AND NOT EXISTS (
@@ -427,7 +694,7 @@ func (s *Store) NextReady() (*Task, error) {
 		)
 		ORDER BY t.created_at ASC
 		LIMIT 1
-	`).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.CreatedAt, &t.UpdatedAt)
+	`).Scan(&t.ID, &t.Title, &t.Description, &t.Stage, &t.Workflow, &t.Product, &t.Substep, &t.Metadata, &t.Seq, &t.CreatedAt, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("tasks: no ready task found")
 	}

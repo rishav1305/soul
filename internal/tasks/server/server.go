@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rishav1305/soul-v2/internal/chat/metrics"
@@ -29,15 +30,17 @@ type Server struct {
 	host        string
 	port        int
 	startTime   time.Time
+	pruneStop   chan struct{}
+	pruneOnce   sync.Once
 }
 
 // Option configures the Server.
 type Option func(*Server)
 
 func WithStore(s *store.Store) Option      { return func(srv *Server) { srv.store = s } }
-func WithLogger(l events.Logger) Option   { return func(srv *Server) { srv.logger = l } }
-func WithHost(h string) Option            { return func(srv *Server) { srv.host = h } }
-func WithPort(p int) Option               { return func(srv *Server) { srv.port = p } }
+func WithLogger(l events.Logger) Option    { return func(srv *Server) { srv.logger = l } }
+func WithHost(h string) Option             { return func(srv *Server) { srv.host = h } }
+func WithPort(p int) Option                { return func(srv *Server) { srv.port = p } }
 func WithExecutor(e *executor.Executor) Option { return func(srv *Server) { srv.executor = e } }
 func WithMetrics(l *metrics.EventLogger) Option { return func(srv *Server) { srv.metrics = l } }
 
@@ -50,15 +53,25 @@ func New(opts ...Option) *Server {
 		host:        "127.0.0.1",
 		port:        3004,
 		startTime:   time.Now(),
+		pruneStop:   make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+
+	// Wire OnChange → Broadcast.
+	if s.store != nil {
+		s.store.OnChange = func(event string, payload any) {
+			data, _ := json.Marshal(payload)
+			s.broadcaster.Broadcast(Event{Type: event, Data: string(data)})
+		}
 	}
 
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/tasks", s.handleListTasks)
 	s.mux.HandleFunc("POST /api/tasks", s.handleCreateTask)
+	s.mux.HandleFunc("GET /api/tasks/sync", s.handleSync)
 	s.mux.HandleFunc("GET /api/tasks/{id}", s.handleGetTask)
 	s.mux.HandleFunc("PATCH /api/tasks/{id}", s.handleUpdateTask)
 	s.mux.HandleFunc("DELETE /api/tasks/{id}", s.handleDeleteTask)
@@ -95,14 +108,30 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// Start begins listening.
+// Start begins listening. It also starts the tombstone pruning goroutine.
 func (s *Server) Start() error {
+	if s.store != nil {
+		s.store.PruneTombstones()
+		go func() {
+			ticker := time.NewTicker(1 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					s.store.PruneTombstones()
+				case <-s.pruneStop:
+					return
+				}
+			}
+		}()
+	}
 	log.Printf("soul-tasks listening on http://%s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully stops the server.
+// Shutdown gracefully stops the server and the pruning goroutine.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.pruneOnce.Do(func() { close(s.pruneStop) })
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -134,6 +163,72 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tasks)
 }
 
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	cursorParam := r.URL.Query().Get("cursor")
+	seq, ts, err := store.DecodeCursor(cursorParam)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid cursor"})
+		return
+	}
+
+	now := time.Now().Unix()
+
+	// Full sync if no cursor or stale (>24h).
+	if cursorParam == "" || (now-ts > 24*3600) {
+		tasks, err := s.store.List("", "")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if tasks == nil {
+			tasks = []store.Task{}
+		}
+		maxSeq, err := s.store.MaxSeq()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read sequence"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"tasks":    tasks,
+			"deleted":  []int64{},
+			"cursor":   store.EncodeCursor(maxSeq, now),
+			"fullSync": true,
+		})
+		return
+	}
+
+	currentSeq, err := s.store.MaxSeq()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read sequence"})
+		return
+	}
+
+	tasks, err := s.store.ListModifiedSince(seq)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if tasks == nil {
+		tasks = []store.Task{}
+	}
+
+	deleted, err := s.store.ListDeletedSince(seq)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if deleted == nil {
+		deleted = []int64{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tasks":    tasks,
+		"deleted":  deleted,
+		"cursor":   store.EncodeCursor(currentSeq, now),
+		"fullSync": false,
+	})
+}
+
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title       string `json:"title"`
@@ -156,13 +251,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log activity.
-	s.store.AddActivity(task.ID, "task.created", map[string]interface{}{
+	_, _ = s.store.AddActivity(task.ID, "task.created", map[string]interface{}{
 		"title": task.Title,
 	})
-
-	// Broadcast event.
-	data, _ := json.Marshal(task)
-	s.broadcaster.Broadcast(Event{Type: "task.created", Data: string(data)})
 
 	_ = s.logger.Log("task.created", map[string]interface{}{
 		"task_id": task.ID,
@@ -217,10 +308,6 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast update.
-	data, _ := json.Marshal(task)
-	s.broadcaster.Broadcast(Event{Type: "task.updated", Data: string(data)})
-
 	writeJSON(w, http.StatusOK, task)
 }
 
@@ -266,11 +353,6 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": errMsg})
 		return
 	}
-	task, _ := s.store.Get(id)
-	if task != nil {
-		data, _ := json.Marshal(task)
-		s.broadcaster.Broadcast(Event{Type: "task.started", Data: string(data)})
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
 }
 
@@ -301,6 +383,26 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	afterStr := r.URL.Query().Get("after")
+	if afterStr != "" {
+		afterID, err := strconv.ParseInt(afterStr, 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after param"})
+			return
+		}
+		activities, err := s.store.ActivityAfterID(id, afterID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if activities == nil {
+			activities = []store.Activity{}
+		}
+		writeJSON(w, http.StatusOK, activities)
+		return
+	}
+
 	activities, err := s.store.ListActivity(id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -377,12 +479,12 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		body.Type = "feedback"
 	}
 
-	commentID, err := s.store.InsertComment(id, body.Author, body.Type, body.Body)
+	cmt, err := s.store.InsertComment(id, body.Author, body.Type, body.Body)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": commentID})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": cmt.ID})
 }
 
 func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
@@ -391,6 +493,26 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	afterStr := r.URL.Query().Get("after")
+	if afterStr != "" {
+		afterID, err := strconv.ParseInt(afterStr, 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after param"})
+			return
+		}
+		comments, err := s.store.AllCommentsAfterID(id, afterID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if comments == nil {
+			comments = []store.Comment{}
+		}
+		writeJSON(w, http.StatusOK, comments)
+		return
+	}
+
 	comments, err := s.store.GetComments(id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
