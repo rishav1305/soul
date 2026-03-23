@@ -74,8 +74,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, questionText, referenceAnswer,
 func (e *Evaluator) evaluateWithClaude(ctx context.Context, questionText, referenceAnswer, userAnswer string) (*Result, error) {
 	userMsg := fmt.Sprintf("Question:\n%s\n\nReference Answer:\n%s\n\nCandidate's Answer:\n%s", questionText, referenceAnswer, userAnswer)
 
+	// Model is left empty so the stream client uses its default (Haiku).
+	// Sonnet is not accessible via OAuth beta — leaving Model unset avoids 400s.
 	req := &stream.Request{
-		Model:     "claude-sonnet-4-6",
 		MaxTokens: 1024,
 		System:    evalSystemPrompt,
 		Messages: []stream.Message{

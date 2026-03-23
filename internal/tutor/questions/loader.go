@@ -9,7 +9,7 @@ import (
 	"github.com/rishav1305/soul-v2/internal/tutor/store"
 )
 
-//go:embed dsa_python.json ai_llm.json system_design.json
+//go:embed dsa_python.json ai_llm.json system_design.json behavioral.json
 var questionFS embed.FS
 
 // Question represents a seed question loaded from an embedded JSON file.
@@ -34,7 +34,7 @@ type LoadStats struct {
 // Load reads all embedded question JSON files and seeds them into the store.
 // It is idempotent: topics and questions with an existing source key are skipped.
 func Load(s *store.Store) (*LoadStats, error) {
-	files := []string{"dsa_python.json", "ai_llm.json", "system_design.json"}
+	files := []string{"dsa_python.json", "ai_llm.json", "system_design.json", "behavioral.json"}
 	stats := &LoadStats{}
 
 	for _, file := range files {

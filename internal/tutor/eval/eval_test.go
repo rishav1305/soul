@@ -12,10 +12,36 @@ import (
 type mockSender struct {
 	response *stream.Response
 	err      error
+	gotReq   *stream.Request
 }
 
 func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	m.gotReq = req
 	return m.response, m.err
+}
+
+func TestEvaluateUsesDefaultModel(t *testing.T) {
+	// eval.go must NOT hardcode a model so the stream client uses its
+	// OAuth-accessible default (Haiku). Sonnet is blocked via OAuth beta.
+	expected := Result{Correct: true, Score: 80, Quality: 4, Feedback: "Good."}
+	respJSON, _ := json.Marshal(expected)
+
+	sender := &mockSender{
+		response: &stream.Response{
+			Content: []stream.ContentBlock{{Type: "text", Text: string(respJSON)}},
+		},
+	}
+	e := New(sender)
+	_, err := e.Evaluate(context.Background(), "What is a goroutine?", "A goroutine is a lightweight thread.", "A goroutine is a lightweight thread managed by Go runtime.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sender.gotReq == nil {
+		t.Fatal("expected Send to be called")
+	}
+	if sender.gotReq.Model != "" {
+		t.Errorf("eval must not set Model field (got %q) — leave empty for stream client default (Haiku)", sender.gotReq.Model)
+	}
 }
 
 func TestEvaluateBlankAnswer(t *testing.T) {
