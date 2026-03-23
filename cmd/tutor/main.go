@@ -63,7 +63,9 @@ func runServe() {
 	// Claude API client for semantic evaluation.
 	credPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
 	authSource := auth.NewOAuthTokenSource(credPath, nil)
-	streamClient := stream.NewClient(authSource)
+	streamClient := stream.NewClient(authSource,
+		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
+	)
 	evaluator := eval.New(streamClient)
 	log.Println("tutor: semantic evaluation initialized")
 

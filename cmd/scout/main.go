@@ -81,7 +81,9 @@ func runServe() {
 	// 3. Create stream client for AI tools.
 	credPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
 	authSource := auth.NewOAuthTokenSource(credPath, nil)
-	streamClient := stream.NewClient(authSource)
+	streamClient := stream.NewClient(authSource,
+		stream.WithBetaHeader("prompt-caching-2024-07-31,"+auth.OAuthBetaHeader),
+	)
 
 	// 4. Create AI service (pdb may be nil).
 	aiSvc := ai.New(st, pdb, streamClient, dataDir)
