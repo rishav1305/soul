@@ -50,7 +50,7 @@ func runServe() {
 	// Server host/port.
 	host := os.Getenv("SOUL_SCOUT_HOST")
 	if host == "" {
-		host = "127.0.0.1"
+		host = "0.0.0.0"
 	}
 	port := 3020
 	if p := os.Getenv("SOUL_SCOUT_PORT"); p != "" {

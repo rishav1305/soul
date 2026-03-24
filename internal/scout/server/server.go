@@ -147,6 +147,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerRoutes() {
 	// Health.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /health", s.handleHealth)
 
 	// Leads.
 	s.mux.HandleFunc("POST /api/leads", s.handleAddLead)

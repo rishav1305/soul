@@ -60,6 +60,7 @@ func New(opts ...Option) *Server {
 
 	// Register routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/tutor/dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /api/tutor/analytics", s.handleAnalytics)
 	s.mux.HandleFunc("GET /api/tutor/topics", s.handleListTopics)
