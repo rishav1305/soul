@@ -131,8 +131,13 @@ func (s *Scheduler) runSweep() {
 	s.lastResult = result
 	s.mu.Unlock()
 
-	log.Printf("scout: sweep complete — %d new, %d dupes, %d scored, %d high matches",
-		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches)
+	if len(result.Errors) > 0 {
+		for _, e := range result.Errors {
+			log.Printf("scout: sweep error: %s", e)
+		}
+	}
+	log.Printf("scout: sweep complete — %d new, %d dupes, %d scored, %d high matches, %d errors",
+		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches, len(result.Errors))
 }
 
 // RunNow triggers an immediate sweep in a background goroutine.
@@ -177,8 +182,13 @@ func (s *Scheduler) runSweepLocked() {
 	s.lastResult = result
 	s.mu.Unlock()
 
-	log.Printf("scout: sweep complete — %d new, %d dupes, %d scored, %d high matches",
-		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches)
+	if len(result.Errors) > 0 {
+		for _, e := range result.Errors {
+			log.Printf("scout: sweep error: %s", e)
+		}
+	}
+	log.Printf("scout: sweep complete — %d new, %d dupes, %d scored, %d high matches, %d errors",
+		result.NewLeads, result.Duplicates, result.Scored, result.HighMatches, len(result.Errors))
 }
 
 // UpdateConfig replaces the live sweep config. Resets the ticker if interval changed.

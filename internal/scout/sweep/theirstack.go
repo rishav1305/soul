@@ -101,6 +101,12 @@ type CreditsExhaustedError struct{ Message string }
 
 func (e *CreditsExhaustedError) Error() string { return e.Message }
 
+// ForbiddenError is returned when the API responds with HTTP 403.
+// This typically indicates an invalid API key or insufficient subscription tier.
+type ForbiddenError struct{ Message string }
+
+func (e *ForbiddenError) Error() string { return e.Message }
+
 // IsRateLimitError reports whether err is a *RateLimitError.
 func IsRateLimitError(err error) bool {
 	_, ok := err.(*RateLimitError)
@@ -110,6 +116,12 @@ func IsRateLimitError(err error) bool {
 // IsCreditsExhaustedError reports whether err is a *CreditsExhaustedError.
 func IsCreditsExhaustedError(err error) bool {
 	_, ok := err.(*CreditsExhaustedError)
+	return ok
+}
+
+// IsForbiddenError reports whether err is a *ForbiddenError.
+func IsForbiddenError(err error) bool {
+	_, ok := err.(*ForbiddenError)
 	return ok
 }
 
@@ -193,6 +205,8 @@ func (c *TheirStackClient) Search(cfg *SweepConfig, cursor string, offset int) (
 		return nil, &RateLimitError{Message: fmt.Sprintf("theirstack: rate limit exceeded (429): %s", string(respBody))}
 	case http.StatusPaymentRequired:
 		return nil, &CreditsExhaustedError{Message: fmt.Sprintf("theirstack: credits exhausted (402): %s", string(respBody))}
+	case http.StatusForbidden:
+		return nil, &ForbiddenError{Message: fmt.Sprintf("theirstack: forbidden (403) — check API key or subscription: %s", string(respBody))}
 	default:
 		return nil, fmt.Errorf("theirstack: unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}

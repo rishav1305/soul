@@ -121,6 +121,39 @@ func TestJobToLead(t *testing.T) {
 	}
 }
 
+func TestRunSweep_403AppearsInErrors(t *testing.T) {
+	st := newTestSweepStore(t)
+	transport := &mockTransport{status: 403, response: `{"error":"forbidden"}`}
+	client := NewTheirStackClient("bad-key", &http.Client{Transport: transport})
+	cfg := DefaultConfig()
+
+	result, err := RunSweep(client, st, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunSweep should not return error on 403: %v", err)
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected 403 error in result.Errors, got none")
+	}
+	if !strings.Contains(result.Errors[0], "403") {
+		t.Errorf("expected error to mention 403, got: %q", result.Errors[0])
+	}
+}
+
+func TestRunSweep_403CursorNotAdvanced(t *testing.T) {
+	st := newTestSweepStore(t)
+	transport := &mockTransport{status: 403, response: `{"error":"forbidden"}`}
+	client := NewTheirStackClient("bad-key", &http.Client{Transport: transport})
+	cfg := DefaultConfig()
+
+	st.SetSyncMeta("theirstack_cursor", "2026-03-17T00:00:00Z")
+	RunSweep(client, st, cfg, nil)
+
+	cursor, _ := st.GetSyncMeta("theirstack_cursor")
+	if cursor != "2026-03-17T00:00:00Z" {
+		t.Errorf("cursor advanced to %q on 403 — should stay unchanged", cursor)
+	}
+}
+
 // Ensure unused imports are satisfied (io, strings used by mockTransport in theirstack_test.go).
 var _ = io.NopCloser
 var _ = strings.NewReader

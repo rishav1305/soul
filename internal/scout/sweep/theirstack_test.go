@@ -186,6 +186,18 @@ func TestTheirStackClient_Search_CreditsExhausted(t *testing.T) {
 	}
 }
 
+func TestTheirStackClient_Search_Forbidden(t *testing.T) {
+	client, _ := newMockClient(http.StatusForbidden, `{"error":"forbidden"}`)
+
+	_, err := client.Search(DefaultConfig(), "", 0)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsForbiddenError(err) {
+		t.Errorf("expected ForbiddenError, got: %T: %v", err, err)
+	}
+}
+
 func TestTheirStackClient_Search_ServerError(t *testing.T) {
 	client, _ := newMockClient(http.StatusInternalServerError, `{"error":"internal server error"}`)
 
@@ -193,7 +205,7 @@ func TestTheirStackClient_Search_ServerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if IsRateLimitError(err) || IsCreditsExhaustedError(err) {
+	if IsRateLimitError(err) || IsCreditsExhaustedError(err) || IsForbiddenError(err) {
 		t.Errorf("expected generic error, got typed error: %T", err)
 	}
 }
