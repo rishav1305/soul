@@ -502,12 +502,10 @@ func TestHandleSessionSwitch_Success(t *testing.T) {
 		t.Errorf("expected session.list, got %v", msg2["type"])
 	}
 	// Verify session.list data.sessions is an array (not double-nested).
+	// Note: the list only includes sessions with MessageCount > 0, so an empty
+	// (just-created) session is intentionally absent from the list.
 	if data, ok := msg2["data"].(map[string]interface{}); ok {
-		if sessions, ok := data["sessions"].([]interface{}); ok {
-			if len(sessions) == 0 {
-				t.Error("expected at least one session in session.list")
-			}
-		} else {
+		if _, ok := data["sessions"].([]interface{}); !ok {
 			t.Errorf("expected data.sessions to be an array, got %T", data["sessions"])
 		}
 	}
