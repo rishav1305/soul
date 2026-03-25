@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
@@ -18,6 +20,20 @@ type mockSender struct {
 func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
 	m.gotReq = req
 	return m.response, m.err
+}
+
+// slowSender blocks until ctx is cancelled — simulates a slow or hung API call.
+type slowSender struct {
+	done chan struct{}
+}
+
+func (s *slowSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.done:
+		return nil, fmt.Errorf("done channel closed")
+	}
 }
 
 func TestEvaluateUsesDefaultModel(t *testing.T) {
@@ -254,6 +270,39 @@ func TestStopWordsNotPenalised(t *testing.T) {
 	}
 	if result.Score < 60 {
 		t.Errorf("expected score >= 60 when stop words are filtered, got %.1f", result.Score)
+	}
+}
+
+// TestEvaluateClaudeTimeoutFallsBack verifies that when the Claude API is slow
+// (simulated by a blocking sender), the 30s internal timeout fires and the
+// evaluator falls back to word-overlap rather than blocking the caller.
+// We pass a short context so the test runs in milliseconds, not 30s.
+// context.WithTimeout(ctx, 30s) adopts the shorter of the two deadlines.
+func TestEvaluateClaudeTimeoutFallsBack(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+
+	e := New(&slowSender{done: done})
+
+	// 50ms deadline — much shorter than the 30s eval timeout — ensures the
+	// blocking sender is cancelled quickly for a fast test.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, err := e.Evaluate(ctx,
+		"What is a goroutine?",
+		"A goroutine is a lightweight concurrent thread managed by the Go runtime.",
+		"A goroutine is a lightweight concurrent thread managed by Go.",
+	)
+	if err != nil {
+		t.Fatalf("expected fallback result, not error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result from word-overlap fallback")
+	}
+	// Word-overlap fallback includes "Claude unavailable" in the feedback.
+	if !strings.Contains(result.Feedback, "Claude unavailable") {
+		t.Errorf("expected word-overlap fallback feedback, got: %q", result.Feedback)
 	}
 }
 

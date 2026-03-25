@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
@@ -84,7 +85,13 @@ func (e *Evaluator) evaluateWithClaude(ctx context.Context, questionText, refere
 		},
 	}
 
-	resp, err := e.sender.Send(ctx, req)
+	// Bound the Claude call to 30s so a slow or rate-limited API response
+	// fails fast and falls back to word-overlap rather than hanging the
+	// HTTP handler until the client times out (typically 90s).
+	evalCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := e.sender.Send(evalCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("eval: claude send: %w", err)
 	}
