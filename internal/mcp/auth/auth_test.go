@@ -191,7 +191,9 @@ func TestProtectedResourceMetadata(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if body["resource"] != "https://mcp.example.com" {
+	// Resource points to the MCP endpoint (base + "/mcp/"), not the bare base.
+	// Authorization server is the bare base URL.
+	if body["resource"] != "https://mcp.example.com/mcp/" {
 		t.Fatalf("resource=%v", body["resource"])
 	}
 
