@@ -59,12 +59,12 @@ function updateAssistantToolCall(
   updater: (tc: ToolCallMessage) => ToolCallMessage,
 ): ChatMessage[] {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
+    const msg = messages[i]!;
     if (msg.role !== 'assistant' || !msg.toolCalls) continue;
     const idx = msg.toolCalls.findIndex((tc) => tc.id === toolCallId);
     if (idx === -1) continue;
     const newToolCalls = [...msg.toolCalls];
-    newToolCalls[idx] = updater(newToolCalls[idx]);
+    newToolCalls[idx] = updater(newToolCalls[idx]!);
     const updated = [...messages];
     updated[i] = { ...msg, toolCalls: newToolCalls };
     return updated;

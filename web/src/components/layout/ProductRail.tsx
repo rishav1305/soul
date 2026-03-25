@@ -3,8 +3,8 @@ import type { PlannerTask, PanelPosition, DrawerLayout, ProductInfo } from '../.
 
 function productAbbr(name: string): string {
   const parts = name.replace(/[-_]/g, ' ').split(' ').filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
 }
 
 // ── Toggle component (reused from SettingsPanel) ──

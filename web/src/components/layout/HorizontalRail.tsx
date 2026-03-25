@@ -236,7 +236,7 @@ export default function HorizontalRail({
       .then((r) => r.json())
       .then((data: ModelInfo[]) => {
         setRailModels(data);
-        if (data.length > 0) setRailModel(data[0].id);
+        if (data.length > 0) setRailModel(data[0]!.id);
       })
       .catch(() => {});
   }, []);

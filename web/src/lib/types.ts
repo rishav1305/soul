@@ -814,7 +814,44 @@ export interface ProductInfo {
 
 export interface WSMessage {
   type: string;
-  data: unknown;
+  session_id?: string;
+  content?: string;
+  data?: unknown;
+}
+
+// ── Chat message types (v1 port) ────────────────────────────────────────
+
+export interface FindingMessage {
+  id: string;
+  title: string;
+  severity: string;
+  file?: string;
+  line?: number;
+}
+
+export interface ToolCallMessage {
+  id: string;
+  name: string;
+  input: unknown;
+  status: 'running' | 'complete' | 'error';
+  progress?: number;
+  output?: string;
+  findings?: FindingMessage[];
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  thinking?: string;
+  toolCalls?: ToolCallMessage[];
+  timestamp: Date;
+  model?: string;
+  pmNotification?: {
+    severity: 'info' | 'warning' | 'error';
+    taskIds: number[];
+    check: string;
+  };
 }
 
 // ── Layout types (v1 AppShell port) ───────────────────────────────────────
@@ -889,14 +926,4 @@ export interface SendOptions {
   disabledTools?: string[];
   thinking?: ThinkingConfig;
   context?: string;
-}
-
-/** Toast notification emitted when a planner task moves between stages. */
-export interface StageNotification {
-  id: string;
-  taskId: number;
-  taskTitle: string;
-  fromStage: TaskStage;
-  toStage: TaskStage;
-  time: string; // ISO
 }
