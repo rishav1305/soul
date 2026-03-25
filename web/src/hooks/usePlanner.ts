@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
-import type { PlannerTask, TaskStage, PlannerActivity, TaskComment, WSMessage } from '../lib/types.ts';
+import type { PlannerTask, TaskStage, PlannerActivity, TaskComment, TaskActivityEvent, TaskCommentEvent, WSMessage } from '../lib/types.ts';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
@@ -75,18 +75,21 @@ export function usePlanner() {
           break;
         }
         case 'task.activity': {
-          // Go Activity shape: { id, taskId, eventType, data, createdAt }
-          const activity = msg.data as PlannerActivity;
+          // Go broadcasts TaskActivity wrapper: { taskId, activity: Activity{...} }
+          const wrapper = msg.data as TaskActivityEvent;
+          const activity = wrapper?.activity;
           if (!activity?.taskId) break;
 
-          if (activity.eventType === 'token') {
-            // Accumulate streaming tokens.
+          // Go executor prefixes event types with "agent." (e.g. agent.tool_call,
+          // agent.end_turn, agent.hit_limit). Check with endsWith for future-proofing.
+          if (activity.eventType.endsWith('.tool_call')) {
+            // Agent tool call — accumulate streaming output.
             setTaskStreams((prev) => ({
               ...prev,
               [activity.taskId]: (prev[activity.taskId] || '') + activity.data,
             }));
-          } else if (activity.eventType === 'done') {
-            // Clear stream on completion.
+          } else if (activity.eventType.endsWith('.end_turn') || activity.eventType.endsWith('.hit_limit')) {
+            // Agent finished — clear stream.
             setTaskStreams((prev) => {
               const next = { ...prev };
               delete next[activity.taskId];
@@ -94,8 +97,8 @@ export function usePlanner() {
             });
           }
 
-          // Store non-token activities in the log.
-          if (activity.eventType !== 'token') {
+          // Store non-streaming activities in the log.
+          if (!activity.eventType.endsWith('.tool_call')) {
             setTaskActivities((prev) => ({
               ...prev,
               [activity.taskId]: [...(prev[activity.taskId] || []), activity].slice(-50),
@@ -104,8 +107,9 @@ export function usePlanner() {
           break;
         }
         case 'task.comment': {
-          // Go fires "task.comment" (not "task.comment.added").
-          const comment = msg.data as TaskComment;
+          // Go broadcasts TaskComment wrapper: { taskId, comment: Comment{...} }
+          const wrapper = msg.data as TaskCommentEvent;
+          const comment = wrapper?.comment;
           if (!comment?.taskId) break;
           setTaskComments((prev) => ({
             ...prev,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
 import { uuid } from '../lib/api.ts';
-import type { StageNotification, PlannerActivity, WSMessage } from '../lib/types.ts';
+import type { StageNotification, TaskActivityEvent, WSMessage } from '../lib/types.ts';
 
 const MAX_TOASTS = 5;
 const AUTO_DISMISS_MS = 4000;
@@ -15,8 +15,9 @@ export function useNotifications(tasks: { id: number; title: string }[], enabled
 
     const unsubscribe = onMessage((msg: WSMessage) => {
       if (msg.type !== 'task.activity') return;
-      // Go Activity shape: { id, taskId, eventType, data, createdAt }
-      const activity = msg.data as PlannerActivity;
+      // Go broadcasts TaskActivity wrapper: { taskId, activity: Activity{...} }
+      const wrapper = msg.data as TaskActivityEvent;
+      const activity = wrapper?.activity;
       if (!activity || activity.eventType !== 'task.stage_changed') return;
 
       // Parse "backlog → active" from data field

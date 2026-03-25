@@ -788,6 +788,26 @@ export interface PlannerActivity {
 }
 
 /**
+ * TaskActivityEvent — Go SSE/WS broadcast wrapper for task.activity events.
+ * Go struct: store.TaskActivity{ TaskID int64, Activity Activity }
+ * The activity is nested — unwrap before accessing fields.
+ */
+export interface TaskActivityEvent {
+  taskId: number;
+  activity: PlannerActivity;
+}
+
+/**
+ * TaskCommentEvent — Go SSE/WS broadcast wrapper for task.comment events.
+ * Go struct: store.TaskComment{ TaskID int64, Comment Comment }
+ * The comment is nested — unwrap before accessing fields.
+ */
+export interface TaskCommentEvent {
+  taskId: number;
+  comment: TaskComment;
+}
+
+/**
  * TaskComment — matches Go internal/tasks/store.Comment JSON shape (camelCase).
  * Go struct: { id, taskId, author, type, body, createdAt }
  */
