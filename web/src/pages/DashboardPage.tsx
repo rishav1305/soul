@@ -11,6 +11,7 @@ const STAGE_COLORS: Record<TaskStage, string> = {
   validation: 'bg-yellow-500',
   done: 'bg-green-500',
   blocked: 'bg-red-500',
+  brainstorm: 'bg-purple-500',
 };
 
 const STAGE_LABELS: Record<TaskStage, string> = {
@@ -19,6 +20,7 @@ const STAGE_LABELS: Record<TaskStage, string> = {
   validation: 'Validation',
   done: 'Done',
   blocked: 'Blocked',
+  brainstorm: 'Brainstorm',
 };
 
 export function DashboardPage() {

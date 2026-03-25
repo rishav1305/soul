@@ -436,7 +436,7 @@ export interface Task {
   updatedAt: string;
 }
 
-export type TaskStage = 'backlog' | 'active' | 'validation' | 'done' | 'blocked';
+export type TaskStage = 'backlog' | 'active' | 'validation' | 'done' | 'blocked' | 'brainstorm';
 
 /** tasks */
 export interface TaskActivity {
@@ -732,3 +732,160 @@ export interface ModelInfo {
  * Shape is opaque JSON from Supabase — Record allows forward compatibility.
  */
 export type ProfileData = Record<string, unknown>;
+
+// ── Planner types (v1 port) ────────────────────────────────────────────────
+// TaskStage is extended to include 'brainstorm' (see line 439).
+
+export type TaskSubstep = 'tdd' | 'implementing' | 'reviewing' | 'qa_test' | 'e2e_test' | 'security_review';
+
+export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
+
+export type GridSubView = 'grid' | 'table' | 'grouped';
+
+export interface TaskFilters {
+  stage: TaskStage | 'all';
+  priority: number | 'all';
+  product: string | 'all';
+}
+
+export interface PlannerTask {
+  id: number;
+  title: string;
+  description: string;
+  stage: TaskStage;
+  priority: number;
+  product: string;
+  substep: TaskSubstep | '';
+  metadata: string;
+  plan: string;
+  output: string;
+  error: string;
+  blocker: string;
+  acceptance: string;
+  agent_id: string;
+  source?: string;
+  parent_id?: number | null;
+  retry_count?: number;
+  max_retries?: number;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string;
+}
+
+/** Planner WebSocket activity event (snake_case, v1 API shape). */
+export interface PlannerActivity {
+  task_id: number;
+  type: 'status' | 'stage' | 'tool_call' | 'tool_complete' | 'tool_error' | 'token' | 'done';
+  content: string;
+  time: string;
+}
+
+export interface TaskComment {
+  id: number;
+  task_id: number;
+  author: string;
+  type: string;
+  body: string;
+  created_at: string;
+  attachments?: string[];
+}
+
+export interface ProductInfo {
+  name: string;
+  label: string;
+  version?: string;
+  color?: string;
+  tools?: number;
+  running?: boolean;
+  icon?: string;
+}
+
+export interface WSMessage {
+  type: string;
+  data: unknown;
+}
+
+// ── Layout types (v1 AppShell port) ───────────────────────────────────────
+
+export type HorizontalRailPosition = 'bottom' | 'top';
+export type PanelPosition = 'bottom' | 'top' | 'right';
+export type HorizontalRailTab = 'chat' | 'tasks';
+export type DrawerLayout = 'split' | 'independent';
+
+export interface LayoutState {
+  taskView: TaskView;
+  gridSubView: GridSubView;
+  panelWidth: number | null;
+  filters: TaskFilters;
+  activeProduct: string | null;
+  railPosition: HorizontalRailPosition;
+  chatPosition: PanelPosition;
+  tasksPosition: PanelPosition;
+  railExpanded: boolean;
+  railHeightVh: number;
+  railTab: HorizontalRailTab;
+  chatSplitPct: number;
+  drawerLayout: DrawerLayout;
+  panelExpanded: boolean;
+  sessionsOpen: boolean;
+  settingsOpen: boolean;
+  autoInjectContext: boolean;
+  showContextChip: boolean;
+  toastsEnabled: boolean;
+  inlineBadgesEnabled: boolean;
+  syncProductFilter: boolean;
+  chatRailExpanded: boolean;
+  chatRailHeightVh: number;
+  tasksRailExpanded: boolean;
+  tasksRailHeightVh: number;
+  rightPanelWidth: number;
+  rightChatWidth: number;
+  rightTasksWidth: number;
+  rightChatExpanded: boolean;
+  rightTasksExpanded: boolean;
+}
+
+export interface StageNotification {
+  id: string;
+  taskId: number;
+  taskTitle: string;
+  fromStage: TaskStage;
+  toStage: TaskStage;
+  time: string;
+}
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  summary: string;
+  model: string;
+  message_count: number;
+  status: 'running' | 'idle' | 'completed' | 'completed_unread';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  contextPct: number;
+}
+
+export interface SendOptions {
+  model?: string;
+  chatType?: string;
+  disabledTools?: string[];
+  thinking?: ThinkingConfig;
+  context?: string;
+}
+
+/** Toast notification emitted when a planner task moves between stages. */
+export interface StageNotification {
+  id: string;
+  taskId: number;
+  taskTitle: string;
+  fromStage: TaskStage;
+  toStage: TaskStage;
+  time: string; // ISO
+}

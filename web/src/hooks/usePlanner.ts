@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
-import type { PlannerTask, TaskStage, TaskActivity, TaskComment, WSMessage } from '../lib/types.ts';
+import type { PlannerTask, TaskStage, PlannerActivity, TaskComment, WSMessage } from '../lib/types.ts';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
 
@@ -20,7 +20,7 @@ export function usePlanner() {
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
   const [loading, setLoading] = useState(true);
   // Track live activity streams per task. Key = taskID.
-  const [taskActivities, setTaskActivities] = useState<Record<number, TaskActivity[]>>({});
+  const [taskActivities, setTaskActivities] = useState<Record<number, PlannerActivity[]>>({});
   // Track streaming output per task (accumulated tokens).
   const [taskStreams, setTaskStreams] = useState<Record<number, string>>({});
   const [taskComments, setTaskComments] = useState<Record<number, TaskComment[]>>({});
@@ -72,7 +72,7 @@ export function usePlanner() {
           break;
         }
         case 'task.activity': {
-          const activity = msg.data as TaskActivity;
+          const activity = msg.data as PlannerActivity;
           if (!activity?.task_id) break;
 
           if (activity.type === 'token') {

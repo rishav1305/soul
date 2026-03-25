@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
 import { uuid } from '../lib/api.ts';
-import type { StageNotification, TaskActivity, WSMessage } from '../lib/types.ts';
+import type { StageNotification, PlannerActivity, WSMessage } from '../lib/types.ts';
 
 const MAX_TOASTS = 5;
 const AUTO_DISMISS_MS = 4000;
@@ -15,7 +15,7 @@ export function useNotifications(tasks: { id: number; title: string }[], enabled
 
     const unsubscribe = onMessage((msg: WSMessage) => {
       if (msg.type !== 'task.activity') return;
-      const activity = msg.data as TaskActivity;
+      const activity = msg.data as PlannerActivity;
       if (!activity || activity.type !== 'stage') return;
 
       // Parse "backlog → active" from content
