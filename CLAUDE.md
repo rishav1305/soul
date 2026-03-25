@@ -97,10 +97,14 @@ internal/scout/
   agent/                      Claude CLI subprocess launcher
   server/                     HTTP server — 50 REST endpoints
 web/src/
-  main.tsx                    Entry — RouterProvider with lazy-loaded routes
-  router.tsx                  14 routes (/, /chat, /tasks, /tutor, /projects, /observe, /scout, /sentinel, /mesh, /bench)
-  layouts/
-    AppLayout.tsx             Shared header + nav (10 items) + Outlet
+  main.tsx                    Entry — AppShell (ErrorBoundary → AuthGate → AppShell)
+  router.tsx                  [DEAD CODE] Legacy RouterProvider routes — replaced by AppShell
+  components/layout/
+    AppShell.tsx              Primary shell — ProductRail, RightPanel, ChatSessionsProvider
+    ProductRail.tsx           Left nav rail — product icons, selection
+    RightPanel.tsx            Chat + Tasks panels with filters, drawers, sync
+    HorizontalRail.tsx        Bottom rail — model selector, voice input
+    ProductView.tsx           Product content area with per-product panels
   pages/
     ChatPage.tsx              Chat interface
     DashboardPage.tsx         System overview
