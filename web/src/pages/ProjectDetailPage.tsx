@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { useProjectDetail } from '../hooks/useProjectDetail';
 import { usePerformance } from '../hooks/usePerformance';
 import { reportUsage } from '../lib/telemetry';
-import type { Milestone, ProjectDetail, ProjectMetric, ProjectReadiness, ProfileSync } from '../lib/types';
+import type { Milestone, ProjectMetric, ProjectReadiness, ProfileSync } from '../lib/types';
 
 const statusColor: Record<string, string> = {
   backlog: 'bg-zinc-600 text-zinc-300',
