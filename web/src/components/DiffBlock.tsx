@@ -4,7 +4,7 @@ interface DiffBlockProps {
 
 export function DiffBlock({ content }: DiffBlockProps) {
   return (
-    <pre className="text-[11px] font-mono max-h-60 overflow-y-auto p-2">
+    <pre data-testid="diff-block" className="text-[11px] font-mono max-h-60 overflow-y-auto p-2">
       {content.split('\n').map((line, i) => {
         let cls = 'text-fg-muted';
         if (line.startsWith('+')) cls = 'text-green-400 bg-green-400/10';
