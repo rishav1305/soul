@@ -722,3 +722,13 @@ export interface ModelInfo {
   created_at: string;
   max_tokens: number;
 }
+
+// ── AppShell v1 port types ─────────────────────────────────────────────────
+// Non-generated section. Add types here that v1 components need but are not
+// in the YAML specs. Do NOT put generated types here.
+
+/**
+ * Structured profile data returned by the Scout profile tool.
+ * Shape is opaque JSON from Supabase — Record allows forward compatibility.
+ */
+export type ProfileData = Record<string, unknown>;
