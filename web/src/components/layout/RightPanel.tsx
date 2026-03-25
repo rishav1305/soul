@@ -246,6 +246,7 @@ export default function RightPanel({
   // ── Chat rail (collapsed) ──
   const chatRail = (
     <div
+      data-testid="right-chat-rail"
       className="flex flex-col items-center shrink-0 h-full py-2 gap-1 cursor-pointer hover:bg-elevated/50 transition-colors border-l border-border-subtle"
       style={{ width: RAIL_WIDTH }}
       onClick={onToggleChatExpanded}
@@ -282,6 +283,7 @@ export default function RightPanel({
   // ── Tasks rail (collapsed) ──
   const tasksRail = (
     <div
+      data-testid="right-tasks-rail"
       className="flex flex-col items-center shrink-0 h-full py-2 gap-1 cursor-pointer hover:bg-elevated/50 transition-colors border-l border-border-subtle"
       style={{ width: RAIL_WIDTH }}
       onClick={onToggleTasksExpanded}
@@ -314,26 +316,26 @@ export default function RightPanel({
 
   // ── Chat drawer (expanded) ──
   const chatDrawer = (
-    <div className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
+    <div data-testid="right-chat-drawer" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
       <div className="flex items-center px-3 gap-1.5 h-10 border-b border-border-subtle shrink-0">
         <span className="flex items-center gap-1.5 px-1 h-full text-xs font-display font-semibold text-soul">
           <span className="text-base leading-none">&#9670;</span> Chat
         </span>
         <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} title={connected ? 'Connected' : 'Disconnected'} />
         <div className="flex-1" />
-        <button type="button" onClick={handleReauth} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
+        <button type="button" data-testid="right-chat-reauth" onClick={handleReauth} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" /><path d="M1 1v3h3M13 13v-3h-3" /></svg>
           <span className="rp-label-action text-[10px] font-mono">Auth</span>
         </button>
-        <button type="button" onClick={() => setHistoryOpen((o) => !o)} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
+        <button type="button" data-testid="right-chat-history" onClick={() => setHistoryOpen((o) => !o)} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.5 2" /></svg>
           <span className="rp-label-action text-[10px] font-mono">History</span>
         </button>
-        <button type="button" onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }} className="h-6 flex items-center gap-1 px-1.5 rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer" title="New chat (Ctrl+Shift+N)">
+        <button type="button" data-testid="right-chat-new" onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }} className="h-6 flex items-center gap-1 px-1.5 rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer" title="New chat (Ctrl+Shift+N)">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg>
           <span className="rp-label-primary text-[10px] font-mono">New</span>
         </button>
-        <button type="button" onClick={onToggleChatExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Collapse chat">
+        <button type="button" data-testid="right-chat-collapse" onClick={onToggleChatExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Collapse chat">
           {collapseIcon}
           <span className="rp-label-action text-[10px] font-mono">Close</span>
         </button>
@@ -349,7 +351,7 @@ export default function RightPanel({
 
   // ── Tasks drawer (expanded) ──
   const tasksDrawer = (
-    <div className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
+    <div data-testid="right-tasks-drawer" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
       <div className="border-b border-border-subtle shrink-0">
         {/* Row 1: Title + Views + Actions */}
         <div className="flex items-center px-2 gap-1.5 h-9">
@@ -370,11 +372,11 @@ export default function RightPanel({
             </button>
           ))}
           <div className="flex-1" />
-          <button type="button" onClick={() => setShowNewForm(true)} className="h-6 flex items-center gap-1 px-1.5 bg-soul/10 hover:bg-soul/20 text-soul rounded font-display font-semibold transition-colors cursor-pointer shrink-0" title="New task">
+          <button type="button" data-testid="right-tasks-new" onClick={() => setShowNewForm(true)} className="h-6 flex items-center gap-1 px-1.5 bg-soul/10 hover:bg-soul/20 text-soul rounded font-display font-semibold transition-colors cursor-pointer shrink-0" title="New task">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg>
             <span className="rp-label-primary text-[10px] font-mono">New</span>
           </button>
-          <button type="button" onClick={onToggleTasksExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer shrink-0" title="Collapse tasks">
+          <button type="button" data-testid="right-tasks-collapse" onClick={onToggleTasksExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer shrink-0" title="Collapse tasks">
             {collapseIcon}
             <span className="rp-label-action text-[10px] font-mono">Close</span>
           </button>
@@ -383,19 +385,19 @@ export default function RightPanel({
         <div className="flex items-center px-2 gap-2 h-9 border-t border-border-subtle/50">
           <div className="flex items-center gap-1 shrink-0">
             <span className="rp-label-filter text-[9px] font-mono text-fg-muted">Stage:</span>
-            <select className="soul-select text-[10px]" value={filters.stage} onChange={(e) => setFilters({ stage: e.target.value as TaskStage | 'all' })} title="Filter by stage">
+            <select data-testid="right-tasks-filter-stage" className="soul-select text-[10px]" value={filters.stage} onChange={(e) => setFilters({ stage: e.target.value as TaskStage | 'all' })} title="Filter by stage">
               <option value="all">All stages</option><option value="backlog">Backlog</option><option value="brainstorm">Brainstorm</option><option value="active">Active</option><option value="blocked">Blocked</option><option value="validation">Review</option><option value="done">Done</option>
             </select>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <span className="rp-label-filter text-[9px] font-mono text-fg-muted">Priority:</span>
-            <select className="soul-select text-[10px]" value={filters.priority === 'all' ? 'all' : String(filters.priority)} onChange={(e) => { const v = e.target.value; setFilters({ priority: v === 'all' ? 'all' : Number(v) }); }} title="Filter by priority">
+            <select data-testid="right-tasks-filter-priority" className="soul-select text-[10px]" value={filters.priority === 'all' ? 'all' : String(filters.priority)} onChange={(e) => { const v = e.target.value; setFilters({ priority: v === 'all' ? 'all' : Number(v) }); }} title="Filter by priority">
               <option value="all">All priority</option><option value="3">Critical</option><option value="2">High</option><option value="1">Normal</option><option value="0">Low</option>
             </select>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <span className="rp-label-filter text-[9px] font-mono text-fg-muted">Project:</span>
-            <select className="soul-select text-[10px]" value={filters.product ?? 'all'} onChange={(e) => setFilters({ product: e.target.value === 'all' ? 'all' : e.target.value })} title="Filter by project">
+            <select data-testid="right-tasks-filter-product" className="soul-select text-[10px]" value={filters.product ?? 'all'} onChange={(e) => setFilters({ product: e.target.value === 'all' ? 'all' : e.target.value })} title="Filter by project">
               <option value="all">All projects</option>
               {products.map((p) => <option key={p} value={p}>{productMetadata?.get(p)?.label ?? (p.charAt(0).toUpperCase() + p.slice(1))}</option>)}
             </select>
@@ -403,6 +405,7 @@ export default function RightPanel({
           <div className="w-px h-4 bg-border-subtle shrink-0" />
           <button
             type="button"
+            data-testid="right-tasks-sync-toggle"
             onClick={onSyncProductFilterToggle}
             title={syncProductFilter ? 'Sync ON — showing active product tasks' : 'Sync OFF — showing all tasks'}
             className={`h-5 flex items-center gap-1 px-1.5 rounded cursor-pointer transition-colors shrink-0 ${syncProductFilter ? 'bg-soul/15 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}
@@ -432,6 +435,7 @@ export default function RightPanel({
     <>
       <div
         ref={containerRef}
+        data-testid="right-panel"
         className="flex h-full bg-surface shrink-0"
         style={{ width: containerWidth }}
       >

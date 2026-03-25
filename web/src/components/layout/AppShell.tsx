@@ -205,7 +205,7 @@ function AppShellInner() {
   );
 
   return (
-    <div className="h-screen bg-deep text-fg font-body noise overflow-hidden flex flex-col">
+    <div data-testid="app-shell" className="h-screen bg-deep text-fg font-body noise overflow-hidden flex flex-col">
       {/* ── Left Product Rail (fixed position) ── */}
       <ProductRail
           products={products}

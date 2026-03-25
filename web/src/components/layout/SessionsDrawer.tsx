@@ -33,9 +33,9 @@ export default function SessionsDrawer({
   connected,
 }: SessionsDrawerProps) {
   return (
-    <div className="absolute inset-0 z-50 flex">
+    <div data-testid="sessions-drawer" className="absolute inset-0 z-50 flex">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div data-testid="sessions-drawer-backdrop" className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Drawer — anchored next to left rail */}
       <div className="relative z-10 ml-14 w-64 h-full bg-surface border-r border-border-default flex flex-col shadow-2xl animate-slide-left">
@@ -46,6 +46,7 @@ export default function SessionsDrawer({
           <div className="flex-1" />
           <button
             type="button"
+            data-testid="sessions-drawer-close"
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           >
@@ -59,6 +60,7 @@ export default function SessionsDrawer({
         <div className="px-3 py-3 shrink-0">
           <button
             type="button"
+            data-testid="sessions-drawer-new-chat"
             onClick={() => { onNewChat(); onClose(); }}
             className="w-full bg-soul/10 hover:bg-soul/20 text-soul font-display font-semibold text-sm rounded-lg px-4 py-2.5 flex items-center gap-2 transition-colors cursor-pointer"
           >
@@ -81,6 +83,7 @@ export default function SessionsDrawer({
             <button
               key={s.id}
               type="button"
+              data-testid={`sessions-drawer-item-${s.id}`}
               onClick={() => { onSessionSelect(s.id); onClose(); }}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors flex items-center gap-2 ${
                 s.id === activeSessionId

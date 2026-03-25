@@ -105,7 +105,7 @@ export default function ProductView({
       // PlaceholderPanel renders null — skip the chrome wrapper entirely
       if (Panel === PlaceholderPanel) return null;
       return (
-        <div className="h-full flex flex-col">
+        <div data-testid={`product-view-${activeProduct}`} className="h-full flex flex-col">
           <div className="glass flex items-center gap-2 px-4 h-11 shrink-0 border-b border-border-subtle">
             <span className="font-display text-sm font-semibold text-fg">{meta?.label || activeProduct}</span>
             {meta?.label && meta.label !== activeProduct && (
