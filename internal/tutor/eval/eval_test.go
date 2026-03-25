@@ -142,6 +142,10 @@ func TestEvaluateWithClaude(t *testing.T) {
 }
 
 func TestEvaluateClaudeFailsFallsBack(t *testing.T) {
+	original := retryDelay
+	retryDelay = time.Millisecond
+	defer func() { retryDelay = original }()
+
 	sender := &mockSender{err: fmt.Errorf("network error")}
 	e := New(sender)
 
@@ -159,6 +163,10 @@ func TestEvaluateClaudeFailsFallsBack(t *testing.T) {
 }
 
 func TestEvaluateClaudeMalformedJSON(t *testing.T) {
+	original := retryDelay
+	retryDelay = time.Millisecond
+	defer func() { retryDelay = original }()
+
 	sender := &mockSender{
 		response: &stream.Response{
 			Content: []stream.ContentBlock{
@@ -304,6 +312,95 @@ func TestEvaluateClaudeTimeoutFallsBack(t *testing.T) {
 	if !strings.Contains(result.Feedback, "Claude unavailable") {
 		t.Errorf("expected word-overlap fallback feedback, got: %q", result.Feedback)
 	}
+}
+
+// TestEvaluateClaudeRetriesOnTransientError verifies that a single transient
+// API failure is retried before falling back to word-overlap. We use a sender
+// that fails on the first call and succeeds on the second, with retryDelay
+// reduced to 1ms to keep the test fast.
+func TestEvaluateClaudeRetriesOnTransientError(t *testing.T) {
+	// Override retryDelay so the test doesn't wait 3 seconds.
+	original := retryDelay
+	retryDelay = time.Millisecond
+	defer func() { retryDelay = original }()
+
+	expected := Result{Correct: true, Score: 75, Quality: 4, Feedback: "Retry succeeded."}
+	respJSON, _ := json.Marshal(expected)
+
+	calls := 0
+	sender := &funcSender{fn: func(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+		calls++
+		if calls == 1 {
+			return nil, fmt.Errorf("transient rate limit error")
+		}
+		return &stream.Response{
+			Content: []stream.ContentBlock{{Type: "text", Text: string(respJSON)}},
+		}, nil
+	}}
+
+	e := New(sender)
+	result, err := e.Evaluate(context.Background(), "What is X?", "X is Y", "X is Y with details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 sender calls (1 fail + 1 retry), got %d", calls)
+	}
+	if result.Score != 75 {
+		t.Errorf("expected score=75 from retry, got %.0f (may have used word-overlap fallback)", result.Score)
+	}
+	if strings.Contains(result.Feedback, "Claude unavailable") {
+		t.Error("expected Claude result (not word-overlap fallback) after successful retry")
+	}
+}
+
+// TestEvaluateClaudeRetrySkippedOnContextCancel verifies that when the parent
+// context is cancelled, the retry is skipped and word-overlap fires immediately.
+func TestEvaluateClaudeRetrySkippedOnContextCancel(t *testing.T) {
+	original := retryDelay
+	retryDelay = 500 * time.Millisecond // long enough to test cancellation
+	defer func() { retryDelay = original }()
+
+	calls := 0
+	sender := &funcSender{fn: func(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+		calls++
+		return nil, fmt.Errorf("always fails")
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately after the first Claude attempt returns.
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+
+	e := New(sender)
+	start := time.Now()
+	result, err := e.Evaluate(ctx, "Q?", "reference answer", "user answer")
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should fall back to word-overlap without waiting retryDelay (500ms).
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("expected retry to be skipped on ctx cancel (<200ms), took %v", elapsed)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 sender call (no retry after cancel), got %d", calls)
+	}
+	if result == nil {
+		t.Fatal("expected word-overlap fallback result")
+	}
+}
+
+// funcSender is a test helper that delegates Send to an arbitrary function.
+type funcSender struct {
+	fn func(ctx context.Context, req *stream.Request) (*stream.Response, error)
+}
+
+func (f *funcSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	return f.fn(ctx, req)
 }
 
 func TestEvaluateNoSenderNilResult(t *testing.T) {

@@ -10,6 +10,10 @@ import (
 	"github.com/rishav1305/soul-v2/internal/chat/stream"
 )
 
+// retryDelay is the pause between the first and second Claude eval attempt.
+// Overridable in tests to avoid slow test runs.
+var retryDelay = 3 * time.Second
+
 // Sender sends a non-streaming request to Claude and returns the response.
 type Sender interface {
 	Send(ctx context.Context, req *stream.Request) (*stream.Response, error)
@@ -63,9 +67,21 @@ func (e *Evaluator) Evaluate(ctx context.Context, questionText, referenceAnswer,
 	}
 
 	if e.sender != nil {
+		// First attempt — 30s deadline inside evaluateWithClaude.
 		result, err := e.evaluateWithClaude(ctx, questionText, referenceAnswer, userAnswer)
 		if err == nil {
 			return result, nil
+		}
+		// Retry once after retryDelay — helps recover from transient rate
+		// limits (9 agents share 1 API key; a brief pause often clears the
+		// per-minute bucket). Skip retry if the parent context is already done.
+		select {
+		case <-ctx.Done():
+			// parent cancelled — fall through to word-overlap immediately
+		case <-time.After(retryDelay):
+			if result, err = e.evaluateWithClaude(ctx, questionText, referenceAnswer, userAnswer); err == nil {
+				return result, nil
+			}
 		}
 	}
 
