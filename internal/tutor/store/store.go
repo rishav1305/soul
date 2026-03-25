@@ -307,6 +307,25 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("tutor: migrate: %w", err)
 	}
+
+	// Backfill topic status from spaced_repetition for topics stuck at 'not_started'.
+	// Run mastered first so the in_progress pass doesn't overwrite mastered topics.
+	if _, err := s.db.Exec(`
+		UPDATE topics SET status = 'mastered'
+		WHERE status = 'not_started'
+		  AND id IN (
+		    SELECT topic_id FROM spaced_repetition
+		    WHERE ease_factor >= 2.5 AND repetition_count >= 3
+		  )`); err != nil {
+		return fmt.Errorf("tutor: backfill mastered status: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		UPDATE topics SET status = 'in_progress'
+		WHERE status = 'not_started'
+		  AND id IN (SELECT topic_id FROM spaced_repetition)`); err != nil {
+		return fmt.Errorf("tutor: backfill in_progress status: %w", err)
+	}
+
 	return nil
 }
 
@@ -1004,7 +1023,7 @@ func (s *Store) GetModuleStats(module string) (*ModuleStats, error) {
 	}
 
 	err = s.db.QueryRow(
-		"SELECT COUNT(*) FROM topics WHERE module = ? AND status = 'completed'",
+		"SELECT COUNT(*) FROM topics WHERE module = ? AND (status = 'completed' OR status = 'mastered')",
 		module,
 	).Scan(&ms.CompletedCount)
 	if err != nil {

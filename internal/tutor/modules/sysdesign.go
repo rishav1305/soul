@@ -187,6 +187,13 @@ func (m *SystemDesignModule) evaluateAnswer(ctx context.Context, questionID int6
 	sm2 := SM2Update(quality, currentInterval, currentEF, currentReps)
 	m.store.UpsertSpacedRep(question.TopicID, sm2.NextReview, int(sm2.IntervalDays), sm2.EaseFactor, sm2.RepetitionCount)
 
+	// Update topic status based on SR progress.
+	topicStatus := "in_progress"
+	if sm2.EaseFactor >= 2.5 && sm2.RepetitionCount >= 3 {
+		topicStatus = "mastered"
+	}
+	m.store.UpdateTopicStatus(question.TopicID, topicStatus)
+
 	status := "incorrect"
 	if correct {
 		status = "correct"
