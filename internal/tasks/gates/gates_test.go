@@ -93,3 +93,59 @@ func TestStepVerificationGate_MissingDir(t *testing.T) {
 		t.Fatalf("expected pre-merge gate error, got: %s", err)
 	}
 }
+
+func TestSmokeTest_MissingArgs(t *testing.T) {
+	tests := []struct {
+		name          string
+		serverURL     string
+		e2eHost       string
+		e2eRunnerPath string
+	}{
+		{"empty serverURL", "", "host", "/runner.js"},
+		{"empty e2eHost", "http://x", "", "/runner.js"},
+		{"empty runnerPath", "http://x", "host", ""},
+		{"all empty", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := SmokeTest(tt.serverURL, tt.e2eHost, tt.e2eRunnerPath)
+			if err == nil {
+				t.Fatal("expected error for missing args, got nil")
+			}
+			if !strings.Contains(err.Error(), "required") {
+				t.Fatalf("unexpected error: %s", err)
+			}
+		})
+	}
+}
+
+func TestRuntimeGate_SkipsWhenEmpty(t *testing.T) {
+	// RuntimeGate returns nil (skips) when serverURL or e2eHost are empty.
+	if err := RuntimeGate("", "host", "/runner.js"); err != nil {
+		t.Fatalf("expected nil when serverURL empty, got: %v", err)
+	}
+	if err := RuntimeGate("http://x", "", "/runner.js"); err != nil {
+		t.Fatalf("expected nil when e2eHost empty, got: %v", err)
+	}
+	if err := RuntimeGate("", "", ""); err != nil {
+		t.Fatalf("expected nil when all empty, got: %v", err)
+	}
+}
+
+func TestPreMergeGate_NotADirectory(t *testing.T) {
+	// Create a temp file (not a dir) — PreMergeGate should reject it.
+	f, err := os.CreateTemp("", "gate_test_*")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	err = PreMergeGate(f.Name())
+	if err == nil {
+		t.Fatal("expected error for file path, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("unexpected error: %s", err)
+	}
+}
