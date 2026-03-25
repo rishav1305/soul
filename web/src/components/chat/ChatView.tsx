@@ -177,6 +177,7 @@ export default function ChatView({
     if (e.currentTarget === e.target) setIsDragging(false);
   }, []);
 
+  // TODO: Implement file attachment handling — currently only clears drag state
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
