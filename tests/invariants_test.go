@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,14 @@ import (
 	"github.com/rishav1305/soul-v2/internal/chat/server"
 	"github.com/rishav1305/soul-v2/internal/chat/session"
 	"github.com/rishav1305/soul-v2/internal/chat/ws"
+)
+
+// wsReadBuf provides per-connection buffering for batch (array) WS frames.
+// WritePump coalesces rapid messages into JSON array frames; readWSJSON must
+// unpack them one at a time.
+var (
+	wsInvReadBufMu  sync.Mutex
+	wsInvReadBufMap = make(map[*websocket.Conn][]map[string]interface{})
 )
 
 // ---------------------------------------------------------------------------
@@ -293,14 +302,23 @@ func TestInvariant_WebSocketProtocol(t *testing.T) {
 	}
 
 	// Invariant 3c: Send chat message and receive chat.done.
+	// Collect 4 messages: 3 session.updated (auto-title, idle→running,
+	// running→completed) + 1 chat.done. Order is non-deterministic due to
+	// async hub broadcasts; simply confirm chat.done is present.
 	chatMsg := `{"type":"chat.send","sessionId":"` + sess.ID + `","content":"invariant check"}`
 	if err := conn.Write(ctx, websocket.MessageText, []byte(chatMsg)); err != nil {
 		t.Fatalf("write chat.send: %v", err)
 	}
 
-	doneMsg := readWSJSON(t, ctx, conn)
-	if doneMsg["type"] != "chat.done" {
-		t.Fatalf("expected chat.done, got %v", doneMsg["type"])
+	var doneMsg map[string]interface{}
+	for i := 0; i < 4; i++ {
+		msg := readWSJSON(t, ctx, conn)
+		if msg["type"] == "chat.done" {
+			doneMsg = msg
+		}
+	}
+	if doneMsg == nil {
+		t.Fatal("chat.done not received among 4 messages after chat.send")
 	}
 	if doneMsg["sessionId"] != sess.ID {
 		t.Errorf("chat.done sessionId = %v, want %s", doneMsg["sessionId"], sess.ID)
@@ -320,14 +338,44 @@ func TestInvariant_WebSocketProtocol(t *testing.T) {
 }
 
 // readWSJSON reads a single JSON message from a WebSocket connection with timeout.
+// It handles batch frames (JSON arrays) produced by WritePump's coalesce window:
+// the first element is returned and the rest are buffered for subsequent calls.
 func readWSJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]interface{} {
 	t.Helper()
+
+	// Return buffered messages from a previous array frame first.
+	wsInvReadBufMu.Lock()
+	if buf := wsInvReadBufMap[conn]; len(buf) > 0 {
+		m := buf[0]
+		wsInvReadBufMap[conn] = buf[1:]
+		wsInvReadBufMu.Unlock()
+		return m
+	}
+	wsInvReadBufMu.Unlock()
+
 	rCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	_, data, err := conn.Read(rCtx)
 	if err != nil {
 		t.Fatalf("readWSJSON: %v", err)
+	}
+
+	// Detect JSON array frame (WritePump batch coalescing).
+	if len(data) > 0 && data[0] == '[' {
+		var arr []map[string]interface{}
+		if err := json.Unmarshal(data, &arr); err != nil {
+			t.Fatalf("readWSJSON unmarshal array: %v\nraw: %s", err, string(data))
+		}
+		if len(arr) == 0 {
+			t.Fatalf("readWSJSON: empty array frame")
+		}
+		if len(arr) > 1 {
+			wsInvReadBufMu.Lock()
+			wsInvReadBufMap[conn] = append(wsInvReadBufMap[conn], arr[1:]...)
+			wsInvReadBufMu.Unlock()
+		}
+		return arr[0]
 	}
 
 	var msg map[string]interface{}

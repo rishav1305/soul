@@ -21,6 +21,13 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
+// wsReadBuf holds messages buffered from array-batched WS frames.
+// Key: *websocket.Conn — safe because each test uses its own connection.
+var (
+	wsReadBufMu  sync.Mutex
+	wsReadBufMap = make(map[*websocket.Conn][]map[string]interface{})
+)
+
 // setupWSEnv creates a Hub with a session store and MessageHandler, starts the
 // hub event loop, and returns everything needed for integration testing.
 func setupWSEnv(t *testing.T) (*ws.Hub, *session.Store, context.CancelFunc) {
@@ -65,14 +72,47 @@ func dial(t *testing.T, ctx context.Context, srv *httptest.Server) *websocket.Co
 }
 
 // readJSON reads one JSON message from the connection with a timeout.
+// The WS writePump coalesces rapid messages into JSON array frames
+// ([msg1,msg2,...]). readJSON transparently handles this: when an array frame
+// arrives, it returns the first element and buffers the rest so subsequent
+// calls return them in order without an additional Read.
 func readJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]interface{} {
 	t.Helper()
+
+	// Return buffered messages from a previous array frame first.
+	wsReadBufMu.Lock()
+	if buf := wsReadBufMap[conn]; len(buf) > 0 {
+		m := buf[0]
+		wsReadBufMap[conn] = buf[1:]
+		wsReadBufMu.Unlock()
+		return m
+	}
+	wsReadBufMu.Unlock()
+
 	rCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	_, data, err := conn.Read(rCtx)
 	if err != nil {
 		t.Fatalf("readJSON: %v", err)
 	}
+
+	// Detect JSON array frame (WS batch coalescing).
+	if len(data) > 0 && data[0] == '[' {
+		var arr []map[string]interface{}
+		if err := json.Unmarshal(data, &arr); err != nil {
+			t.Fatalf("readJSON unmarshal array: %v", err)
+		}
+		if len(arr) == 0 {
+			t.Fatal("readJSON: empty batch array from server")
+		}
+		if len(arr) > 1 {
+			wsReadBufMu.Lock()
+			wsReadBufMap[conn] = append(wsReadBufMap[conn], arr[1:]...)
+			wsReadBufMu.Unlock()
+		}
+		return arr[0]
+	}
+
 	var m map[string]interface{}
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatalf("readJSON unmarshal: %v", err)
@@ -167,10 +207,25 @@ func TestWS_FullChatCycle(t *testing.T) {
 	// 3. Send chat.send.
 	sendJSON(t, ctx, conn, `{"type":"chat.send","sessionId":"`+sess.ID+`","content":"integration test"}`)
 
-	// 4. Receive chat.done.
-	done := readJSON(t, ctx, conn)
-	if done["type"] != "chat.done" {
-		t.Errorf("expected chat.done, got %v", done["type"])
+	// 4. Receive chat.done — collect 4 messages (3 session.updated + 1 chat.done).
+	// The no-Claude path broadcasts session.updated for auto-title, idle→running,
+	// and running→completed. These are async hub broadcasts and may interleave
+	// with the direct-sent chat.done in any order.
+	const chatSendMsgs = 4
+	var done map[string]interface{}
+	for i := 0; i < chatSendMsgs; i++ {
+		msg := readJSON(t, ctx, conn)
+		switch msg["type"] {
+		case "chat.done":
+			done = msg
+		case "session.updated":
+			// expected async broadcasts — discard
+		default:
+			t.Fatalf("unexpected message type after chat.send: %v", msg["type"])
+		}
+	}
+	if done == nil {
+		t.Fatal("chat.done not received among the 4 messages after chat.send")
 	}
 	if done["sessionId"] != sess.ID {
 		t.Errorf("expected sessionId %s, got %v", sess.ID, done["sessionId"])
@@ -660,9 +715,27 @@ func TestWS_FullRoundTrip(t *testing.T) {
 	// 5. Send a chat message.
 	sendJSON(t, ctx, conn, `{"type":"chat.send","sessionId":"`+sessionID+`","content":"round trip message"}`)
 
-	chatDone := readJSON(t, ctx, conn)
-	if chatDone["type"] != "chat.done" {
-		t.Fatalf("expected chat.done, got %v", chatDone["type"])
+	// The no-Claude chat.send path for a new session (MessageCount==0, Status==Idle)
+	// emits exactly 4 messages — in unpredictable order due to the async hub
+	// broadcast (direct-send is faster than broadcastCh delivery):
+	//   - session.updated × 3 (auto-title, idle→running, running→completed)
+	//   - chat.done × 1 (direct send)
+	// Read all 4 and verify chat.done is among them.
+	const chatSendMsgCount = 4
+	var chatDone map[string]interface{}
+	for i := 0; i < chatSendMsgCount; i++ {
+		msg := readJSON(t, ctx, conn)
+		switch msg["type"] {
+		case "chat.done":
+			chatDone = msg
+		case "session.updated":
+			// expected — discard
+		default:
+			t.Fatalf("unexpected message type after chat.send: %v", msg["type"])
+		}
+	}
+	if chatDone == nil {
+		t.Fatal("expected chat.done among the 4 messages after chat.send")
 	}
 	if chatDone["sessionId"] != sessionID {
 		t.Errorf("chat.done sessionId = %v, want %s", chatDone["sessionId"], sessionID)

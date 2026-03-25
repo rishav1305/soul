@@ -188,6 +188,8 @@ func TestStream_FullPipeline_TokensAndDone(t *testing.T) {
 		case "chat.error":
 			data := msg["data"].(map[string]interface{})
 			t.Fatalf("received chat.error: %v", data["error"])
+		case "session.updated":
+			// async hub broadcast (auto-title, status transitions) — discard
 		default:
 			t.Fatalf("unexpected message type: %s", msgType)
 		}
@@ -376,9 +378,23 @@ func TestStream_NoStreamClient_FallbackBehavior(t *testing.T) {
 
 	sendJSON(t, ctx, conn, `{"type":"chat.send","sessionId":"`+sess.ID+`","content":"hello"}`)
 
-	msg := readJSON(t, ctx, conn)
-	if msg["type"] != "chat.done" {
-		t.Errorf("expected immediate chat.done, got %v", msg["type"])
+	// Collect 4 messages: 3 session.updated (auto-title, idle→running, running→completed)
+	// and 1 chat.done. These arrive in unpredictable order due to async hub broadcasts.
+	const fallbackMsgCount = 4
+	var gotDone bool
+	for i := 0; i < fallbackMsgCount; i++ {
+		msg := readJSON(t, ctx, conn)
+		switch msg["type"] {
+		case "chat.done":
+			gotDone = true
+		case "session.updated":
+			// expected async broadcasts — discard
+		default:
+			t.Fatalf("unexpected message type after chat.send: %v", msg["type"])
+		}
+	}
+	if !gotDone {
+		t.Error("expected chat.done among the 4 messages after chat.send")
 	}
 
 	// Should only have 1 message (user), no assistant.

@@ -170,6 +170,8 @@ func collectUntilError(t *testing.T, ctx context.Context, conn *websocket.Conn) 
 			return tokenMsgs, data
 		case "chat.done":
 			t.Fatal("received unexpected chat.done — expected chat.error")
+		case "session.updated":
+			// async hub broadcast (auto-title, status transitions) — discard
 		}
 	}
 }
@@ -405,26 +407,62 @@ func TestStreamError_DroppedConnection_IncompleteStream(t *testing.T) {
 
 	sendJSON(t, ctx, conn, `{"type":"chat.send","sessionId":"`+sess.ID+`","content":"test dropped connection"}`)
 
-	tokenMsgs, errData := collectUntilError(t, ctx, conn)
+	// When a stream drops mid-way, the handler persists partial content and
+	// sends chat.done (graceful degradation, not chat.error). Collect tokens +
+	// session.updated broadcasts until chat.done.
+	var tokenMsgs []map[string]interface{}
+	var chatDone map[string]interface{}
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for chat.done after dropped stream")
+		default:
+		}
+		msg := readJSON(t, ctx, conn)
+		switch msg["type"] {
+		case "chat.token":
+			tokenMsgs = append(tokenMsgs, msg)
+		case "chat.done":
+			chatDone = msg
+		case "session.updated":
+			// async broadcast — discard
+		default:
+			t.Fatalf("unexpected message type: %v", msg["type"])
+		}
+		if chatDone != nil {
+			break
+		}
+	}
 
-	// Should have received some tokens before the error.
+	// Should have received some tokens before stream was dropped.
 	if len(tokenMsgs) < 1 {
-		t.Error("expected at least 1 token event before incomplete stream error")
+		t.Error("expected at least 1 token event before incomplete stream completes")
 	}
 
-	// Verify the error message mentions unexpected end.
-	errMsg := errData["error"].(string)
-	if !strings.Contains(errMsg, "stream ended unexpectedly") {
-		t.Errorf("expected incomplete stream error, got: %s", errMsg)
+	// Verify the stored message contains the incomplete marker.
+	msgs, err := store.GetMessages(sess.ID)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	var assistantMsg string
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			assistantMsg = m.Content
+			break
+		}
+	}
+	if !strings.Contains(assistantMsg, "[incomplete") {
+		t.Errorf("expected partial message to contain [incomplete], got: %q", assistantMsg)
 	}
 
-	// Verify api.error metric for incomplete stream.
+	// Verify api.error metric for incomplete stream was still logged.
 	events, err := metrics.ReadEventsFiltered(metricsDir, "api.error")
 	if err != nil {
 		t.Fatalf("read metrics: %v", err)
 	}
 	if len(events) == 0 {
-		t.Fatal("expected at least one api.error metric event")
+		t.Fatal("expected at least one api.error metric event for incomplete stream")
 	}
 
 	ev := events[0]
