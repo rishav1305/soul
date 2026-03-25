@@ -1,75 +1,127 @@
-# Soul
+# soul
 
-AI development platform with autonomous task execution — Go backend, React frontend, multi-agent pipeline.
+Multi-agent AI system powering 21 products from a single WebSocket interface.
 
-## What it is
+## What it does
 
-Soul is a production multi-agent development platform. It runs a team of 9 specialized AI agents across two machines (Raspberry Pi + x86 server), coordinated through a courier messaging system with structured inboxes, role boundaries, and a shared skill library.
+Soul is a production-grade AI platform built on 13 independent Go microservices and 62 packages, coordinated through a central WebSocket hub. A single React SPA with an AppShell panel layout routes Claude tool-use calls to any of 21 product servers — chat, autonomous task execution, interview prep, lead pipeline CRM, LLM benchmarking, CTF challenges, distributed compute, compliance scanning, and more. Every server owns its own SQLite database; no shared state, no single point of failure.
 
-The platform includes 13 product servers (chat, tasks, tutor, projects, scout, sentinel, bench, and more), a React frontend, and a 7-layer verification stack that gates every merge.
+498 commits. 127 Claude tools. 7-layer verification stack gates every merge.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    React SPA (AppShell)                         │
+│  Dashboard · Chat · Tasks · Tutor · Projects · Observe          │
+│  Scout · Sentinel · Mesh · Bench · Infra · Quality · Data       │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ WebSocket
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Chat Server :3002                               │
+│  ┌────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
+│  │  WS Hub    │  │ Stream (SSE) │  │  Product Context (21)  │  │
+│  │ multi-sess │  │ Claude OAuth │  │  tool defs + dispatch  │  │
+│  └─────┬──────┘  └──────────────┘  └───────────┬────────────┘  │
+└────────┼─────────────────────────────────────────┼──────────────┘
+         │ tool_use dispatch                        │ HTTP proxy
+         ▼                                          ▼
+┌────────────────────────────────────────────────────────────────┐
+│             Product Servers (independent, SQLite)              │
+│  Tasks:3004  Tutor:3006  Projects:3008  Observe:3010           │
+│  Infra:3012  Quality:3014  Data:3016   Docs:3018               │
+│  Scout:3020  Sentinel:3022 Mesh:3024   Bench:3026              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Claude responds with `tool_use` blocks → WS hub dispatches via product context → product REST API → `tool_result` → follow-up response. Up to 5 tool rounds per message.
+
+## Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| chat | :3002 | Claude streaming interface — WebSocket hub, multi-session routing, SPA host, 8 product proxies |
+| tasks | :3004 | Autonomous task executor — 3-phase pipeline (impl → review → fix), merge gates, comment watcher |
+| tutor | :3006 | Interview prep platform — SM-2 spaced repetition, 5 modules, mock interview sessions |
+| projects | :3008 | Implementation guide browser — 11 embedded markdown guides, milestone tracking |
+| observe | :3010 | Pillar-based observability — 6 metrics (Performant, Robust, Accurate, Readable, Scalable, Secure) |
+| infra | :3012 | Infrastructure tooling — DevOps analysis, DBA health checks, migration planning |
+| quality | :3014 | Code quality — compliance scanner (SOC2/HIPAA/GDPR), QA analysis, usage analytics |
+| data | :3016 | Data products — data engineering, cost operations, visualization generation |
+| docs | :3018 | Documentation — technical docs generation, API reference generation |
+| scout | :3020 | Lead pipeline CRM — TheirStack sweeps, 35 AI outreach tools, 7 pipeline types |
+| sentinel | :3022 | CTF challenge platform — 14 embedded challenges, sandbox, weakness levels |
+| mesh | :3024 | Distributed compute — Tailscale + mDNS discovery, hub election, node linking |
+| bench | :3026 | LLM benchmarking — CARS metric, 33 prompt tasks, 10 categories, multi-model compare |
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.24 — 13 independent HTTP servers |
-| Frontend | React 19, TypeScript, Tailwind v4, Vite |
-| AI | Claude API (OAuth), streaming SSE, tool-use |
-| Database | SQLite per product (no shared state) |
-| Real-time | WebSocket hub with multi-session routing |
-| Auth | Claude OAuth (`pkg/auth`) shared across servers |
-| Testing | Go test + race detector, Vitest, Playwright |
+| Backend | Go 1.24 — 13 servers, 62 packages, standard library preferred |
+| Frontend | React 19, TypeScript 5.9, Tailwind CSS v4, Vite 7 |
+| Real-time | WebSocket hub — multi-session, per-session product context |
+| AI | Claude API via OAuth — streaming SSE, tool-use, up to 5 tool rounds |
+| Database | SQLite per server — no shared state, atomic operations |
+| Auth | Claude OAuth (`pkg/auth`) — shared credential, 0600 permissions |
+| Testing | Go test + race detector, Vitest, Playwright — 7-layer verification stack |
 
-## Architecture
-
-```
-soul/
-  cmd/           13 server entrypoints (chat, tasks, tutor, projects, ...)
-  internal/      Per-product server logic, store, and handlers
-  pkg/           Shared: auth, events
-  web/           React SPA — single frontend, 8 product proxies
-  scout/         Lead pipeline CRM (TheirStack integration)
-  bench/         LLM benchmarking harness (CARS metric, 52 models)
-  sentinel/      CTF challenge platform with embedded challenges
-  tools/         Build, verification, and phase test scripts
-```
-
-The 13 servers run on fixed ports (`:3002` – `:3026`) and are proxied through the chat server's SPA. Each server is independently deployable and owns its own SQLite database.
-
-## Key Products
-
-- **Chat** — Claude streaming interface with multi-session support, custom tools, and subagent dispatch
-- **Tasks** — Autonomous task executor with 3-phase pipeline (impl → review → fix) and merge gates
-- **Tutor** — Interview prep platform with SM-2 spaced repetition and mock interviews
-- **Scout** — Lead research and outreach pipeline with AI-powered job board sweeps
-- **Bench** — LLM benchmarking tool — 30 tasks, 10 categories, CARS efficiency scoring
-- **Sentinel** — CTF security challenge platform with 14 embedded challenges
-- **Projects** — Implementation guide browser with embedded markdown content
-- **Observe** — Pillar-based metrics (Performant, Robust, Accurate, Readable, Scalable, Secure)
-
-## Verification
-
-```bash
-make verify-static   # Go vet + tsc --noEmit + secret scan + dep audit
-make verify          # L1–L3: static + unit + integration
-make build           # Build all 13 binaries + frontend
-make serve           # Build and run everything
-```
-
-Six design pillars enforced on every merge: Performant, Robust, Accurate, Readable, Scalable, Secure.
-
-## Running
+## Running Locally
 
 ```bash
 # Install dependencies
 go mod download
-cd web && npm install
+cd web && npm install && cd ..
 
-# Start all servers
+# Build all 13 binaries + frontend
+make build
+
+# Start everything
 make serve
 
-# Or individual server
-go run cmd/chat/main.go
+# Or start an individual server
+go run cmd/chat/main.go      # Chat on :3002
+go run cmd/tasks/main.go     # Tasks on :3004
+go run cmd/scout/main.go     # Scout on :3020
 ```
 
-Requires Go 1.24+ and Node 18+.
+**Requires:** Go 1.24+, Node 18+, Claude Max OAuth credentials at `~/.claude/.credentials.json`
+
+```bash
+# Verification
+make verify-static   # go vet + tsc --noEmit + secret scan + dep audit (L1)
+make verify          # L1–L3: static + unit + integration
+```
+
+## Products
+
+21 products accessible from a single chat interface via the tool selector:
+
+| # | Product | Description |
+|---|---------|-------------|
+| 1 | **Chat** | Claude streaming with multi-session support, custom tools, and subagent dispatch |
+| 2 | **Tasks** | Autonomous executor — 3-phase pipeline (impl → review → fix), hooks, merge gates |
+| 3 | **Tutor** | Interview prep — SM-2 spaced repetition, DSA/AI/Behavioral/Mock/Planner modules |
+| 4 | **Projects** | Skill-building guides — 11 embedded implementation projects with milestone tracking |
+| 5 | **Observe** | Pillar metrics — real-time observability across 6 quality dimensions |
+| 6 | **Scout** | Lead pipeline CRM — TheirStack job discovery, 7 pipeline types, 35 AI tools |
+| 7 | **Sentinel** | CTF challenge platform — 14 embedded security challenges with sandbox sessions |
+| 8 | **Mesh** | Distributed compute — link multiple machines, elect hub, run LLM inference at scale |
+| 9 | **Bench** | LLM benchmarking — run CARS benchmark across models, compare efficiency scores |
+| 10 | **Compliance** | SOC2/HIPAA/GDPR scanner — 5 analyzers, auto-fix engine, badge reporter |
+| 11 | **QA** | Code quality analysis — static analysis + structured reporting |
+| 12 | **Analytics** | Usage analytics — event aggregation, cost tracking, performance reporting |
+| 13 | **DevOps** | Infrastructure analysis — system health checks and actionable reports |
+| 14 | **DBA** | Database health — schema analysis, query patterns, index recommendations |
+| 15 | **Migrate** | Migration planning — schema diff analysis and migration sequencing |
+| 16 | **DataEng** | Data engineering — pipeline scaffolding and data quality tooling |
+| 17 | **CostOps** | Cost optimization — resource utilization analysis and reduction recommendations |
+| 18 | **Viz** | Visualization — generate charts and dashboards from structured data |
+| 19 | **Docs** | Documentation generation — technical docs from code and specs |
+| 20 | **API** | API reference generation — OpenAPI docs from route definitions |
+| 21 | **Built-in** | Memory management, custom tool definitions, and subagent dispatch (available in all contexts) |
+
+---
+
+*Production-grade agent intelligence. Self-hosted, sovereign, zero external dependencies at runtime.*
