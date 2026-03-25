@@ -50,7 +50,7 @@ const PRIORITY_CONFIG: Record<number, { label: string; color: string }> = {
 
 export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
   // Sort by priority descending
-  const sorted = [...tasks].sort((a, b) => b.priority - a.priority);
+  const sorted = [...tasks].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
   return (
     <div
@@ -60,20 +60,21 @@ export default function CompactGrid({ tasks, onTaskClick }: CompactGridProps) {
       {sorted.map((task) => {
         const meta = parseMetadata(task.metadata);
         const isAutonomous = !!meta.autonomous;
-        const prio = PRIORITY_CONFIG[task.priority] ?? { label: 'Norm', color: 'text-priority-normal' };
+        const prio = PRIORITY_CONFIG[task.priority ?? 0] ?? { label: 'Norm', color: 'text-priority-normal' };
         const desc = task.description
           ? task.description.length > 80
             ? task.description.slice(0, 80) + '\u2026'
             : task.description
           : '';
-        const timeStr = relativeTime(task.created_at);
+        const timeStr = relativeTime(task.createdAt);
 
         return (
           <button
             key={task.id}
             type="button"
             onClick={() => onTaskClick(task)}
-            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low'} border rounded-lg p-3 hover:bg-overlay transition-all duration-150 cursor-pointer flex flex-col gap-1.5`}
+            data-testid={`grid-task-${task.id}`}
+            className={`text-left bg-elevated border-l-[3px] ${PRIORITY_BORDER[task.priority ?? 0] ?? 'border-l-priority-low'} border rounded-lg p-3 hover:bg-overlay transition-all duration-150 cursor-pointer flex flex-col gap-1.5`}
             style={{ borderColor: STAGE_BORDER_COLOR[task.stage] }}
           >
             {/* Title row */}

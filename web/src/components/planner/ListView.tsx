@@ -90,7 +90,7 @@ export default function ListView({ tasks, onTaskClick }: ListViewProps) {
             {/* Task rows */}
             {!isCollapsed &&
               stageTasks.map((task) => {
-                const prio = PRIORITY_CONFIG[task.priority] ?? { label: 'Norm', color: 'text-priority-normal' };
+                const prio = PRIORITY_CONFIG[task.priority ?? 0] ?? { label: 'Norm', color: 'text-priority-normal' };
                 const sub = substepDisplay(task.substep);
 
                 return (

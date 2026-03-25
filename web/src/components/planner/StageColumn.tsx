@@ -40,7 +40,8 @@ interface StageColumnProps {
 
 export default function StageColumn({ stage, tasks, onTaskClick, onTaskSelect, selectedIds, taskActivities, inlineBadgesEnabled = true }: StageColumnProps) {
   return (
-    <div className="flex flex-col min-w-[220px] w-full bg-surface/30">
+    <div className="flex flex-col min-w-[220px] w-full bg-surface/30"
+      data-testid={`stage-column-${stage}`}>
       <div className="flex items-center gap-2 px-3 py-2 shrink-0">
         <span className={`w-2 h-2 rounded-full ${STAGE_DOT_COLORS[stage]}`} />
         <h3 className={`font-display text-[11px] font-semibold uppercase tracking-widest ${STAGE_COLORS[stage]}`}>
@@ -53,9 +54,9 @@ export default function StageColumn({ stage, tasks, onTaskClick, onTaskSelect, s
       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
         {tasks.map((task) => {
           const activities = taskActivities?.[task.id] ?? [];
-          const lastStageAct = [...activities].reverse().find((a) => a.type === 'stage');
+          const lastStageAct = [...activities].reverse().find((a) => a.eventType === 'task.stage_changed');
           const recentActivity = lastStageAct
-            ? { stage: lastStageAct.content as TaskStage, time: lastStageAct.time }
+            ? { stage: lastStageAct.data as TaskStage, time: lastStageAct.createdAt }
             : undefined;
           return (
             <TaskCard

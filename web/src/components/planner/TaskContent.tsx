@@ -32,6 +32,7 @@ export default function TaskContent({
         <button
           type="button"
           onClick={onClearFilters}
+          data-testid="clear-filters"
           className="text-soul hover:text-soul/80 text-xs cursor-pointer underline"
         >
           Clear filters

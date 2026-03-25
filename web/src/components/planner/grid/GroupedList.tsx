@@ -91,6 +91,7 @@ export default function GroupedList({ tasks, onTaskClick }: GroupedListProps) {
             <button
               type="button"
               onClick={() => toggle(stage)}
+              data-testid={`grouped-stage-toggle-${stage}`}
               className="flex items-center gap-2 w-full px-3 py-1.5 font-display text-[11px] font-semibold uppercase tracking-widest text-fg-secondary hover:bg-elevated cursor-pointer select-none"
             >
               <span className="text-[10px] w-3 text-center">
@@ -104,20 +105,21 @@ export default function GroupedList({ tasks, onTaskClick }: GroupedListProps) {
             {/* Task rows with more detail */}
             {!isCollapsed &&
               stageTasks.map((task) => {
-                const prio = PRIORITY_CONFIG[task.priority] ?? { label: 'Norm', color: 'text-priority-normal' };
+                const prio = PRIORITY_CONFIG[task.priority ?? 0] ?? { label: 'Norm', color: 'text-priority-normal' };
                 const sub = substepDisplay(task.substep);
                 const desc = task.description
                   ? task.description.length > 60
                     ? task.description.slice(0, 60) + '\u2026'
                     : task.description
                   : '';
-                const timeStr = relativeTime(task.created_at);
+                const timeStr = relativeTime(task.createdAt);
 
                 return (
                   <button
                     key={task.id}
                     type="button"
                     onClick={() => onTaskClick(task)}
+                    data-testid={`grouped-task-${task.id}`}
                     className="flex flex-col gap-0.5 w-full px-3 py-1.5 pl-8 hover:bg-elevated cursor-pointer text-left"
                   >
                     {/* First line: id, title, priority, substep, product, blocked */}

@@ -15,26 +15,27 @@ export function useNotifications(tasks: { id: number; title: string }[], enabled
 
     const unsubscribe = onMessage((msg: WSMessage) => {
       if (msg.type !== 'task.activity') return;
+      // Go Activity shape: { id, taskId, eventType, data, createdAt }
       const activity = msg.data as PlannerActivity;
-      if (!activity || activity.type !== 'stage') return;
+      if (!activity || activity.eventType !== 'task.stage_changed') return;
 
-      // Parse "backlog → active" from content
-      const match = activity.content.match(/(\w+)\s*(?:→|->)\s*(\w+)/);
+      // Parse "backlog → active" from data field
+      const match = activity.data.match(/(\w+)\s*(?:→|->)\s*(\w+)/);
       if (!match) return;
 
       const fromStage = match[1] as StageNotification['fromStage'];
       const toStage = match[2] as StageNotification['toStage'];
 
-      const task = tasks.find((t) => t.id === activity.task_id);
-      const taskTitle = task?.title ?? `Task #${activity.task_id}`;
+      const task = tasks.find((t) => t.id === activity.taskId);
+      const taskTitle = task?.title ?? `Task #${activity.taskId}`;
 
       const notification: StageNotification = {
         id: uuid(),
-        taskId: activity.task_id,
+        taskId: activity.taskId,
         taskTitle,
         fromStage,
         toStage,
-        time: activity.time || new Date().toISOString(),
+        time: activity.createdAt || new Date().toISOString(),
       };
 
       setToasts((prev) => [notification, ...prev].slice(0, MAX_TOASTS));

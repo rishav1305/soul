@@ -85,7 +85,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
           cmp = a.stage.localeCompare(b.stage);
           break;
         case 'priority':
-          cmp = a.priority - b.priority;
+          cmp = (a.priority ?? 0) - (b.priority ?? 0);
           break;
         case 'product':
           cmp = (a.product || '').localeCompare(b.product || '');
@@ -94,7 +94,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
           cmp = substepIndex(a.substep) - substepIndex(b.substep);
           break;
         case 'created_at':
-          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -120,6 +120,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
                 key={col.key}
                 className={`text-left px-3 py-2 text-fg-muted font-display text-[11px] uppercase tracking-wider font-semibold cursor-pointer hover:text-fg-secondary select-none ${col.className ?? ''}`}
                 onClick={() => handleSort(col.key)}
+              data-testid={`table-sort-${col.key}`}
               >
                 <span>{col.label}</span>
                 {sortKey === col.key && (
@@ -131,7 +132,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
         </thead>
         <tbody>
           {sorted.map((task) => {
-            const prio = PRIORITY_CONFIG[task.priority] ?? { label: 'Norm', color: 'text-priority-normal' };
+            const prio = PRIORITY_CONFIG[task.priority ?? 0] ?? { label: 'Norm', color: 'text-priority-normal' };
             const subIdx = substepIndex(task.substep);
             const subLabel =
               task.substep && subIdx >= 0
@@ -142,6 +143,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
               <tr
                 key={task.id}
                 onClick={() => onTaskClick(task)}
+                data-testid={`table-row-${task.id}`}
                 className="border-b border-border-subtle hover:bg-elevated/60 cursor-pointer transition-colors"
               >
                 <td className="px-3 py-1.5 text-fg-muted font-mono">#{task.id}</td>
@@ -155,7 +157,7 @@ export default function TableView({ tasks, onTaskClick }: TableViewProps) {
                 <td className={`px-3 py-1.5 ${prio.color}`}>{prio.label}</td>
                 <td className="px-3 py-1.5 text-fg-muted truncate max-w-0">{task.product || '\u2014'}</td>
                 <td className="px-3 py-1.5 text-fg-muted">{subLabel}</td>
-                <td className="px-3 py-1.5 text-fg-muted whitespace-nowrap">{relativeTime(task.created_at)}</td>
+                <td className="px-3 py-1.5 text-fg-muted whitespace-nowrap">{relativeTime(task.createdAt)}</td>
               </tr>
             );
           })}

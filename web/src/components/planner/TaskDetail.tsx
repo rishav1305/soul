@@ -155,7 +155,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
 
   const handlePriorityChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newPriority = Number(e.target.value);
-    if (newPriority !== task.priority) {
+    if (newPriority !== (task.priority ?? 0)) {
       await onUpdate(task.id, { priority: newPriority });
     }
   };
@@ -316,7 +316,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                   <div>
                     <label className="text-xs text-fg-muted mb-1 block">Priority</label>
                     <select
-                      value={task.priority}
+                      value={task.priority ?? 0}
                       data-testid="task-detail-priority"
                       onChange={handlePriorityChange}
                       className="soul-select w-full bg-elevated border border-border-default rounded-lg px-3 py-1.5 text-sm text-fg cursor-pointer outline-none"
@@ -504,7 +504,7 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                             {c.author === 'user' ? 'You' : 'Soul'}
                           </span>
                           <span className="text-xs text-fg-muted">
-                            {new Date(c.created_at).toLocaleTimeString()}
+                            {new Date(c.createdAt).toLocaleTimeString()}
                           </span>
                           {c.type !== 'feedback' && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-elevated text-fg-muted">
@@ -579,27 +579,27 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
 }
 
 function ActivityEntry({ activity }: { activity: PlannerActivity }) {
-  const time = new Date(activity.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const time = new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   let icon: string;
   let color: string;
   let label: string;
 
-  switch (activity.type) {
+  switch (activity.eventType) {
     case 'status':
       icon = '\u25C6'; // diamond
       color = 'text-soul';
-      label = activity.content;
+      label = activity.data;
       break;
     case 'stage':
       icon = '\u2192'; // arrow
       color = 'text-stage-active';
-      label = `Stage: ${activity.content}`;
+      label = `Stage: ${activity.data}`;
       break;
     case 'tool_call': {
       let toolName = 'tool';
       try {
-        const d = JSON.parse(activity.content);
+        const d = JSON.parse(activity.data);
         toolName = d.name || 'tool';
       } catch { /* */ }
       icon = '\u2699'; // gear
@@ -627,7 +627,7 @@ function ActivityEntry({ activity }: { activity: PlannerActivity }) {
     default:
       icon = '\u2022'; // bullet
       color = 'text-fg-muted';
-      label = activity.content;
+      label = activity.data;
   }
 
   return (

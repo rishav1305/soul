@@ -429,7 +429,7 @@ export interface Task {
   stage: TaskStage;
   workflow: string;
   product: string;
-  substep: string;
+  substep: TaskSubstep | '';
   metadata: string;
   seq: number;
   createdAt: string;
@@ -748,46 +748,57 @@ export interface TaskFilters {
   product: string | 'all';
 }
 
+/**
+ * PlannerTask — matches Go internal/tasks/store.Task JSON shape (camelCase).
+ * Fields that don't exist in the v2 backend are optional to allow graceful
+ * degradation until the backend is extended.
+ */
 export interface PlannerTask {
   id: number;
   title: string;
   description: string;
   stage: TaskStage;
-  priority: number;
   product: string;
   substep: TaskSubstep | '';
   metadata: string;
-  plan: string;
-  output: string;
-  error: string;
-  blocker: string;
-  acceptance: string;
-  agent_id: string;
-  source?: string;
-  parent_id?: number | null;
-  retry_count?: number;
-  max_retries?: number;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  updated_at?: string;
+  workflow?: string;
+  seq?: number;
+  createdAt: string;
+  updatedAt: string;
+  // v1-only fields — optional until backend is extended.
+  priority?: number;
+  plan?: string;
+  output?: string;
+  error?: string;
+  blocker?: string;
+  acceptance?: string;
+  agent_id?: string;
 }
 
-/** Planner WebSocket activity event (snake_case, v1 API shape). */
+/**
+ * PlannerActivity — matches Go internal/tasks/store.Activity JSON shape (camelCase).
+ * Go struct: { id, taskId, eventType, data, createdAt }
+ */
 export interface PlannerActivity {
-  task_id: number;
-  type: 'status' | 'stage' | 'tool_call' | 'tool_complete' | 'tool_error' | 'token' | 'done';
-  content: string;
-  time: string;
+  id: number;
+  taskId: number;
+  eventType: string;
+  data: string;
+  createdAt: string;
 }
 
+/**
+ * TaskComment — matches Go internal/tasks/store.Comment JSON shape (camelCase).
+ * Go struct: { id, taskId, author, type, body, createdAt }
+ */
 export interface TaskComment {
   id: number;
-  task_id: number;
+  taskId: number;
   author: string;
   type: string;
   body: string;
-  created_at: string;
+  createdAt: string;
+  // v1-only — optional until backend is extended.
   attachments?: string[];
 }
 

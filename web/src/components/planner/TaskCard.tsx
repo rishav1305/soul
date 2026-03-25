@@ -77,13 +77,13 @@ interface TaskCardProps {
 }
 
 export default function TaskCard({ task, onClick, selected, selectable, recentActivity, inlineBadgesEnabled = true }: TaskCardProps) {
-  const borderClass = PRIORITY_BORDER[task.priority] ?? 'border-l-priority-low';
+  const borderClass = PRIORITY_BORDER[task.priority ?? 0] ?? 'border-l-priority-low';
   const substepIndex = task.substep ? SUBSTEP_ORDER.indexOf(task.substep) + 1 : 0;
   const substepLabel = task.substep ? SUBSTEP_LABELS[task.substep] : null;
   const meta = parseMetadata(task.metadata);
   const isAutonomous = !!meta.autonomous;
-  const prio = PRIORITY_CONFIG[task.priority] ?? { label: 'Norm', color: 'text-priority-normal' };
-  const timeStr = relativeTime(task.created_at);
+  const prio = PRIORITY_CONFIG[task.priority ?? 0] ?? { label: 'Norm', color: 'text-priority-normal' };
+  const timeStr = relativeTime(task.createdAt);
 
   // Determine if we should show the pulsing badge (within 60s)
   const showBadge = useMemo(() => {

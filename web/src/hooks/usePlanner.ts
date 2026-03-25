@@ -59,7 +59,10 @@ export function usePlanner() {
           setTasks((prev) => [...prev, task]);
           break;
         }
-        case 'task.updated': {
+        case 'task.updated':
+        case 'task.stage_changed': {
+          // Go backend fires task.stage_changed on stage transitions,
+          // task.updated on other field changes. Both carry a full Task payload.
           const task = msg.data as PlannerTask;
           setTasks((prev) =>
             prev.map((t) => (t.id === task.id ? task : t)),
@@ -72,39 +75,41 @@ export function usePlanner() {
           break;
         }
         case 'task.activity': {
+          // Go Activity shape: { id, taskId, eventType, data, createdAt }
           const activity = msg.data as PlannerActivity;
-          if (!activity?.task_id) break;
+          if (!activity?.taskId) break;
 
-          if (activity.type === 'token') {
+          if (activity.eventType === 'token') {
             // Accumulate streaming tokens.
             setTaskStreams((prev) => ({
               ...prev,
-              [activity.task_id]: (prev[activity.task_id] || '') + activity.content,
+              [activity.taskId]: (prev[activity.taskId] || '') + activity.data,
             }));
-          } else if (activity.type === 'done') {
+          } else if (activity.eventType === 'done') {
             // Clear stream on completion.
             setTaskStreams((prev) => {
               const next = { ...prev };
-              delete next[activity.task_id];
+              delete next[activity.taskId];
               return next;
             });
           }
 
-          // Store non-token activities in the log (status, stage, tool events).
-          if (activity.type !== 'token') {
+          // Store non-token activities in the log.
+          if (activity.eventType !== 'token') {
             setTaskActivities((prev) => ({
               ...prev,
-              [activity.task_id]: [...(prev[activity.task_id] || []), activity].slice(-50),
+              [activity.taskId]: [...(prev[activity.taskId] || []), activity].slice(-50),
             }));
           }
           break;
         }
-        case 'task.comment.added': {
+        case 'task.comment': {
+          // Go fires "task.comment" (not "task.comment.added").
           const comment = msg.data as TaskComment;
-          if (!comment?.task_id) break;
+          if (!comment?.taskId) break;
           setTaskComments((prev) => ({
             ...prev,
-            [comment.task_id]: [...(prev[comment.task_id] || []), comment],
+            [comment.taskId]: [...(prev[comment.taskId] || []), comment],
           }));
           break;
         }
@@ -157,13 +162,25 @@ export function usePlanner() {
 
   const moveTask = useCallback(
     async (id: number, stage: TaskStage, comment: string) => {
-      const res = await fetch(`/api/tasks/${id}/move`, {
-        method: 'POST',
+      // v2 backend: PATCH /api/tasks/{id} to change stage (no /move endpoint).
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stage, comment }),
+        body: JSON.stringify({ stage }),
       });
       if (!res.ok) throw new Error(`Failed to move task: ${res.status}`);
-      return (await res.json()) as PlannerTask;
+      const task = (await res.json()) as PlannerTask;
+
+      // Post move comment separately if provided.
+      if (comment.trim()) {
+        await fetch(`/api/tasks/${id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ author: 'user', type: 'stage_change', body: comment }),
+        });
+      }
+
+      return task;
     },
     [],
   );
