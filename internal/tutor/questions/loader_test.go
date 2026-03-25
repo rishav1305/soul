@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 func TestLoad(t *testing.T) {

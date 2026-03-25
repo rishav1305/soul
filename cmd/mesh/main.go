@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/mesh/agent"
-	"github.com/rishav1305/soul-v2/internal/mesh/hub"
-	"github.com/rishav1305/soul-v2/internal/mesh/node"
-	"github.com/rishav1305/soul-v2/internal/mesh/server"
-	"github.com/rishav1305/soul-v2/internal/mesh/store"
+	"github.com/rishav1305/soul/internal/mesh/agent"
+	"github.com/rishav1305/soul/internal/mesh/hub"
+	"github.com/rishav1305/soul/internal/mesh/node"
+	"github.com/rishav1305/soul/internal/mesh/server"
+	"github.com/rishav1305/soul/internal/mesh/store"
 )
 
 func main() {

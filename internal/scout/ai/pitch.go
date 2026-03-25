@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/scout/agent"
+	"github.com/rishav1305/soul/internal/scout/agent"
 )
 
 // CompanyPitch generates a team augmentation pitch for a target company.

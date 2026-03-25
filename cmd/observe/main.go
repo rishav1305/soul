@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/rishav1305/soul-v2/internal/observe/server"
+	"github.com/rishav1305/soul/internal/observe/server"
 )
 
 func main() {

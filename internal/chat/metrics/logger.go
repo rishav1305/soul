@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/pkg/events"
+	"github.com/rishav1305/soul/pkg/events"
 )
 
 // Compile-time check: EventLogger satisfies events.Logger.

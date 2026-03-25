@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // PhaseFunc is a function that processes a pipeline phase.

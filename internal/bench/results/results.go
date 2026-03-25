@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/bench/harness"
+	"github.com/rishav1305/soul/internal/bench/harness"
 )
 
 // ResultSummary is a lightweight view of a stored result.

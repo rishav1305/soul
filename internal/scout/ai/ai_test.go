@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 type mockSender struct {

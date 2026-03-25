@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 // GenerateHTML returns a complete HTML document with inline CSS showing the scan report.

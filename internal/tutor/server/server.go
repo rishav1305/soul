@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/modules"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/modules"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // Server is the tutor HTTP server.

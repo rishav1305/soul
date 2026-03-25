@@ -1,0 +1,259 @@
+<h2>Chat Window — v3 Refinements</h2>
+<p class="subtitle">Labeled buttons, golden diamond with glow, "General" default, clearer thinking states.</p>
+
+<div class="cards">
+  <div class="card" data-choice="full-chat" onclick="toggleSelect(this)" style="grid-column: span 2;">
+    <div class="card-image">
+      <div style="background:#08081a;border-radius:10px;font-family:'Inter',system-ui,-apple-system,sans-serif;color:#c8c8e0;display:flex;flex-direction:column;min-height:620px;overflow:hidden;border:1px solid #16163a;">
+
+        <!-- Top bar -->
+        <div style="padding:8px 16px;background:#0c0c22;border-bottom:1px solid #16163a;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <!-- Diamond logo: GOLDEN with glow -->
+            <div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 6px #d4a01888);">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 0L14 8L8 16L2 8Z" fill="url(#goldGrad1)"/>
+                <defs><linearGradient id="goldGrad1" x1="2" y1="0" x2="14" y2="16"><stop offset="0%" stop-color="#f0c040"/><stop offset="50%" stop-color="#d4a018"/><stop offset="100%" stop-color="#b8860b"/></linearGradient></defs>
+              </svg>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;"></div>
+              <span style="color:#444;font-size:10px;letter-spacing:0.3px;">Connected</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <!-- + New (labeled) -->
+            <div style="background:#7c3aed;border-radius:6px;padding:5px 10px;font-size:11px;color:white;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:500;">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+              New
+            </div>
+            <!-- Running (labeled + count) -->
+            <div style="background:#111128;border:1px solid #1e1e3a;border-radius:6px;padding:5px 10px;font-size:11px;color:#f59e0b;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="7 4"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1.5s" repeatCount="indefinite"/></circle></svg>
+              Running
+              <span style="background:#f59e0b22;padding:0 5px;border-radius:3px;font-size:10px;font-weight:600;">2</span>
+            </div>
+            <!-- Unread (labeled + count) -->
+            <div style="background:#111128;border:1px solid #7c3aed44;border-radius:6px;padding:5px 10px;font-size:11px;color:#a78bfa;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <svg width="8" height="8" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="#7c3aed"/></svg>
+              Unread
+              <span style="background:#7c3aed22;padding:0 5px;border-radius:3px;font-size:10px;font-weight:600;">5</span>
+            </div>
+            <!-- History (labeled) -->
+            <div style="background:#111128;border:1px solid #1e1e3a;border-radius:6px;padding:5px 10px;font-size:11px;color:#666;cursor:pointer;display:flex;align-items:center;gap:4px;">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+              History
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages area -->
+        <div style="flex:1;padding:20px 24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;">
+
+          <!-- User message -->
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="background:#12123a;border:1px solid #1e1e50;padding:12px 16px;border-radius:16px 16px 4px 16px;max-width:72%;font-size:13px;color:#e0e0f0;line-height:1.6;">
+              How do I set up Cloudflare Tunnel on my Raspberry Pi?
+            </div>
+            <div style="font-size:10px;color:#333;display:flex;gap:6px;align-items:center;padding-right:4px;">
+              <span>2 min ago</span>
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" style="cursor:pointer;opacity:0.5;"><path d="M11.5 1.5l3 3L5 14H2v-3z"/></svg>
+            </div>
+          </div>
+
+          <!-- Assistant response: completed with thinking collapsed -->
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+            <!-- Avatar: golden diamond, no name -->
+            <div style="display:flex;align-items:center;gap:6px;padding-left:2px;">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 4px #d4a01844);">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 0L14 8L8 16L2 8Z" fill="url(#goldGrad2)"/>
+                  <defs><linearGradient id="goldGrad2" x1="2" y1="0" x2="14" y2="16"><stop offset="0%" stop-color="#f0c040"/><stop offset="50%" stop-color="#d4a018"/><stop offset="100%" stop-color="#b8860b"/></linearGradient></defs>
+                </svg>
+              </div>
+              <span style="font-size:9px;color:#444;font-family:monospace;">Opus 4.6</span>
+              <span style="font-size:9px;color:#2a2a3a;">·</span>
+              <span style="font-size:9px;color:#333;font-family:monospace;">1.2k → 340</span>
+            </div>
+
+            <!-- Thinking: COMPLETED, collapsed pill with clear label -->
+            <div style="margin-left:26px;margin-bottom:2px;">
+              <div style="background:#0e0e24;border:1px solid #1a1a38;border-radius:6px;padding:5px 10px;display:inline-flex;align-items:center;gap:6px;font-size:10px;color:#555;cursor:pointer;">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#555" stroke-width="1.5" stroke-linecap="round"><path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z"/><path d="M6 14h4"/></svg>
+                Extended thinking · 2.4s
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </div>
+            </div>
+
+            <!-- Response body -->
+            <div style="margin-left:26px;padding:14px 18px;max-width:85%;font-size:13px;color:#c0c0d8;line-height:1.7;background:#0e0e24;border:1px solid #1a1a38;border-radius:4px 14px 14px 14px;">
+              Install cloudflared with the ARM64 package:
+              <div style="background:#080816;border:1px solid #14142e;border-radius:8px;padding:10px 14px;margin:10px 0;font-family:'JetBrains Mono',monospace;font-size:12px;color:#d0d0f0;display:flex;align-items:center;justify-content:space-between;">
+                <span>curl -L -o /tmp/cf.deb https://...</span>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;flex-shrink:0;"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11"/></svg>
+              </div>
+              <span style="color:#888;">Then create and configure the tunnel...</span>
+            </div>
+
+            <!-- Footer -->
+            <div style="margin-left:26px;font-size:10px;color:#333;display:flex;gap:8px;align-items:center;padding-left:2px;">
+              <span>2 min ago</span>
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;opacity:0.5;"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11"/></svg>
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" style="cursor:pointer;opacity:0.5;"><path d="M1 4v5h5"/><path d="M3.5 11A6 6 0 1 0 3 5l-2 2"/></svg>
+            </div>
+          </div>
+
+          <!-- Tool calls: compact collapsed -->
+          <div style="margin-left:26px;">
+            <div style="background:#0e0e24;border:1px solid #1a1a38;border-radius:6px;padding:6px 10px;display:inline-flex;align-items:center;gap:8px;font-size:10px;cursor:pointer;">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round"><path d="M3 8l3 3 7-7"/></svg>
+              <span style="color:#888;font-family:monospace;">3 tools completed</span>
+              <span style="color:#2a2a3a;">·</span>
+              <span style="color:#555;font-family:monospace;font-size:9px;">tunnel.create, dns.route, service.install</span>
+              <span style="color:#2a2a3a;">·</span>
+              <span style="color:#444;">1.2s</span>
+              <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+            </div>
+          </div>
+
+          <!-- === STREAMING: Thinking in progress === -->
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+            <div style="display:flex;align-items:center;gap:6px;padding-left:2px;">
+              <!-- Golden diamond with animated glow during streaming -->
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="filter:drop-shadow(0 0 6px #d4a01866);">
+                  <path d="M8 0L14 8L8 16L2 8Z" fill="url(#goldGrad3)">
+                    <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite"/>
+                  </path>
+                  <defs><linearGradient id="goldGrad3" x1="2" y1="0" x2="14" y2="16"><stop offset="0%" stop-color="#f0c040"/><stop offset="50%" stop-color="#d4a018"/><stop offset="100%" stop-color="#b8860b"/></linearGradient></defs>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Thinking: IN PROGRESS, expanded with visible content preview -->
+            <div style="margin-left:26px;margin-bottom:2px;">
+              <div style="background:#0e0e24;border:1px solid #d4a01833;border-radius:8px;padding:10px 14px;max-width:380px;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                  <!-- Lightbulb icon with animated glow -->
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#d4a018" stroke-width="1.5" stroke-linecap="round" style="filter:drop-shadow(0 0 3px #d4a01866);">
+                    <path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z"/>
+                    <path d="M6 14h4"/>
+                  </svg>
+                  <span style="color:#d4a018;font-size:10px;font-weight:600;letter-spacing:0.3px;">Extended thinking</span>
+                  <div style="flex:1;"></div>
+                  <span style="font-size:9px;color:#444;font-family:monospace;">3.1s</span>
+                </div>
+                <div style="font-size:11px;color:#555;line-height:1.5;border-left:2px solid #d4a01833;padding-left:8px;">
+                  Analyzing the configuration needs for a reverse proxy setup with WebSocket support. Need to consider the CSP headers, origin validation, and the SOUL_V2_HOST bind address...
+                  <span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:#d4a018;margin-left:4px;vertical-align:middle;animation:thinkDot 1.2s ease-in-out infinite;"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tool call: IN PROGRESS -->
+            <div style="margin-left:26px;margin-bottom:4px;">
+              <div style="background:#0e0e24;border:1px solid #1a1a38;border-radius:6px;padding:6px 10px;display:inline-flex;align-items:center;gap:8px;font-size:10px;">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="7 4"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1s" repeatCount="indefinite"/></circle></svg>
+                <span style="color:#f59e0b;font-family:monospace;">tunnel.create</span>
+                <span style="color:#2a2a3a;">·</span>
+                <span style="color:#444;font-family:monospace;">running</span>
+              </div>
+            </div>
+
+            <!-- Streaming text -->
+            <div style="margin-left:26px;padding:14px 18px;max-width:85%;font-size:13px;color:#c0c0d8;line-height:1.7;background:#0e0e24;border:1px solid #1a1a38;border-radius:4px 14px 14px 14px;">
+              Your tunnel is now configured. The nginx reverse proxy needs these WebSocket headers
+              <span style="display:inline-block;width:2px;height:15px;background:#d4a018;animation:cursorBlink 1s step-end infinite;margin-left:1px;vertical-align:text-bottom;border-radius:1px;"></span>
+            </div>
+            <div style="margin-left:26px;font-size:10px;color:#444;padding-left:2px;font-family:monospace;">
+              24 words
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Input box -->
+        <div style="padding:10px 16px 14px;">
+          <div style="background:#0e0e24;border:1px solid #1e1e40;border-radius:14px;overflow:hidden;">
+            <div style="padding:12px 14px;min-height:40px;">
+              <span style="font-size:13px;color:#444;">Message...</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;padding:5px 8px;border-top:1px solid #14142e;">
+              <!-- Product selector: "General" default -->
+              <div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;font-size:11px;color:#888;cursor:pointer;background:#0a0a1a;border:1px solid #1a1a30;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M4 8h8M6 12h4"/></svg>
+                <span style="font-size:10px;color:#666;">General</span>
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </div>
+              <!-- Mode pills -->
+              <div style="display:flex;gap:1px;background:#080816;border-radius:6px;padding:2px;border:1px solid #14142e;">
+                <span style="background:#1a1a35;padding:3px 8px;border-radius:4px;font-size:10px;color:#ddd;">Chat</span>
+                <span style="padding:3px 8px;font-size:10px;color:#444;">Code</span>
+                <span style="padding:3px 8px;font-size:10px;color:#444;">Arch</span>
+              </div>
+              <!-- Model -->
+              <div style="padding:3px 8px;border-radius:5px;font-size:10px;color:#555;font-family:monospace;background:#080816;border:1px solid #14142e;">Opus 4.6</div>
+              <!-- Thinking toggle: labeled clearly -->
+              <div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:5px;font-size:10px;color:#555;cursor:pointer;background:#080816;border:1px solid #14142e;">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z"/><path d="M6 14h4"/></svg>
+                Think
+              </div>
+              <div style="flex:1;"></div>
+              <!-- Attach labeled -->
+              <div style="display:flex;align-items:center;gap:3px;padding:4px 8px;cursor:pointer;color:#444;font-size:10px;border-radius:5px;">
+                <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9"/></svg>
+                Attach
+              </div>
+              <!-- Send -->
+              <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12M10 4l4 4-4 4"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Complete Chat — v3</h3>
+      <p>All 4 refinements applied. Golden diamond with glow, labeled buttons, "General" product default, clear thinking states.</p>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes cursorBlink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+@keyframes thinkDot { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
+</style>
+
+<h3 style="margin-top:20px;">v3 Changes</h3>
+<div class="options" data-multiselect>
+  <div class="option" data-choice="labels" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>Labels on all buttons</h3>
+      <p>Top bar: "New", "Running 2", "Unread 5", "History". Toolbar: "General", "Think", "Attach". No unlabeled icon-only buttons.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="golden" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Golden diamond with glow</h3>
+      <p>Diamond SVG uses gold gradient (#f0c040 → #d4a018 → #b8860b) with drop-shadow glow. During streaming, the diamond breathes (opacity animation) with stronger glow. Cursor is golden too.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="general" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>"General" replaces "None"</h3>
+      <p>Product selector shows "General" as default instead of "— None (general)". Cleaner, more intentional.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="thinking" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>Clear thinking states</h3>
+      <p><strong>Completed:</strong> Collapsed pill with lightbulb icon: "Extended thinking · 2.4s ▾" — click to expand. <strong>In progress:</strong> Expanded card with golden border, lightbulb glow, live preview of thinking text, animated dot, elapsed timer. <strong>Tool calls:</strong> Running = amber spinner + name + "running". Done = checkmark + summary + expand.</p>
+    </div>
+  </div>
+</div>

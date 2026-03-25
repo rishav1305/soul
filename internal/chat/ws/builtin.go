@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/session"
 )
 
 // BuiltinExecutor handles built-in tools (memories, custom tools, subagent)

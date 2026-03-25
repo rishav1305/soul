@@ -1,6 +1,6 @@
 package election
 
-import "github.com/rishav1305/soul-v2/internal/mesh/node"
+import "github.com/rishav1305/soul/internal/mesh/node"
 
 // ElectHub selects the hub from a list of nodes.
 // 20% hysteresis: incumbent keeps hub unless challenger exceeds by 20%.

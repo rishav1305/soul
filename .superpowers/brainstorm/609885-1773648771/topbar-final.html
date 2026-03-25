@@ -1,0 +1,127 @@
+<h2>Top Bar — Final Mobile Layout</h2>
+<p class="subtitle">Keep all 4 buttons with dropdowns intact. Just icon-only on mobile, no text labels.</p>
+
+<div class="split">
+  <!-- DESKTOP (current, for reference) -->
+  <div class="mockup">
+    <div class="mockup-header">Desktop (unchanged)</div>
+    <div class="mockup-body" style="padding: 0;">
+      <div style="background: #111118; border: 1px solid #2a2a3a; border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 6px; font-family: system-ui;">
+        <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+        </div>
+        <div style="flex: 1; font-size: 13px; color: #ccc;">Security hardening review</div>
+        <!-- New -->
+        <div style="padding: 5px 10px; font-size: 11px; color: #fff; background: #7c3aed; border-radius: 6px; display: flex; align-items: center; gap: 4px;">
+          <span style="font-size: 12px;">+</span> New
+        </div>
+        <!-- Running -->
+        <div style="padding: 5px 10px; font-size: 11px; color: #888; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 6px; display: flex; align-items: center; gap: 4px;">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/></svg>
+          Running
+        </div>
+        <!-- Unread -->
+        <div style="padding: 5px 10px; font-size: 11px; color: #888; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 6px; display: flex; align-items: center; gap: 4px;">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="#7c3aed"/></svg>
+          Unread
+        </div>
+        <!-- History -->
+        <div style="padding: 5px 10px; font-size: 11px; color: #888; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 6px; display: flex; align-items: center; gap: 4px;">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="8,4.5 8,8 11,9.5"/></svg>
+          History
+        </div>
+      </div>
+      <div style="font-size: 10px; color: #555; margin-top: 6px; padding-left: 4px;">
+        ☰ + title + [New] [Running ▾] [Unread ▾] [History] — with text labels
+      </div>
+    </div>
+  </div>
+
+  <!-- MOBILE -->
+  <div class="mockup">
+    <div class="mockup-header" style="color: #e8a849;">Mobile (&lt;640px) — Icon-only</div>
+    <div class="mockup-body" style="padding: 0;">
+      <div style="background: #111118; border: 1px solid rgba(232,168,73,0.3); border-radius: 8px; padding: 6px 6px; display: flex; align-items: center; gap: 5px; font-family: system-ui;">
+        <!-- Hamburger (products) -->
+        <div style="width: 34px; height: 34px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Products sidebar">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+        </div>
+
+        <!-- Session title -->
+        <div style="flex: 1; font-size: 12px; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; min-width: 0;">
+          Security hardening review
+        </div>
+
+        <!-- New session -->
+        <div style="width: 34px; height: 34px; background: #7c3aed; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" title="New session">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        </div>
+
+        <!-- Running (icon + badge, dropdown on tap) -->
+        <div style="position: relative; flex-shrink: 0;">
+          <div style="width: 34px; height: 34px; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; display: flex; align-items: center; justify-content: center;" title="Running sessions">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/></svg>
+          </div>
+          <!-- Badge -->
+          <div style="position: absolute; top: -3px; right: -3px; width: 16px; height: 16px; background: #f59e0b; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #000; font-weight: 600;">2</div>
+        </div>
+
+        <!-- Unread (icon + badge, dropdown on tap) -->
+        <div style="position: relative; flex-shrink: 0;">
+          <div style="width: 34px; height: 34px; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; display: flex; align-items: center; justify-content: center;" title="Unread sessions">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" fill="#7c3aed"/></svg>
+          </div>
+          <!-- Badge -->
+          <div style="position: absolute; top: -3px; right: -3px; width: 16px; height: 16px; background: #7c3aed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; font-weight: 600;">3</div>
+        </div>
+
+        <!-- History (opens right panel) -->
+        <div style="width: 34px; height: 34px; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Session history">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><polyline points="8,4.5 8,8 11,9.5"/></svg>
+        </div>
+      </div>
+
+      <!-- Width check -->
+      <div style="margin-top: 8px; font-family: monospace; font-size: 10px; color: #555; padding: 0 4px;">
+        ☰(34) + title(flex) + ⊕(34) + 🔄(34) + 🟣(34) + 🕐(34) + gaps(30) = 200px fixed + title fills rest
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <h3>Behavior — Same as Desktop, Just Compact</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 12px;">
+    <div style="background: #111118; border-radius: 8px; padding: 10px;">
+      <div style="color: #e8a849; font-size: 11px; font-weight: 600; margin-bottom: 6px;">Desktop</div>
+      <div style="color: #888; line-height: 1.7;">
+        ☰ Hamburger + text label<br>
+        [+ New] text button<br>
+        [🔄 Running] text + badge + dropdown<br>
+        [🟣 Unread] text + badge + dropdown<br>
+        [🕐 History] text + toggles panel
+      </div>
+    </div>
+    <div style="background: #111118; border: 1px solid rgba(232,168,73,0.2); border-radius: 8px; padding: 10px;">
+      <div style="color: #e8a849; font-size: 11px; font-weight: 600; margin-bottom: 6px;">Mobile (&lt;640px)</div>
+      <div style="color: #888; line-height: 1.7;">
+        ☰ icon only (same sidebar)<br>
+        [+] icon only (same action)<br>
+        [🔄] icon + badge + <strong style="color: #ddd;">same dropdown</strong><br>
+        [🟣] icon + badge + <strong style="color: #ddd;">same dropdown</strong><br>
+        [🕐] icon only → <strong style="color: #ddd;">right panel</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 16px;">
+  <h3>Dropdown Position Fix</h3>
+  <div style="background: #0d0d14; border-radius: 8px; padding: 12px; font-size: 12px; color: #888; line-height: 1.7;">
+    Current dropdown: <code style="background: #1a1a24; padding: 1px 4px; border-radius: 3px; font-size: 11px;">w-72</code> (288px) — overflows on 320px screen.<br>
+    Mobile fix: <code style="background: #1a1a24; padding: 1px 4px; border-radius: 3px; font-size: 11px;">w-72 sm:w-72 max-sm:w-[calc(100vw-16px)] max-sm:fixed max-sm:left-2 max-sm:right-2</code><br>
+    → Full-width dropdown on mobile, positioned at screen edges with 8px margin.
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px;">All buttons stay. All dropdowns stay. Just remove text labels on mobile. Does this complete the design?</p>

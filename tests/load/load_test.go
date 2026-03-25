@@ -20,8 +20,8 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/chat/session"
-	"github.com/rishav1305/soul-v2/internal/chat/ws"
+	"github.com/rishav1305/soul/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/ws"
 )
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/scout/profiledb"
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/scout/profiledb"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // Sender sends a non-streaming request to Claude and returns the response.

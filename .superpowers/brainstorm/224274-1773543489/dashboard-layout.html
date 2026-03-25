@@ -1,0 +1,143 @@
+<h2>Observe Dashboard — Tab Layout</h2>
+<p class="subtitle">How should the 12 report types be organized?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Flat Tabs (like Tutor/Projects)</h3>
+      <p>One tab per report type — scrollable tab bar with all 12 tabs</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Observe</div>
+        <div class="mockup-body" style="padding:8px">
+          <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:6px;border-bottom:1px solid #ffffff1a;margin-bottom:12px">
+            <span style="background:#1a1a24;padding:4px 10px;border-radius:4px 4px 0 0;font-size:12px;color:#ededf0;white-space:nowrap">Overview</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Latency</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Alerts</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Cost</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">DB</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">HTTP</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Frontend</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">WS</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Quality</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Layers</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Usage</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82;white-space:nowrap">Tail</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#ededf0">2h 14m</div>
+              <div style="font-size:10px;color:#6a6a82">Uptime</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#34d399">0</div>
+              <div style="font-size:10px;color:#6a6a82">Errors</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#ededf0">847</div>
+              <div style="font-size:10px;color:#6a6a82">Events</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Consistent with Tutor/Projects</li><li>Simple mental model</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>12 tabs is a lot — scrolling needed</li><li>No grouping of related metrics</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Grouped Tabs (5 tabs, grouped reports)</h3>
+      <p>Combine related reports into logical groups</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Observe</div>
+        <div class="mockup-body" style="padding:8px">
+          <div style="display:flex;gap:4px;padding-bottom:6px;border-bottom:1px solid #ffffff1a;margin-bottom:12px">
+            <span style="background:#1a1a24;padding:4px 10px;border-radius:4px 4px 0 0;font-size:12px;color:#ededf0">Overview</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82">Performance</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82">Pipeline</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82">Frontend</span>
+            <span style="padding:4px 10px;font-size:12px;color:#6a6a82">Tail</span>
+          </div>
+          <div style="font-size:11px;color:#9494ac;margin-bottom:10px">
+            <strong style="color:#ededf0">Overview</strong> = Status + Alerts + Cost<br>
+            <strong style="color:#ededf0">Performance</strong> = Latency + DB + HTTP + WebSocket<br>
+            <strong style="color:#ededf0">Pipeline</strong> = Quality + Layers<br>
+            <strong style="color:#ededf0">Frontend</strong> = Frontend errors + Usage<br>
+            <strong style="color:#ededf0">Tail</strong> = Event log viewer
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#ededf0">2h 14m</div>
+              <div style="font-size:10px;color:#6a6a82">Uptime</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#f59e0b">2</div>
+              <div style="font-size:10px;color:#6a6a82">Active Alerts</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:bold;color:#ededf0">$0.42</div>
+              <div style="font-size:10px;color:#6a6a82">Cost Today</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Only 5 tabs — fits without scrolling</li><li>Related data together</li><li>Matches mobile well</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Tabs get longer/denser</li><li>Need to decide groupings</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Single Dashboard + Detail Drill-down</h3>
+      <p>One overview page with all key metrics as cards — click a card to expand details</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Observe</div>
+        <div class="mockup-body" style="padding:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer;border:1px solid transparent">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">STATUS</div>
+              <div style="font-size:18px;font-weight:bold;color:#34d399">Healthy</div>
+              <div style="font-size:10px;color:#6a6a82">2h 14m uptime · 847 events</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer;border:1px solid #f59e0b40">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">ALERTS</div>
+              <div style="font-size:18px;font-weight:bold;color:#f59e0b">2 active</div>
+              <div style="font-size:10px;color:#6a6a82">1 warning · 1 critical</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">LATENCY</div>
+              <div style="font-size:18px;font-weight:bold;color:#ededf0">P50: 142ms</div>
+              <div style="font-size:10px;color:#6a6a82">P95: 380ms · P99: 920ms</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">COST</div>
+              <div style="font-size:18px;font-weight:bold;color:#ededf0">$0.42</div>
+              <div style="font-size:10px;color:#6a6a82">1.2M in · 89K out tokens</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">DATABASE</div>
+              <div style="font-size:18px;font-weight:bold;color:#ededf0">P50: 2ms</div>
+              <div style="font-size:10px;color:#6a6a82">142 queries · 0 slow</div>
+            </div>
+            <div style="background:#1a1a24;border-radius:6px;padding:10px;cursor:pointer">
+              <div style="font-size:10px;color:#6a6a82;margin-bottom:4px">HTTP</div>
+              <div style="font-size:18px;font-weight:bold;color:#ededf0">96 reqs</div>
+              <div style="font-size:10px;color:#6a6a82">P50: 8ms · 0 errors</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Everything at a glance</li><li>No tab switching for overview</li><li>Most info-dense</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Needs detail view per card</li><li>Different pattern from other products</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

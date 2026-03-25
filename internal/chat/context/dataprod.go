@@ -1,6 +1,6 @@
 package context
 
-import "github.com/rishav1305/soul-v2/internal/chat/stream"
+import "github.com/rishav1305/soul/internal/chat/stream"
 
 func dataprodContext() ProductContext {
 	return ProductContext{

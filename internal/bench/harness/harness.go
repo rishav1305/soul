@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/bench/prompts"
-	"github.com/rishav1305/soul-v2/internal/bench/scoring"
+	"github.com/rishav1305/soul/internal/bench/prompts"
+	"github.com/rishav1305/soul/internal/bench/scoring"
 )
 
 // BenchConfig configures a benchmark run.

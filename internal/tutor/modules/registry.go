@@ -1,8 +1,8 @@
 package modules
 
 import (
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // ToolResult is the standard return type for all module methods.

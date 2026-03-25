@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // --- Networking Phases ---

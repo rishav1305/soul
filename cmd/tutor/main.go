@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/questions"
-	"github.com/rishav1305/soul-v2/internal/tutor/server"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
-	"github.com/rishav1305/soul-v2/pkg/auth"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/questions"
+	"github.com/rishav1305/soul/internal/tutor/server"
+	"github.com/rishav1305/soul/internal/tutor/store"
+	"github.com/rishav1305/soul/pkg/auth"
 )
 
 func main() {

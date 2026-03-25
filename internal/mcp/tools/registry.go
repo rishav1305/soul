@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	prodctx "github.com/rishav1305/soul-v2/internal/chat/context"
-	"github.com/rishav1305/soul-v2/internal/mcp/protocol"
+	prodctx "github.com/rishav1305/soul/internal/chat/context"
+	"github.com/rishav1305/soul/internal/mcp/protocol"
 )
 
 // canonicalProducts lists one representative name per product context.

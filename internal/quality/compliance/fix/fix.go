@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/analyzers"
+	"github.com/rishav1305/soul/internal/quality/compliance/analyzers"
 )
 
 // FixResult represents the outcome of attempting to fix a single finding.

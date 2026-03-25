@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"syscall"
 
-	prodctx "github.com/rishav1305/soul-v2/internal/chat/context"
-	"github.com/rishav1305/soul-v2/internal/mcp/auth"
-	"github.com/rishav1305/soul-v2/internal/mcp/server"
-	"github.com/rishav1305/soul-v2/internal/mcp/tools"
+	prodctx "github.com/rishav1305/soul/internal/chat/context"
+	"github.com/rishav1305/soul/internal/mcp/auth"
+	"github.com/rishav1305/soul/internal/mcp/server"
+	"github.com/rishav1305/soul/internal/mcp/tools"
 )
 
 func main() {

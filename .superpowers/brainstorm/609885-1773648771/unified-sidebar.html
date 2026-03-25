@@ -1,0 +1,200 @@
+<h2>Unified Sidebar — Full Layout</h2>
+<p class="subtitle">Everything in one drawer. Swipe from left edge or tap ☰ to open.</p>
+
+<div class="split">
+  <!-- SIDEBAR MOCKUP -->
+  <div class="mockup">
+    <div class="mockup-header" style="color: #e8a849;">Mobile Sidebar (280px)</div>
+    <div class="mockup-body" style="padding: 0;">
+      <div style="background: #0d0d14; border: 1px solid #2a2a3a; border-radius: 10px; font-family: system-ui; font-size: 12px; width: 100%; overflow: hidden;">
+
+        <!-- Header: Logo + Close -->
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 10px; border-bottom: 1px solid #1a1a24;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><defs><linearGradient id="dg3" x1="2" y1="0" x2="14" y2="16"><stop offset="0%" stop-color="#f0c040"/><stop offset="50%" stop-color="#d4a018"/></linearGradient></defs><path d="M8 0L14 8L8 16L2 8Z" fill="url(#dg3)"/></svg>
+            <span style="color: #ddd; font-weight: 600; font-size: 15px;">Soul v2</span>
+          </div>
+          <div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: #555; cursor: pointer;">✕</div>
+        </div>
+
+        <!-- Section 1: Quick Actions -->
+        <div style="padding: 10px 10px 6px;">
+          <div style="display: flex; gap: 6px;">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; background: rgba(232,168,73,0.1); border: 1px solid rgba(232,168,73,0.25); border-radius: 8px; color: #e8a849; font-size: 12px; font-weight: 500; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg>
+              New Chat
+            </div>
+            <div style="width: 40px; display: flex; align-items: center; justify-content: center; padding: 9px; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; color: #888; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Products -->
+        <div style="padding: 6px 10px;">
+          <div style="font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 1px; padding: 4px 6px; margin-bottom: 2px;">Product</div>
+          <div style="display: flex; flex-direction: column; gap: 1px;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; background: rgba(232,168,73,0.08); color: #e8a849;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #e8a849; flex-shrink: 0;"></span>
+              General
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; color: #999;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #444; flex-shrink: 0;"></span>
+              Tasks
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; color: #999;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #444; flex-shrink: 0;"></span>
+              Scout
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; color: #999;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #444; flex-shrink: 0;"></span>
+              Tutor
+            </div>
+            <!-- Expandable -->
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; color: #555; cursor: pointer;">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              17 more products
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div style="height: 1px; background: #1a1a24; margin: 4px 14px;"></div>
+
+        <!-- Section 3: Sessions -->
+        <div style="padding: 6px 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; margin-bottom: 2px;">
+            <span style="font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 1px;">Sessions</span>
+            <div style="display: flex; gap: 4px;">
+              <span style="font-size: 9px; color: #e8a849; background: rgba(232,168,73,0.1); padding: 2px 6px; border-radius: 4px; cursor: pointer;">All</span>
+              <span style="font-size: 9px; color: #555; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Running</span>
+              <span style="font-size: 9px; color: #555; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Unread</span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow-y: auto;">
+            <!-- Active session -->
+            <div style="padding: 8px; border-radius: 6px; background: #1a1a24; border-left: 2px solid #e8a849;">
+              <div style="color: #ddd; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Security hardening review</div>
+              <div style="color: #555; font-size: 10px; margin-top: 2px;">2 min ago · General</div>
+            </div>
+            <div style="padding: 8px; border-radius: 6px;">
+              <div style="color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Mobile UI brainstorm</div>
+              <div style="color: #444; font-size: 10px; margin-top: 2px;">15 min ago · General</div>
+            </div>
+            <div style="padding: 8px; border-radius: 6px;">
+              <div style="color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Chat polish phase 1</div>
+              <div style="color: #444; font-size: 10px; margin-top: 2px;">1h ago · Tasks</div>
+            </div>
+            <div style="padding: 8px; border-radius: 6px;">
+              <div style="color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Scout pipeline refactor</div>
+              <div style="color: #444; font-size: 10px; margin-top: 2px;">3h ago · Scout</div>
+            </div>
+            <div style="padding: 8px; border-radius: 6px;">
+              <div style="color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Sentinel CTF testing</div>
+              <div style="color: #444; font-size: 10px; margin-top: 2px;">Yesterday · Sentinel</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer: Nav links -->
+        <div style="border-top: 1px solid #1a1a24; padding: 10px; margin-top: 4px;">
+          <div style="display: flex; gap: 4px;">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px; border-radius: 6px; color: #e8a849; font-size: 9px; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 12l4-4 3 3 5-5"/><path d="M10 6h4v4"/></svg>
+              Observe
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px; border-radius: 6px; color: #666; font-size: 9px; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8h6M8 5v6"/></svg>
+              Tasks
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px; border-radius: 6px; color: #666; font-size: 9px; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z"/><path d="M6 14h4"/></svg>
+              Tutor
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px; border-radius: 6px; color: #666; font-size: 9px; cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+              More
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHAT GOES WHERE -->
+  <div class="mockup">
+    <div class="mockup-header">Anatomy — What Lives Where</div>
+    <div class="mockup-body" style="padding: 8px;">
+      <div style="font-size: 12px; line-height: 1.6; display: flex; flex-direction: column; gap: 14px;">
+
+        <div>
+          <div style="font-size: 10px; color: #e8a849; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">① Quick Actions (top)</div>
+          <div style="background: #111118; border-radius: 6px; padding: 10px; color: #999; font-size: 11px; line-height: 1.7;">
+            <strong style="color: #ddd;">New Chat</strong> — prominent golden button<br>
+            <strong style="color: #ddd;">Search</strong> — icon button next to it<br>
+            Always visible, never scrolled away
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 10px; color: #e8a849; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">② Product Switcher (compact)</div>
+          <div style="background: #111118; border-radius: 6px; padding: 10px; color: #999; font-size: 11px; line-height: 1.7;">
+            Shows top 4 products + expandable "more"<br>
+            Tapping a product: <strong style="color: #ddd;">sets active product AND closes sidebar</strong><br>
+            Active product shown with golden dot + highlight<br>
+            <em style="color: #666;">This replaces the product selector in ChatInput on mobile</em>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 10px; color: #e8a849; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">③ Session List (scrollable)</div>
+          <div style="background: #111118; border-radius: 6px; padding: 10px; color: #999; font-size: 11px; line-height: 1.7;">
+            Replaces top bar buttons: <strong style="color: #ddd;">All / Running / Unread</strong> as filter tabs<br>
+            Each session shows: title, time ago, product tag<br>
+            Active session: left gold border + brighter text<br>
+            Scrolls independently if list is long
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 10px; color: #e8a849; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">④ Page Nav (bottom)</div>
+          <div style="background: #111118; border-radius: 6px; padding: 10px; color: #999; font-size: 11px; line-height: 1.7;">
+            Quick links to full-page views: Observe, Tasks, Tutor, More<br>
+            <strong style="color: #ddd;">Only on mobile</strong> — desktop uses the full sidebar nav<br>
+            "More" opens the complete product grid
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 10px; color: #ef4444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">⑤ Removed from ChatInput</div>
+          <div style="background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.2); border-radius: 6px; padding: 10px; color: #999; font-size: 11px; line-height: 1.7;">
+            Product selector moves to sidebar on mobile<br>
+            ChatInput toolbar on mobile becomes: <strong style="color: #ddd;">Mode ▾ · Model · Think · Attach</strong><br>
+            Saves ~70px → toolbar fits even tighter
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <h3>Interaction Flow</h3>
+  <div style="background: #0d0d14; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 11px; color: #888; line-height: 2;">
+    User lands on chat → sees: [☰] Session Title [⊕]<br>
+    <br>
+    Tap ☰ OR swipe right from edge:<br>
+    &nbsp;&nbsp;→ Sidebar slides in (280px, 85vw max)<br>
+    &nbsp;&nbsp;→ Backdrop dims main content (tap to close)<br>
+    <br>
+    In sidebar:<br>
+    &nbsp;&nbsp;→ Tap "New Chat" → creates session, closes sidebar<br>
+    &nbsp;&nbsp;→ Tap product → sets product, closes sidebar<br>
+    &nbsp;&nbsp;→ Tap session → switches session, closes sidebar<br>
+    &nbsp;&nbsp;→ Tap filter (Running/Unread) → filters session list<br>
+    &nbsp;&nbsp;→ Tap search → opens search overlay<br>
+    <br>
+    Swipe left on sidebar OR tap backdrop → closes sidebar
+  </div>
+</div>

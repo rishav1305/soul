@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // AIModule handles AI/ML interview prep study tools.

@@ -3,7 +3,7 @@ package reporters
 import (
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 // CalculateScore computes a compliance score from 0-100 based on findings.

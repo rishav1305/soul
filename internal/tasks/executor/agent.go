@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/chat/stream"
 )
 
 const (

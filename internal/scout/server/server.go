@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/scout/ai"
-	"github.com/rishav1305/soul-v2/internal/scout/pipelines"
-	"github.com/rishav1305/soul-v2/internal/scout/profiledb"
-	"github.com/rishav1305/soul-v2/internal/scout/store"
-	"github.com/rishav1305/soul-v2/internal/scout/sweep"
+	"github.com/rishav1305/soul/internal/scout/ai"
+	"github.com/rishav1305/soul/internal/scout/pipelines"
+	"github.com/rishav1305/soul/internal/scout/profiledb"
+	"github.com/rishav1305/soul/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/sweep"
 )
 
 // Server is the scout HTTP server.

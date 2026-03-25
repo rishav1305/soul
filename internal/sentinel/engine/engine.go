@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/sentinel/store"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/sentinel/store"
 )
 
 // Sender abstracts the Claude API for non-streaming requests.

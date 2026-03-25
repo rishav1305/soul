@@ -1,0 +1,260 @@
+<h2>Chat Window — Refined Design</h2>
+<p class="subtitle">No "Soul" label, SVG symbols (no emoji), existing diamond logo, better contrast, collapsible thinking/tools, smooth loading animation.</p>
+
+<div class="cards">
+  <div class="card" data-choice="full-chat" onclick="toggleSelect(this)" style="grid-column: span 2;">
+    <div class="card-image">
+      <div style="background:#08081a;border-radius:10px;font-family:'Inter',system-ui,-apple-system,sans-serif;color:#c8c8e0;display:flex;flex-direction:column;min-height:580px;overflow:hidden;border:1px solid #16163a;">
+
+        <!-- Top bar (chat-specific) -->
+        <div style="padding:8px 16px;background:#0c0c22;border-bottom:1px solid #16163a;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <!-- Diamond logo (existing Soul logo, not S) -->
+            <div style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 0L14 8L8 16L2 8Z" fill="url(#grad1)"/>
+                <defs><linearGradient id="grad1" x1="0" y1="0" x2="16" y2="16"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#2563eb"/></linearGradient></defs>
+              </svg>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;"></div>
+              <span style="color:#444;font-size:10px;letter-spacing:0.3px;">Connected</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <!-- + New (SVG icon) -->
+            <div style="background:#7c3aed;border-radius:6px;padding:5px 10px;font-size:11px;color:white;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:500;">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+              New
+            </div>
+            <!-- Running (SVG symbol) -->
+            <div style="background:#111128;border:1px solid #1e1e3a;border-radius:6px;padding:5px 10px;font-size:11px;color:#f59e0b;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#f59e0b" stroke-width="2" stroke-dasharray="8 4"><animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1.5s" repeatCount="indefinite"/></circle></svg>
+              <span style="font-size:10px;">2</span>
+            </div>
+            <!-- Unread (SVG symbol) -->
+            <div style="background:#111128;border:1px solid #7c3aed44;border-radius:6px;padding:5px 10px;font-size:11px;color:#a78bfa;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <svg width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="#7c3aed"/></svg>
+              <span style="font-size:10px;">5</span>
+            </div>
+            <!-- History (SVG clock) -->
+            <div style="background:#111128;border:1px solid #1e1e3a;border-radius:6px;padding:5px 9px;font-size:11px;color:#666;cursor:pointer;display:flex;align-items:center;gap:4px;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages area -->
+        <div style="flex:1;padding:20px 24px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;">
+
+          <!-- User message -->
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="background:#12123a;border:1px solid #1e1e50;padding:12px 16px;border-radius:16px 16px 4px 16px;max-width:72%;font-size:13px;color:#e0e0f0;line-height:1.6;">
+              How do I set up Cloudflare Tunnel on my Raspberry Pi?
+            </div>
+            <div style="font-size:10px;color:#333;display:flex;gap:6px;align-items:center;padding-right:4px;">
+              <span>2 min ago</span>
+              <!-- Edit icon (SVG) -->
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" style="cursor:pointer;opacity:0.5;"><path d="M11.5 1.5l3 3L5 14H2v-3z"/></svg>
+            </div>
+          </div>
+
+          <!-- Assistant message with thinking (collapsed) -->
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+            <!-- Avatar row: diamond logo only, no name -->
+            <div style="display:flex;align-items:center;gap:6px;padding-left:2px;">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 0L14 8L8 16L2 8Z" fill="url(#grad2)"/>
+                  <defs><linearGradient id="grad2" x1="0" y1="0" x2="16" y2="16"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#2563eb"/></linearGradient></defs>
+                </svg>
+              </div>
+              <span style="font-size:9px;color:#444;font-family:monospace;">Opus 4.6</span>
+              <span style="font-size:9px;color:#333;">·</span>
+              <span style="font-size:9px;color:#333;font-family:monospace;">1.2k → 340</span>
+            </div>
+
+            <!-- Thinking block: collapsed pill -->
+            <div style="margin-left:26px;margin-bottom:4px;">
+              <div style="background:#0e0e24;border:1px solid #1a1a38;border-radius:6px;padding:5px 10px;display:inline-flex;align-items:center;gap:6px;font-size:10px;color:#555;cursor:pointer;">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#555" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><circle cx="5.5" cy="8" r="1" fill="#555" stroke="none"/><circle cx="8" cy="8" r="1" fill="#555" stroke="none"/><circle cx="10.5" cy="8" r="1" fill="#555" stroke="none"/></svg>
+                Thinking · 2.4s
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </div>
+            </div>
+
+            <!-- Response body -->
+            <div style="margin-left:26px;padding:14px 18px;max-width:85%;font-size:13px;color:#c0c0d8;line-height:1.7;background:#0e0e24;border:1px solid #1a1a38;border-radius:4px 14px 14px 14px;">
+              Install cloudflared with the ARM64 package:
+
+              <div style="background:#080816;border:1px solid #14142e;border-radius:8px;padding:10px 14px;margin:10px 0;font-family:'JetBrains Mono',monospace;font-size:12px;color:#d0d0f0;display:flex;align-items:center;justify-content:space-between;">
+                <span>curl -L -o /tmp/cf.deb https://...</span>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;flex-shrink:0;"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11"/></svg>
+              </div>
+
+              <span style="color:#888;">Then authenticate and create a tunnel:</span>
+
+              <div style="background:#080816;border:1px solid #14142e;border-radius:8px;padding:10px 14px;margin:10px 0;font-family:'JetBrains Mono',monospace;font-size:12px;color:#d0d0f0;">
+                cloudflared tunnel login
+              </div>
+            </div>
+
+            <!-- Metadata footer -->
+            <div style="margin-left:26px;font-size:10px;color:#333;display:flex;gap:8px;align-items:center;padding-left:2px;">
+              <span>2 min ago</span>
+              <!-- Copy (SVG) -->
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;opacity:0.5;"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11"/></svg>
+              <!-- Retry (SVG) -->
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" style="cursor:pointer;opacity:0.5;"><path d="M1 4v5h5"/><path d="M3.5 11A6 6 0 1 0 3 5l-2 2"/></svg>
+            </div>
+          </div>
+
+          <!-- Tool calls: compact collapsed group -->
+          <div style="margin-left:26px;">
+            <div style="background:#0e0e24;border:1px solid #1a1a38;border-radius:6px;padding:6px 10px;display:inline-flex;align-items:center;gap:8px;font-size:10px;cursor:pointer;">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round"><path d="M3 8l3 3 7-7"/></svg>
+              <span style="color:#888;font-family:monospace;">3 tool calls</span>
+              <span style="color:#333;">·</span>
+              <span style="color:#555;font-family:monospace;">tunnel.create, dns.route, service.install</span>
+              <span style="color:#333;">·</span>
+              <span style="color:#444;">1.2s</span>
+              <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+            </div>
+          </div>
+
+          <!-- Streaming message with loading animation -->
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+            <div style="display:flex;align-items:center;gap:6px;padding-left:2px;">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 0L14 8L8 16L2 8Z" fill="url(#grad3)"/>
+                  <defs><linearGradient id="grad3" x1="0" y1="0" x2="16" y2="16"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#2563eb"/></linearGradient></defs>
+                </svg>
+              </div>
+              <!-- Pulsing ring around diamond during streaming -->
+              <div style="position:relative;width:6px;height:6px;">
+                <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;"></div>
+                <div style="position:absolute;top:-3px;left:-3px;width:12px;height:12px;border-radius:50%;border:1px solid #7c3aed44;animation:ringPulse 2s ease-out infinite;"></div>
+              </div>
+            </div>
+
+            <!-- Thinking in progress (expanded, animated) -->
+            <div style="margin-left:26px;margin-bottom:4px;">
+              <div style="background:#0e0e24;border:1px solid #7c3aed33;border-radius:6px;padding:8px 12px;font-size:11px;color:#666;max-width:320px;line-height:1.5;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#7c3aed" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><circle cx="5.5" cy="8" r="1" fill="#7c3aed" stroke="none"><animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite"/></circle><circle cx="8" cy="8" r="1" fill="#7c3aed" stroke="none"><animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" begin="0.2s" repeatCount="indefinite"/></circle><circle cx="10.5" cy="8" r="1" fill="#7c3aed" stroke="none"><animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" begin="0.4s" repeatCount="indefinite"/></circle></svg>
+                  <span style="color:#7c3aed;font-size:10px;font-weight:500;">Thinking...</span>
+                </div>
+                <span style="color:#555;">Analyzing the configuration needs for a reverse proxy setup with WebSocket support...</span>
+              </div>
+            </div>
+
+            <!-- Streaming text with cursor -->
+            <div style="margin-left:26px;padding:14px 18px;max-width:85%;font-size:13px;color:#c0c0d8;line-height:1.7;background:#0e0e24;border:1px solid #1a1a38;border-radius:4px 14px 14px 14px;">
+              Your tunnel is now configured. The nginx reverse proxy needs these WebSocket headers
+              <span style="display:inline-block;width:2px;height:15px;background:#7c3aed;animation:cursorBlink 1s step-end infinite;margin-left:1px;vertical-align:text-bottom;border-radius:1px;"></span>
+            </div>
+            <div style="margin-left:26px;font-size:10px;color:#444;padding-left:2px;font-family:monospace;">
+              24 words
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Input box -->
+        <div style="padding:10px 16px 14px;">
+          <div style="background:#0e0e24;border:1px solid #1e1e40;border-radius:14px;overflow:hidden;">
+            <div style="padding:12px 14px;min-height:40px;">
+              <span style="font-size:13px;color:#444;">Message...</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;padding:5px 8px;border-top:1px solid #14142e;">
+              <!-- Product selector (SVG icon) -->
+              <div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;font-size:11px;color:#888;cursor:pointer;background:#0a0a1a;border:1px solid #1a1a30;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M4 8h8M6 12h4"/></svg>
+                <span style="font-size:10px;color:#666;">General</span>
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </div>
+              <!-- Mode pills -->
+              <div style="display:flex;gap:1px;background:#080816;border-radius:6px;padding:2px;border:1px solid #14142e;">
+                <span style="background:#1a1a35;padding:3px 8px;border-radius:4px;font-size:10px;color:#ddd;">Chat</span>
+                <span style="padding:3px 8px;font-size:10px;color:#444;">Code</span>
+                <span style="padding:3px 8px;font-size:10px;color:#444;">Arch</span>
+              </div>
+              <!-- Model -->
+              <div style="padding:3px 8px;border-radius:5px;font-size:10px;color:#555;font-family:monospace;background:#080816;border:1px solid #14142e;">Opus 4.6</div>
+              <!-- Think toggle (SVG brain) -->
+              <div style="padding:3px 6px;cursor:pointer;color:#444;">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M5.5 6.5c0-1.4 1.1-2.5 2.5-2.5s2.5 1.1 2.5 2.5c0 1-0.6 1.8-1.5 2.2V10"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>
+              </div>
+              <div style="flex:1;"></div>
+              <!-- Attach (SVG paperclip) -->
+              <div style="padding:4px;cursor:pointer;color:#444;">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 9.5l-7.8 7.8a4.2 4.2 0 01-6-6l7.9-7.8a2.8 2.8 0 014 4L7.7 15.3a1.4 1.4 0 01-2-2l7-6.9"/></svg>
+              </div>
+              <!-- Send button (gradient circle with arrow SVG) -->
+              <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12M10 4l4 4-4 4"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Complete Chat Window — Refined</h3>
+      <p>All 6 feedback points applied. Diamond logo avatar, no "Soul" text, SVG symbols everywhere, collapsible thinking/tools, contrast-rich dark palette, streaming cursor animation.</p>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes cursorBlink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+@keyframes ringPulse { 0% { transform:scale(1);opacity:0.6; } 100% { transform:scale(2.5);opacity:0; } }
+</style>
+
+<h3 style="margin-top:20px;">Changes Applied</h3>
+<div class="options" data-multiselect>
+  <div class="option" data-choice="no-name" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>No "Soul" label in chat</h3>
+      <p>Removed. Just the diamond logo + model tag + token count. Context is obvious.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="animation" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Better loading animation</h3>
+      <p>Pulsing ring around diamond during streaming. Blinking cursor at text end. Thinking block has animated dots with staggered opacity. Word count tracks progress.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="logo" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>Diamond logo with gradient</h3>
+      <p>Replaced "S" with the existing diamond SVG (path d="M8 0L14 8L8 16L2 8Z") filled with purple→blue gradient. Used as avatar and in top bar.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="symbols" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>SVG symbols, no emoji</h3>
+      <p>All icons are SVG: plus, clock, spinner, checkmark, chevron, copy, edit, retry, paperclip, brain, arrow. Professional, consistent stroke weight.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="tools" onclick="toggleSelect(this)">
+    <div class="letter">5</div>
+    <div class="content">
+      <h3>Collapsed thinking & tool calls</h3>
+      <p>Thinking: collapsed pill "Thinking · 2.4s" with expand chevron. When streaming, expanded with animated dots. Tool calls: single compact line "3 tool calls · names · duration" with expand.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="contrast" onclick="toggleSelect(this)">
+    <div class="letter">6</div>
+    <div class="content">
+      <h3>Better contrast separation</h3>
+      <p>Background #08081a, cards #0e0e24, borders #1a1a38, code blocks #080816. Three clear depth levels. User bubble has distinct #12123a with brighter border. Metadata at #333 (not #444).</p>
+    </div>
+  </div>
+</div>

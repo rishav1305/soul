@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/analyzers"
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/rules"
+	"github.com/rishav1305/soul/internal/quality/compliance/analyzers"
+	"github.com/rishav1305/soul/internal/quality/compliance/rules"
 )
 
 // skipDirs are directories excluded from scanning.

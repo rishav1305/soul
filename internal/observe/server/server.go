@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/metrics"
 )
 
 // Server is the observe HTTP server.

@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	prodctx "github.com/rishav1305/soul-v2/internal/chat/context"
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/chat/session"
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	prodctx "github.com/rishav1305/soul/internal/chat/context"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/stream"
 )
 
 // maxToolRounds is the maximum number of tool-use/result round-trips per message.

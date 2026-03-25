@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/metrics"
 )
 
 // openTimedTestStore opens a test Store wrapped in a TimedStore with the given

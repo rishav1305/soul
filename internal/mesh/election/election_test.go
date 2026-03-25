@@ -3,7 +3,7 @@ package election
 import (
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/mesh/node"
+	"github.com/rishav1305/soul/internal/mesh/node"
 )
 
 func TestElectHub_HighestWins(t *testing.T) {

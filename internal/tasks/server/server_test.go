@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/tasks/executor"
-	"github.com/rishav1305/soul-v2/internal/tasks/store"
-	"github.com/rishav1305/soul-v2/pkg/events"
+	"github.com/rishav1305/soul/internal/tasks/executor"
+	"github.com/rishav1305/soul/internal/tasks/store"
+	"github.com/rishav1305/soul/pkg/events"
 )
 
 func newTestServer(t *testing.T) *Server {

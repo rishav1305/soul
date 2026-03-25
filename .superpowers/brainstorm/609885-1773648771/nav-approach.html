@@ -1,0 +1,130 @@
+<h2>Mobile Navigation — No Double Hamburger</h2>
+<p class="subtitle">Current problem: sidebar hamburger (products) + top bar buttons (session actions) = 2 menus. How to unify?</p>
+
+<div class="options">
+  <div class="option" data-choice="a-unified-sidebar" onclick="toggleSelect(this)" style="border-color: rgba(232,168,73,0.4);">
+    <div class="letter" style="background: rgba(232,168,73,0.2); color: #e8a849;">A</div>
+    <div class="content">
+      <h3>Unified Sidebar (Recommended)</h3>
+      <p>One hamburger opens one sidebar that has <strong>everything</strong>: products at top, session actions (New, History, Search) below, current session list at bottom. Top bar becomes just: <strong>☰ + session title + ⊕ new</strong>.</p>
+      <div class="mockup" style="margin-top: 12px;">
+        <div class="mockup-body" style="padding: 0;">
+          <div style="display: flex; gap: 0; width: 100%; font-family: system-ui;">
+            <!-- Sidebar overlay -->
+            <div style="width: 55%; background: #111118; border-right: 1px solid #2a2a3a; border-radius: 8px 0 0 8px; padding: 12px; font-size: 12px;">
+              <!-- Logo -->
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #1e1e2e;">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><defs><linearGradient id="dg2" x1="2" y1="0" x2="14" y2="16"><stop offset="0%" stop-color="#f0c040"/><stop offset="50%" stop-color="#d4a018"/></linearGradient></defs><path d="M8 0L14 8L8 16L2 8Z" fill="url(#dg2)"/></svg>
+                <span style="color: #ccc; font-weight: 600; font-size: 13px;">Soul v2</span>
+              </div>
+              <!-- Quick actions -->
+              <div style="display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; background: rgba(232,168,73,0.1); color: #e8a849;">
+                  <span style="font-size: 14px;">+</span> <span>New Chat</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: #888;">
+                  <span style="font-size: 14px;">🔍</span> <span>Search</span>
+                </div>
+              </div>
+              <!-- Products section -->
+              <div style="font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">Products</div>
+              <div style="display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px;">
+                <div style="padding: 7px 8px; border-radius: 6px; color: #e8a849; background: rgba(232,168,73,0.08); font-size: 11px;">General</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #888; font-size: 11px;">Tasks</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #888; font-size: 11px;">Scout</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #888; font-size: 11px;">Tutor</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #555; font-size: 11px;">+ 17 more...</div>
+              </div>
+              <!-- Sessions section -->
+              <div style="font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">Recent Sessions</div>
+              <div style="display: flex; flex-direction: column; gap: 1px;">
+                <div style="padding: 7px 8px; border-radius: 6px; color: #ccc; background: #1a1a24; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Security hardening review</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Mobile UI brainstorm</div>
+                <div style="padding: 7px 8px; border-radius: 6px; color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Chat polish phase 1</div>
+              </div>
+            </div>
+            <!-- Dimmed content -->
+            <div style="flex: 1; background: rgba(0,0,0,0.5); border-radius: 0 8px 8px 0; display: flex; align-items: center; justify-content: center;">
+              <span style="font-size: 10px; color: #444;">tap to close</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top: 10px;">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Single entry point — no confusion</li>
+          <li>Familiar mobile pattern (Slack, Discord, Telegram)</li>
+          <li>Top bar stays ultra-minimal</li>
+          <li>Products + sessions in one place</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Sidebar gets denser</li>
+          <li>"New Chat" is 2 taps (hamburger → new) instead of 1</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b-swipe-sidebar" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Swipe + Minimal Top Bar</h3>
+      <p>Same unified sidebar as A, but also openable by <strong>swiping right from left edge</strong> (like iOS Mail, Telegram). Top bar: just session title centered, ⊕ on right. No hamburger icon — swipe is the primary trigger.</p>
+      <div class="pros-cons" style="margin-top: 10px;">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Maximizes screen space — no hamburger button</li>
+          <li>Feels native on mobile</li>
+          <li>Gesture-driven = modern UX</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Not discoverable — new users won't know to swipe</li>
+          <li>Conflicts with browser back-swipe gesture</li>
+          <li>Accessibility concern — gesture-only navigation</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c-hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid: Hamburger + Swipe</h3>
+      <p>Unified sidebar (like A) with both hamburger button AND swipe-from-edge to open. Best of both — discoverable + fast. This is what <strong>Slack, Discord, and Google apps</strong> do.</p>
+      <div class="pros-cons" style="margin-top: 10px;">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Discoverable (hamburger) + fast (swipe)</li>
+          <li>Industry standard pattern</li>
+          <li>Accessible — button always available</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Need to implement touch gesture handling</li>
+          <li>Slightly more code complexity</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>Top Bar Comparison (all options)</h3>
+  <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+    <div style="background: #111118; border: 1px solid #2a2a3a; border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; font-family: system-ui;">
+      <div style="font-size: 9px; color: #555; width: 14px;">A</div>
+      <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #888;">☰</div>
+      <div style="font-size: 13px; color: #ccc; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Security hardening review</div>
+      <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e8a849" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg></div>
+    </div>
+    <div style="background: #111118; border: 1px solid #2a2a3a; border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; font-family: system-ui;">
+      <div style="font-size: 9px; color: #555; width: 14px;">B</div>
+      <div style="flex: 1; text-align: center; font-size: 13px; color: #ccc;">Security hardening review</div>
+      <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e8a849" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg></div>
+    </div>
+    <div style="background: #111118; border: 1px solid rgba(232,168,73,0.3); border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; font-family: system-ui;">
+      <div style="font-size: 9px; color: #e8a849; width: 14px;">C</div>
+      <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #888;">☰</div>
+      <div style="font-size: 13px; color: #ccc; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Security hardening review</div>
+      <div style="width: 32px; height: 32px; background: #1a1a24; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e8a849" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg></div>
+    </div>
+  </div>
+  <p style="font-size: 11px; color: #555; margin-top: 8px;">C is highlighted — same visual as A but also supports swipe gesture.</p>
+</div>

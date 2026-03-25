@@ -1,0 +1,107 @@
+<h2>How should Soul v2 handle 10+ products?</h2>
+<p class="subtitle">Your navbar currently has 10 items (Home, Chat, Tasks, Tutor, Projects, Observe, Scout, Sentinel, Mesh, Bench) and growing. Pick the navigation pattern that fits best.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;font-family:system-ui;color:#e0e0e0;">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div style="background:#7c3aed;color:white;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;">☑ Tasks</div>
+          <div style="background:#2563eb;color:white;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;">🎓 Tutor</div>
+          <div style="background:#059669;color:white;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;">📋 Projects</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;">👁 Observe</div>
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;">🎯 Scout</div>
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;">🛡 Sentinel</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;">🔗 Mesh</div>
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;">📊 Bench</div>
+          <div style="background:#333;padding:6px 12px;border-radius:6px;font-size:12px;opacity:0.5;">+ 12 more...</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Collapsible Sidebar</h3>
+      <p>VS Code / Discord style. Vertical sidebar with icons, expands on hover. Groups products into categories (Core, Agents, Quality, Infra, Data, Docs). Scales to 30+ products. Chat stays full-width.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;font-family:system-ui;color:#e0e0e0;">
+        <div style="display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #333;">
+          <div style="font-weight:700;font-size:14px;">Soul</div>
+          <div style="background:#7c3aed;padding:4px 10px;border-radius:6px;font-size:11px;">Chat</div>
+          <div style="padding:4px 10px;font-size:11px;opacity:0.7;">Dashboard</div>
+          <div style="margin-left:auto;background:#333;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;">⌘K Products...</div>
+        </div>
+        <div style="margin-top:12px;background:#111;border-radius:8px;padding:12px;border:1px solid #444;">
+          <div style="font-size:11px;color:#888;margin-bottom:8px;">Recent</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span style="background:#222;padding:4px 8px;border-radius:4px;font-size:11px;">☑ Tasks</span>
+            <span style="background:#222;padding:4px 8px;border-radius:4px;font-size:11px;">🎓 Tutor</span>
+            <span style="background:#222;padding:4px 8px;border-radius:4px;font-size:11px;">📋 Projects</span>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:8px;margin-bottom:4px;">All Products</div>
+          <div style="font-size:11px;color:#666;">Type to search 19 products...</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Command Palette (⌘K)</h3>
+      <p>Minimal navbar (just Chat + Dashboard). Products accessed via ⌘K search palette — type to fuzzy-search any product. Shows recent/pinned. Scales infinitely. Clean, keyboard-first like Raycast/Spotlight.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;font-family:system-ui;color:#e0e0e0;">
+        <div style="display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #333;">
+          <div style="font-weight:700;font-size:14px;">Soul</div>
+          <div style="background:#7c3aed;padding:4px 10px;border-radius:6px;font-size:11px;">💬 Chat</div>
+          <div style="padding:4px 10px;font-size:11px;">📊 Dashboard</div>
+          <div style="padding:4px 8px;font-size:11px;border:1px solid #444;border-radius:6px;">▼ More</div>
+        </div>
+        <div style="margin-top:8px;background:#222;border-radius:8px;padding:12px;border:1px solid #444;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="font-size:10px;color:#888;grid-column:span 2;">Core</div>
+            <div style="font-size:11px;padding:4px;">☑ Tasks</div>
+            <div style="font-size:11px;padding:4px;">🎓 Tutor</div>
+            <div style="font-size:10px;color:#888;grid-column:span 2;margin-top:4px;">Agents</div>
+            <div style="font-size:11px;padding:4px;">🎯 Scout</div>
+            <div style="font-size:11px;padding:4px;">🛡 Sentinel</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C: Grouped Dropdown</h3>
+      <p>Keep top navbar but collapse products into a "More" dropdown with grouped sections (Core, Agents, Quality, Infra, Data, Docs). Pin 2-3 favorites to the navbar. Simple, familiar pattern.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="d" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;font-family:system-ui;color:#e0e0e0;">
+        <div style="display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #333;">
+          <div style="font-weight:700;font-size:14px;">Soul</div>
+          <div style="background:#7c3aed;padding:4px 10px;border-radius:6px;font-size:11px;">💬</div>
+          <div style="padding:4px 10px;font-size:11px;">📊</div>
+          <div style="margin-left:auto;background:#333;padding:4px 10px;border-radius:6px;font-size:11px;">⌘K</div>
+        </div>
+        <div style="position:absolute;left:0;top:50px;width:48px;background:#111;height:180px;display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:8px;border-right:1px solid #333;">
+          <div style="font-size:16px;padding:4px;" title="Tasks">☑</div>
+          <div style="font-size:16px;padding:4px;" title="Tutor">🎓</div>
+          <div style="font-size:16px;padding:4px;" title="Projects">📋</div>
+          <div style="font-size:14px;color:#555;padding:4px;">···</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D: Hybrid — Sidebar + ⌘K</h3>
+      <p>Thin icon-only sidebar (pinned favorites) + ⌘K palette for full search. Best of both — quick access to top products, infinite scalability via search. VS Code meets Spotlight.</p>
+    </div>
+  </div>
+</div>

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rishav1305/soul-v2/internal/tasks/hooks"
-	"github.com/rishav1305/soul-v2/internal/tasks/phases"
-	"github.com/rishav1305/soul-v2/internal/tasks/store"
+	"github.com/rishav1305/soul/internal/tasks/hooks"
+	"github.com/rishav1305/soul/internal/tasks/phases"
+	"github.com/rishav1305/soul/internal/tasks/store"
 )
 
 // Config holds the configuration for an Executor.

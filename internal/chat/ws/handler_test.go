@@ -13,8 +13,8 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/chat/session"
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/stream"
 )
 
 // testMsgBuffer holds messages from array frames for sequential delivery.

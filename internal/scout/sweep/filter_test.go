@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // makeJob creates a Job with sensible defaults that passes all filters.

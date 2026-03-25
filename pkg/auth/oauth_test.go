@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/pkg/events"
+	"github.com/rishav1305/soul/pkg/events"
 )
 
 // testLogger records event types for assertion.

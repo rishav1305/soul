@@ -1,0 +1,194 @@
+<h2>Chat Top Bar — Polished Design</h2>
+<p class="subtitle">Refined top bar with + New, status dropdowns (unread/running), and session history toggle. No model selector — it stays in the input box.</p>
+
+<div class="cards">
+  <!-- Main design: top bar with dropdowns shown -->
+  <div class="card" data-choice="topbar" onclick="toggleSelect(this)" style="grid-column: span 2;">
+    <div class="card-image">
+      <div style="background:#0d0d1a;border-radius:8px;font-family:system-ui;color:#c8c8e0;overflow:hidden;min-height:400px;position:relative;">
+
+        <!-- Top bar -->
+        <div style="padding:8px 16px;background:#111127;border-bottom:1px solid #1e1e3a;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:15px;">💬</span>
+            <span style="font-weight:600;color:white;font-size:13px;">Chat</span>
+            <div style="display:flex;align-items:center;gap:4px;margin-left:4px;">
+              <div style="width:7px;height:7px;border-radius:50%;background:#22c55e;"></div>
+              <span style="color:#555;font-size:10px;">Connected</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <!-- + New -->
+            <div style="background:#7c3aed;border-radius:7px;padding:5px 10px;font-size:11px;color:white;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:500;">
+              + New
+            </div>
+            <!-- Running badge -->
+            <div style="background:#1a1a35;border:1px solid #2a2a4a;border-radius:7px;padding:5px 10px;font-size:11px;color:#f59e0b;cursor:pointer;display:flex;align-items:center;gap:5px;position:relative;">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;animation:pulse 1.5s infinite;"></span>
+              Running
+              <span style="background:#f59e0b33;color:#f59e0b;padding:0 5px;border-radius:4px;font-size:10px;font-weight:600;">2</span>
+            </div>
+            <!-- Unread badge -->
+            <div style="background:#1a1a35;border:1px solid #7c3aed55;border-radius:7px;padding:5px 10px;font-size:11px;color:#c4b5fd;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <span style="font-size:12px;">●</span>
+              Unread
+              <span style="background:#7c3aed44;color:#c4b5fd;padding:0 5px;border-radius:4px;font-size:10px;font-weight:600;">5</span>
+            </div>
+            <!-- History toggle -->
+            <div style="background:#1a1a35;border:1px solid #2a2a4a;border-radius:7px;padding:5px 10px;font-size:11px;color:#888;cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <span style="font-size:13px;">🕓</span>
+              History
+            </div>
+          </div>
+        </div>
+
+        <!-- Running dropdown (shown open) -->
+        <div style="position:absolute;top:44px;right:110px;width:280px;background:#16162e;border:1px solid #2a2a4a;border-radius:10px;box-shadow:0 8px 32px #0008;z-index:10;overflow:hidden;">
+          <div style="padding:10px 12px 6px;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Running Sessions</div>
+          <div style="padding:6px;">
+            <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1a1a35;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:white;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Security hardening plan</div>
+                <div style="font-size:10px;color:#555;margin-top:1px;">Streaming · Opus 4.6</div>
+              </div>
+              <div style="font-size:9px;color:#444;">3s</div>
+            </div>
+            <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scout pipeline sweep</div>
+                <div style="font-size:10px;color:#555;margin-top:1px;">Tool call · Sonnet 4.6</div>
+              </div>
+              <div style="font-size:9px;color:#444;">12s</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat content behind -->
+        <div style="padding:24px;display:flex;flex-direction:column;gap:12px;opacity:0.4;">
+          <div style="background:#1a1a35;border-radius:10px;padding:10px 14px;max-width:70%;font-size:12px;color:#888;">How do I configure Tailscale ACLs?</div>
+          <div style="background:#111;border:1px solid #1e1e3a;border-radius:10px;padding:10px 14px;max-width:80%;font-size:12px;color:#777;">You can configure ACLs in the Tailscale admin console...</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Full Top Bar with Running Dropdown Open</h3>
+      <p>+ New (purple accent), Running (amber pulse + count), Unread (purple dot + count), History (🕓 clock icon toggles right panel). Dropdowns are bubble popups below the button.</p>
+    </div>
+  </div>
+
+  <!-- Unread dropdown -->
+  <div class="card" data-choice="unread" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#16162e;border:1px solid #2a2a4a;border-radius:10px;box-shadow:0 8px 32px #0008;overflow:hidden;font-family:system-ui;">
+        <div style="padding:10px 12px 6px;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
+          <span>Unread Sessions</span>
+          <span style="color:#666;font-size:10px;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer;">Mark all read</span>
+        </div>
+        <div style="padding:6px;max-height:260px;overflow-y:auto;">
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1a1a35;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:white;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Navbar redesign brainstorm</div>
+              <div style="font-size:10px;color:#555;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Here are 3 layout options for...</div>
+            </div>
+            <div style="font-size:9px;color:#444;">2m</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Cloudflare tunnel setup</div>
+              <div style="font-size:10px;color:#555;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">The tunnel is now running on...</div>
+            </div>
+            <div style="font-size:9px;color:#444;">15m</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Auth middleware tests</div>
+              <div style="font-size:10px;color:#555;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">All 15 security tests pass...</div>
+            </div>
+            <div style="font-size:9px;color:#444;">1h</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">WS origin hardening</div>
+              <div style="font-size:10px;color:#555;margin-top:1px;">Fixed empty-Origin bypass...</div>
+            </div>
+            <div style="font-size:9px;color:#444;">2h</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Soul v2 deploy script</div>
+              <div style="font-size:10px;color:#555;margin-top:1px;">Deploy guard added for...</div>
+            </div>
+            <div style="font-size:9px;color:#444;">3h</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Unread Dropdown Bubble</h3>
+      <p>Purple dots, message preview, relative time. "Mark all read" at top. Clicking a session switches to it and marks read.</p>
+    </div>
+  </div>
+
+  <!-- Running dropdown -->
+  <div class="card" data-choice="running" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#16162e;border:1px solid #2a2a4a;border-radius:10px;box-shadow:0 8px 32px #0008;overflow:hidden;font-family:system-ui;">
+        <div style="padding:10px 12px 6px;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Active Streams</div>
+        <div style="padding:6px;">
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1a1a35;">
+            <div style="position:relative;">
+              <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;"></div>
+              <div style="position:absolute;top:-2px;left:-2px;width:12px;height:12px;border-radius:50%;border:1px solid #f59e0b44;animation:pulse 1.5s infinite;"></div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:white;font-weight:500;">Security hardening plan</div>
+              <div style="font-size:10px;color:#f59e0b;margin-top:2px;display:flex;align-items:center;gap:4px;">
+                <span>Streaming</span>
+                <span style="color:#444;">·</span>
+                <span style="color:#666;">Opus 4.6</span>
+                <span style="color:#444;">·</span>
+                <span style="color:#555;">1.2k tokens</span>
+              </div>
+            </div>
+            <div style="font-size:9px;color:#f59e0b55;">3s</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-top:2px;">
+            <div style="position:relative;">
+              <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;"></div>
+              <div style="position:absolute;top:-2px;left:-2px;width:12px;height:12px;border-radius:50%;border:1px solid #f59e0b44;animation:pulse 1.5s infinite;"></div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:11px;color:#ccc;">Scout pipeline sweep</div>
+              <div style="font-size:10px;color:#f59e0b;margin-top:2px;display:flex;align-items:center;gap:4px;">
+                <span>Tool call</span>
+                <span style="color:#444;">·</span>
+                <span style="color:#666;">Sonnet 4.6</span>
+                <span style="color:#444;">·</span>
+                <span style="color:#555;">sweep()</span>
+              </div>
+            </div>
+            <div style="font-size:9px;color:#f59e0b55;">12s</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Running Dropdown Bubble</h3>
+      <p>Amber pulsing dots, shows stream type (Streaming/Tool call), model, token count or tool name. Live-updating elapsed time.</p>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+</style>

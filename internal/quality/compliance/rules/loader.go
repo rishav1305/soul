@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/analyzers"
+	"github.com/rishav1305/soul/internal/quality/compliance/analyzers"
 )
 
 //go:embed *.yaml

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/mesh/store"
+	"github.com/rishav1305/soul/internal/mesh/store"
 )
 
 // Hub manages node registration, heartbeat processing, and resource aggregation.
