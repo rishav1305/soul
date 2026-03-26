@@ -6,6 +6,19 @@
 ![SQLite](https://img.shields.io/badge/SQLite-per_server-003B57?logo=sqlite&logoColor=white)
 ![127 Tools](https://img.shields.io/badge/Claude_Tools-127-blueviolet)
 
+## Why soul?
+
+Most AI platforms bolt an LLM onto a monolith. Soul is different:
+
+- **13 independent servers**, not one fragile process. Each owns its database, its API, its failure domain.
+- **127 tools routed through one WebSocket**, not 127 API integrations. Add a product by writing a Go handler, not rebuilding the frontend.
+- **Zero external runtime dependencies.** No CDN, no SaaS auth, no cloud database. Everything runs on your hardware, offline if needed.
+- **6 design pillars enforced on every merge** — not aspirational guidelines, but automated gates that block non-compliant code.
+
+The result: a platform you can run on a Raspberry Pi and a spare server, coordinating 9 AI agents without a single cloud dependency.
+
+---
+
 Multi-agent AI platform. 13 Go microservices, 79 packages, 9 specialized AI agents distributed across 2 machines (Raspberry Pi 5 + x86 server). Claude tool-use routes through a product context layer to 21 backend products — task execution, interview prep, lead pipeline CRM, LLM benchmarking, CTF challenges, distributed compute, compliance scanning. Each server owns its SQLite database. Zero external runtime dependencies.
 
 ## Architecture
@@ -33,6 +46,44 @@ Multi-agent AI platform. 13 Go microservices, 79 packages, 9 specialized AI agen
 │  Infra:3012  Quality:3014    │          │                              │
 │  Data:3016   Docs:3018       │          │  Each: own SQLite, own API   │
 └──────────────────────────────┘          └──────────────────────────────┘
+```
+
+```mermaid
+graph TB
+    subgraph Frontend
+        SPA["React SPA<br/>AppShell + ProductRail"]
+    end
+    
+    subgraph "Chat Server :3002"
+        WS["WebSocket Hub"]
+        CTX["Product Context (21)"]
+        SSE["Claude SSE Stream"]
+        WS --> CTX --> SSE
+    end
+    
+    subgraph "Product Servers"
+        T["Tasks :3004<br/>3-phase executor"]
+        TU["Tutor :3006<br/>SM-2 + mock interviews"]
+        S["Scout :3020<br/>55 AI tools"]
+        SE["Sentinel :3022<br/>14 CTF challenges"]
+        M["Mesh :3024<br/>distributed compute"]
+        B["Bench :3026<br/>CARS benchmark"]
+        O["+ 7 more servers"]
+    end
+    
+    subgraph Storage
+        DB1["SQLite per server"]
+        DB2["No shared state"]
+    end
+    
+    SPA -->|WebSocket| WS
+    SSE -->|"tool_use dispatch"| T & TU & S & SE & M & B & O
+    T & TU & S & SE & M & B & O --> DB1
+    
+    style SPA fill:#61DAFB,color:#000
+    style WS fill:#00ADD8,color:#fff
+    style CTX fill:#00ADD8,color:#fff
+    style SSE fill:#00ADD8,color:#fff
 ```
 
 ## Capabilities
@@ -100,6 +151,16 @@ Requires Go 1.24+, Node 18+, Claude OAuth credentials at `~/.claude/.credentials
 ```bash
 make verify   # L1-L3: static analysis + unit + integration tests
 ```
+
+## Related Projects
+
+| Project | What it does | Link |
+|---------|-------------|------|
+| **SoulGraph** | Multi-agent RAG framework (LangGraph + ChromaDB + RAGAS) | [github.com/rishav1305/soulgraph](https://github.com/rishav1305/soulgraph) |
+| **soul-team** | Runtime that deploys soul's agents across machines (courier, guardian, MCP) | [github.com/rishav1305/soul-team](https://github.com/rishav1305/soul-team) |
+| **soul-bench** | CARS benchmark — cost-adjusted LLM evaluation (52 models, 7 providers) | [github.com/rishav1305/soul-bench](https://github.com/rishav1305/soul-bench) |
+| **preset-toolkit** | Claude Code plugin for safe Preset/Superset dashboard management | [github.com/rishav1305/preset-toolkit](https://github.com/rishav1305/preset-toolkit) |
+| **dbt-toolkit** | Claude Code plugin for dbt workflow automation | [github.com/rishav1305/dbt-toolkit](https://github.com/rishav1305/dbt-toolkit) |
 
 ## Author
 
