@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // newTestServer creates a minimal Scout server with routes registered for testing.

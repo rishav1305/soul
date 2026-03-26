@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/bench/harness"
-	"github.com/rishav1305/soul-v2/internal/bench/prompts"
-	"github.com/rishav1305/soul-v2/internal/bench/results"
+	"github.com/rishav1305/soul/internal/bench/harness"
+	"github.com/rishav1305/soul/internal/bench/prompts"
+	"github.com/rishav1305/soul/internal/bench/results"
 )
 
 // Server is the bench HTTP server.

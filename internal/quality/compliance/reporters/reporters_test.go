@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/analyzers"
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/analyzers"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 func sampleResult() *scan.ScanResult {

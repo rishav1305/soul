@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/projects/content"
-	"github.com/rishav1305/soul-v2/internal/projects/server"
-	"github.com/rishav1305/soul-v2/internal/projects/store"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/projects/content"
+	"github.com/rishav1305/soul/internal/projects/server"
+	"github.com/rishav1305/soul/internal/projects/store"
 )
 
 func main() {

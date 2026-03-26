@@ -3,7 +3,7 @@ package reporters
 import (
 	"encoding/json"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 // GenerateJSON returns the scan result as pretty-printed JSON.

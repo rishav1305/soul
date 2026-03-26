@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rishav1305/soul-v2/pkg/auth"
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/chat/server"
-	"github.com/rishav1305/soul-v2/internal/chat/session"
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/chat/ws"
+	"github.com/rishav1305/soul/pkg/auth"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/server"
+	"github.com/rishav1305/soul/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/chat/ws"
 )
 
 func main() {

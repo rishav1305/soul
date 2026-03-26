@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useChat } from '../hooks/useChat';
-import type { Message, Session, ConnectionState, ChatProduct } from '../lib/types';
+import type { Message, Session, ConnectionState, ChatProduct, ThinkingConfig } from '../lib/types';
 
 interface ChatContextValue {
   messages: Message[];
@@ -9,7 +9,7 @@ interface ChatContextValue {
   status: ConnectionState;
   authError: boolean;
   reconnectAttempt: number;
-  sendMessage: (content: string, options?: { model?: string; thinking?: boolean; attachments?: { name: string; mediaType: string; data: string }[] }) => void;
+  sendMessage: (content: string, options?: { model?: string; thinking?: ThinkingConfig; attachments?: { name: string; mediaType: string; data: string }[] }) => void;
   stopGeneration: () => void;
   editAndResend: (messageId: string, newContent: string) => void;
   retryMessage: (messageId: string) => void;

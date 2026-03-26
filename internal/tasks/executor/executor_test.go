@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/tasks/store"
+	"github.com/rishav1305/soul/internal/tasks/store"
 )
 
 func openTestStore(t *testing.T) *store.Store {

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/mesh/transport"
+	"github.com/rishav1305/soul/internal/mesh/transport"
 )
 
 func TestHandleWebSocket_RejectsQueryToken(t *testing.T) {

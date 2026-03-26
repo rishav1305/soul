@@ -1,6 +1,6 @@
 package context
 
-import "github.com/rishav1305/soul-v2/internal/chat/stream"
+import "github.com/rishav1305/soul/internal/chat/stream"
 
 const memorySystemPrompt = `You have persistent memory that survives across conversations.
 Use memory_store to save important information.

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/chat/stream"
 )
 
 // PhaseConfig holds model selections for each phase of task execution.

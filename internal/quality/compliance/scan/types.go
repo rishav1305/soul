@@ -1,6 +1,6 @@
 package scan
 
-import "github.com/rishav1305/soul-v2/internal/quality/compliance/analyzers"
+import "github.com/rishav1305/soul/internal/quality/compliance/analyzers"
 
 // ScanOptions configures a compliance scan.
 type ScanOptions struct {

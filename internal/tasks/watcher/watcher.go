@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
-	"github.com/rishav1305/soul-v2/internal/tasks/store"
+	"github.com/rishav1305/soul/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/tasks/store"
 )
 
 // Sender sends a request to the Claude API and returns the response.

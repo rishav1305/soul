@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/bench/scoring"
+	"github.com/rishav1305/soul/internal/bench/scoring"
 )
 
 //go:embed *.json

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/sentinel/engine"
-	"github.com/rishav1305/soul-v2/internal/sentinel/store"
+	"github.com/rishav1305/soul/internal/sentinel/engine"
+	"github.com/rishav1305/soul/internal/sentinel/store"
 )
 
 // Server is the sentinel HTTP server.

@@ -12,10 +12,10 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/chat/server"
-	"github.com/rishav1305/soul-v2/internal/chat/session"
-	"github.com/rishav1305/soul-v2/internal/chat/ws"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/server"
+	"github.com/rishav1305/soul/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/ws"
 )
 
 // wsReadBuf provides per-connection buffering for batch (array) WS frames.

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/chat/metrics"
 )
 
 // TimedStore wraps *Store with timing instrumentation. Every public method

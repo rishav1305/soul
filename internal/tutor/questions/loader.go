@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 //go:embed dsa_python.json ai_llm.json system_design.json behavioral.json

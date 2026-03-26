@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/scout/agent"
+	"github.com/rishav1305/soul/internal/scout/agent"
 )
 
 // ReferralFinder searches for LinkedIn connections at a target company.

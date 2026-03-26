@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/server"
-	"github.com/rishav1305/soul-v2/internal/chat/session"
+	"github.com/rishav1305/soul/internal/chat/server"
+	"github.com/rishav1305/soul/internal/chat/session"
 )
 
 // openStore is a helper that opens a session store at a temp path.

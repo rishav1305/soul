@@ -429,14 +429,14 @@ export interface Task {
   stage: TaskStage;
   workflow: string;
   product: string;
-  substep: string;
+  substep: TaskSubstep | '';
   metadata: string;
   seq: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export type TaskStage = 'backlog' | 'active' | 'validation' | 'done' | 'blocked';
+export type TaskStage = 'backlog' | 'active' | 'validation' | 'done' | 'blocked' | 'brainstorm';
 
 /** tasks */
 export interface TaskActivity {
@@ -721,4 +721,229 @@ export interface ModelInfo {
   name: string;
   created_at: string;
   max_tokens: number;
+}
+
+// ── AppShell v1 port types ─────────────────────────────────────────────────
+// Non-generated section. Add types here that v1 components need but are not
+// in the YAML specs. Do NOT put generated types here.
+
+/**
+ * Structured profile data returned by the Scout profile tool.
+ * Shape is opaque JSON from Supabase — Record allows forward compatibility.
+ */
+export type ProfileData = Record<string, unknown>;
+
+// ── Planner types (v1 port) ────────────────────────────────────────────────
+// TaskStage is extended to include 'brainstorm' (see line 439).
+
+export type TaskSubstep = 'tdd' | 'implementing' | 'reviewing' | 'qa_test' | 'e2e_test' | 'security_review';
+
+export type TaskView = 'list' | 'kanban' | 'grid' | 'table';
+
+export type GridSubView = 'grid' | 'table' | 'grouped';
+
+export interface TaskFilters {
+  stage: TaskStage | 'all';
+  priority: number | 'all';
+  product: string | 'all';
+}
+
+/**
+ * PlannerTask — matches Go internal/tasks/store.Task JSON shape (camelCase).
+ * Fields that don't exist in the v2 backend are optional to allow graceful
+ * degradation until the backend is extended.
+ */
+export interface PlannerTask {
+  id: number;
+  title: string;
+  description: string;
+  stage: TaskStage;
+  product: string;
+  substep: TaskSubstep | '';
+  metadata: string;
+  workflow?: string;
+  seq?: number;
+  createdAt: string;
+  updatedAt: string;
+  // v1-only fields — optional until backend is extended.
+  priority?: number;
+  plan?: string;
+  output?: string;
+  error?: string;
+  blocker?: string;
+  acceptance?: string;
+  agent_id?: string;
+}
+
+/**
+ * PlannerActivity — matches Go internal/tasks/store.Activity JSON shape (camelCase).
+ * Go struct: { id, taskId, eventType, data, createdAt }
+ */
+export interface PlannerActivity {
+  id: number;
+  taskId: number;
+  eventType: string;
+  data: string;
+  createdAt: string;
+}
+
+/**
+ * TaskActivityEvent — Go SSE/WS broadcast wrapper for task.activity events.
+ * Go struct: store.TaskActivity{ TaskID int64, Activity Activity }
+ * The activity is nested — unwrap before accessing fields.
+ */
+export interface TaskActivityEvent {
+  taskId: number;
+  activity: PlannerActivity;
+}
+
+/**
+ * TaskCommentEvent — Go SSE/WS broadcast wrapper for task.comment events.
+ * Go struct: store.TaskComment{ TaskID int64, Comment Comment }
+ * The comment is nested — unwrap before accessing fields.
+ */
+export interface TaskCommentEvent {
+  taskId: number;
+  comment: TaskComment;
+}
+
+/**
+ * TaskComment — matches Go internal/tasks/store.Comment JSON shape (camelCase).
+ * Go struct: { id, taskId, author, type, body, createdAt }
+ */
+export interface TaskComment {
+  id: number;
+  taskId: number;
+  author: string;
+  type: string;
+  body: string;
+  createdAt: string;
+  // v1-only — optional until backend is extended.
+  attachments?: string[];
+}
+
+export interface ProductInfo {
+  name: string;
+  label: string;
+  version?: string;
+  color?: string;
+  tools?: number;
+  running?: boolean;
+  icon?: string;
+}
+
+export interface WSMessage {
+  type: string;
+  session_id?: string;
+  content?: string;
+  data?: unknown;
+}
+
+// ── Chat message types (v1 port) ────────────────────────────────────────
+
+export interface FindingMessage {
+  id: string;
+  title: string;
+  severity: string;
+  file?: string;
+  line?: number;
+}
+
+export interface ToolCallMessage {
+  id: string;
+  name: string;
+  input: unknown;
+  status: 'running' | 'complete' | 'error';
+  progress?: number;
+  output?: string;
+  findings?: FindingMessage[];
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  thinking?: string;
+  toolCalls?: ToolCallMessage[];
+  timestamp: Date;
+  model?: string;
+  pmNotification?: {
+    severity: 'info' | 'warning' | 'error';
+    taskIds: number[];
+    check: string;
+  };
+}
+
+// ── Layout types (v1 AppShell port) ───────────────────────────────────────
+
+export type HorizontalRailPosition = 'bottom' | 'top';
+export type PanelPosition = 'bottom' | 'top' | 'right';
+export type HorizontalRailTab = 'chat' | 'tasks';
+export type DrawerLayout = 'split' | 'independent';
+
+export interface LayoutState {
+  taskView: TaskView;
+  gridSubView: GridSubView;
+  panelWidth: number | null;
+  filters: TaskFilters;
+  activeProduct: string | null;
+  railPosition: HorizontalRailPosition;
+  chatPosition: PanelPosition;
+  tasksPosition: PanelPosition;
+  railExpanded: boolean;
+  railHeightVh: number;
+  railTab: HorizontalRailTab;
+  chatSplitPct: number;
+  drawerLayout: DrawerLayout;
+  panelExpanded: boolean;
+  sessionsOpen: boolean;
+  settingsOpen: boolean;
+  autoInjectContext: boolean;
+  showContextChip: boolean;
+  toastsEnabled: boolean;
+  inlineBadgesEnabled: boolean;
+  syncProductFilter: boolean;
+  chatRailExpanded: boolean;
+  chatRailHeightVh: number;
+  tasksRailExpanded: boolean;
+  tasksRailHeightVh: number;
+  rightPanelWidth: number;
+  rightChatWidth: number;
+  rightTasksWidth: number;
+  rightChatExpanded: boolean;
+  rightTasksExpanded: boolean;
+}
+
+export interface StageNotification {
+  id: string;
+  taskId: number;
+  taskTitle: string;
+  fromStage: TaskStage;
+  toStage: TaskStage;
+  time: string;
+}
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  summary: string;
+  model: string;
+  message_count: number;
+  status: 'running' | 'idle' | 'completed' | 'completed_unread';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  contextPct: number;
+}
+
+export interface SendOptions {
+  model?: string;
+  chatType?: string;
+  disabledTools?: string[];
+  thinking?: ThinkingConfig;
+  context?: string;
 }

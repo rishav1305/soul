@@ -10,8 +10,8 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/rishav1305/soul-v2/internal/mesh/node"
-	"github.com/rishav1305/soul-v2/internal/mesh/transport"
+	"github.com/rishav1305/soul/internal/mesh/node"
+	"github.com/rishav1305/soul/internal/mesh/transport"
 )
 
 const (

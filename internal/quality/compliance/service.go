@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/fix"
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/reporters"
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/fix"
+	"github.com/rishav1305/soul/internal/quality/compliance/reporters"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 // Service exposes the compliance engine as tool operations.

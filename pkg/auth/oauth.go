@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/pkg/events"
+	"github.com/rishav1305/soul/pkg/events"
 )
 
 // OAuth constants — used by token refresh in Step 1.4.

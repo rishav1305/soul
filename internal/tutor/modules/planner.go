@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // PlannerModule handles study plan creation and management.

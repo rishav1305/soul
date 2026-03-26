@@ -25,3 +25,36 @@ web/dist/
 .env
 .env.*
 .worktrees/
+
+# === Operational intelligence (Fury: competitive moat — never public) ===
+internal/scout/sweep/classify.go
+internal/scout/ai/outreach.go
+internal/scout/ai/salary.go
+internal/scout/ai/pitch.go
+
+# === Data & secrets ===
+*.db
+*.sqlite
+data/
+analytics/
+deploy/*.service
+soul-roles/
+.claude/
+credentials/
+secrets/
+*.pid
+
+# === Personal/pipeline data ===
+internal/scout/data/
+
+# === SQLite WAL/SHM files ===
+*.db-wal
+*.db-shm
+
+# === Key material ===
+credentials.json
+*.pem
+*.key
+
+# === Legacy data dir ===
+.soul-v2/

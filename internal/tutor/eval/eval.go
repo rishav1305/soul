@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/stream"
+	"github.com/rishav1305/soul/internal/chat/stream"
 )
 
 // retryDelay is the pause between the first and second Claude eval attempt.

@@ -3,7 +3,7 @@ package sweep
 import (
 	"strings"
 
-	"github.com/rishav1305/soul-v2/internal/scout/store"
+	"github.com/rishav1305/soul/internal/scout/store"
 )
 
 // FilterReason describes why a job was filtered out.

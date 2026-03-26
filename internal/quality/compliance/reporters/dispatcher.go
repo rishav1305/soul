@@ -3,7 +3,7 @@ package reporters
 import (
 	"fmt"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance/scan"
+	"github.com/rishav1305/soul/internal/quality/compliance/scan"
 )
 
 // Generate produces a report in the specified format.

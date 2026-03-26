@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/mcp/auth"
-	"github.com/rishav1305/soul-v2/internal/mcp/protocol"
-	"github.com/rishav1305/soul-v2/internal/mcp/tools"
+	"github.com/rishav1305/soul/internal/mcp/auth"
+	"github.com/rishav1305/soul/internal/mcp/protocol"
+	"github.com/rishav1305/soul/internal/mcp/tools"
 )
 
 // Server is the soul-mcp HTTP server. It serves the MCP Streamable HTTP

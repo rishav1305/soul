@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/quality/compliance"
+	"github.com/rishav1305/soul/internal/quality/compliance"
 )
 
 // Server is the quality HTTP server.

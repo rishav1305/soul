@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // SystemDesignModule handles system design interview prep study tools.

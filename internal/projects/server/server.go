@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rishav1305/soul-v2/internal/chat/metrics"
-	"github.com/rishav1305/soul-v2/internal/projects/content"
-	"github.com/rishav1305/soul-v2/internal/projects/store"
+	"github.com/rishav1305/soul/internal/chat/metrics"
+	"github.com/rishav1305/soul/internal/projects/content"
+	"github.com/rishav1305/soul/internal/projects/store"
 )
 
 // Server is the projects HTTP server.
