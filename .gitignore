@@ -1,6 +1,29 @@
-# Go
+# Go build binaries (cmd/ outputs)
 /soul-chat
 /soul-tasks
+/soul-v2
+/soul-bench
+/soul-data
+/soul-docs
+/soul-infra
+/soul-mcp
+/soul-mesh
+/soul-observe
+/soul-projects
+/soul-quality
+/soul-scout
+/soul-sentinel
+/soul-tutor
+/bench
+/chat
+/data
+/infra
+/mesh
+/monitor
+/projects
+/scout
+/sentinel
+/tasks
 *.exe
 
 # Node
@@ -58,3 +81,10 @@ credentials.json
 
 # === Legacy data dir ===
 .soul-v2/
+
+# === Build cache ===
+web/tsconfig.app.tsbuildinfo
+bin/
+
+# === Superpowers cache ===
+.superpowers/
