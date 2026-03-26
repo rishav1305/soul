@@ -1,75 +1,193 @@
-# Soul
+<p align="center">
+  <!-- TODO: Add soul logo/banner image here -->
+  <h1 align="center">Soul</h1>
+</p>
 
-AI development platform with autonomous task execution — Go backend, React frontend, multi-agent pipeline.
+<p align="center">
+  <strong>Multi-agent AI development platform with autonomous task execution</strong>
+</p>
 
-## What it is
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go 1.24+" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React 19" />
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License MIT" />
+</p>
 
-Soul is a production multi-agent development platform. It runs a team of 9 specialized AI agents across two machines (Raspberry Pi + x86 server), coordinated through a courier messaging system with structured inboxes, role boundaries, and a shared skill library.
+<p align="center">
+  13 Go microservices. 127 Claude tools. 21 integrated products. 2 machines.
+</p>
 
-The platform includes 13 product servers (chat, tasks, tutor, projects, scout, sentinel, bench, and more), a React frontend, and a 7-layer verification stack that gates every merge.
+---
+
+<!-- TODO: Add hero screenshot of the chat interface here -->
+
+## Why Soul?
+
+21 integrated AI products sharing one auth layer, one WebSocket protocol, one type system. Not 21 tools duct-taped together.
+
+Every product runs as an independent Go server with its own SQLite database, but they all connect through a single chat interface. Ask Claude to generate a resume, benchmark an LLM, run a security CTF, manage tasks, or prep for an interview -- all in the same session, same protocol, same frontend.
+
+## Architecture
+
+```mermaid
+graph TD
+    Browser["React SPA<br/>(Vite + TypeScript)"]
+
+    Browser -->|"WebSocket + HTTP"| Chat["Chat Server :3002<br/>OAuth, streaming, tool dispatch"]
+
+    Chat -->|proxy| Tasks["Tasks :3004"]
+    Chat -->|proxy| Tutor["Tutor :3006"]
+    Chat -->|proxy| Projects["Projects :3008"]
+    Chat -->|proxy| Observe["Observe :3010"]
+    Chat -->|proxy| Infra["Infra :3012"]
+    Chat -->|proxy| Quality["Quality :3014"]
+    Chat -->|proxy| Data["Data :3016"]
+    Chat -->|proxy| Docs["Docs :3018"]
+    Chat -->|proxy| Scout["Scout :3020"]
+    Chat -->|proxy| Sentinel["Sentinel :3022"]
+    Chat -->|proxy| Mesh["Mesh :3024"]
+    Chat -->|proxy| Bench["Bench :3026"]
+
+    Chat -->|"built-in"| Builtin["Memories, Custom Tools,<br/>Subagent Dispatch"]
+
+    subgraph "Each Server"
+        direction LR
+        HTTP["HTTP API"]
+        SQLite["SQLite DB"]
+        Tools["Claude Tool Defs"]
+    end
+
+    Tasks --- HTTP
+    Scout --- HTTP
+
+    style Chat fill:#2563eb,stroke:#1e40af,color:#fff
+    style Browser fill:#18181b,stroke:#3f3f46,color:#fff
+    style Builtin fill:#7c3aed,stroke:#5b21b6,color:#fff
+```
+
+The chat server acts as the gateway. When a user selects a product context, Claude receives that product's system prompt and tool definitions. Tool calls route through the chat server's dispatcher to the appropriate product's REST API. Up to 5 tool-use rounds per message, with concurrent multi-session WebSocket support.
+
+<!-- TODO: Add screenshot of the product selector / tool dispatch in action -->
+
+## Key Products
+
+| Product | Port | Tools | Description |
+|---------|------|-------|-------------|
+| **Chat** | 3002 | 8 built-in | Claude streaming interface with multi-session WebSocket, memories, custom tools, subagent dispatch |
+| **Tasks** | 3004 | 6 | Autonomous task executor -- 3-phase pipeline (implement, review, fix) with merge gates |
+| **Tutor** | 3006 | 7 | Interview prep platform with SM-2 spaced repetition, DSA drills, mock interviews |
+| **Projects** | 3008 | 6 | Implementation guide browser with 11 embedded skill-building projects |
+| **Observe** | 3010 | 4 | Pillar-based observability dashboard (Performant, Robust, Accurate, Readable, Scalable, Secure) |
+| **Infra** | 3012 | 6 | DevOps, DBA, and migration tools |
+| **Quality** | 3014 | 8 | Compliance engine (SOC2/HIPAA/GDPR) with 5 analyzers, QA, and analytics |
+| **Data** | 3016 | 6 | Data engineering, cost operations, and visualization tools |
+| **Docs** | 3018 | 4 | Documentation and API reference tools |
+| **Scout** | 3020 | 55 | Lead pipeline CRM -- 7 pipeline types, 35 AI tools, TheirStack integration, 12-phase runner |
+| **Sentinel** | 3022 | 7 | CTF security challenge platform with 14 embedded challenges and sandboxed AI chatbot |
+| **Mesh** | 3024 | 4 | Distributed compute mesh with Tailscale/mDNS discovery, hub election, JWT auth |
+| **Bench** | 3026 | 4 | LLM benchmarking harness -- 33 prompts, 10 categories, CARS efficiency scoring |
+
+**Total: 127 tools** (119 product + 8 built-in)
+
+<!-- TODO: Add screenshots of key product UIs (Tasks kanban, Scout pipeline, Bench results) -->
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Backend | Go 1.24 — 13 independent HTTP servers |
-| Frontend | React 19, TypeScript, Tailwind v4, Vite |
-| AI | Claude API (OAuth), streaming SSE, tool-use |
-| Database | SQLite per product (no shared state) |
-| Real-time | WebSocket hub with multi-session routing |
-| Auth | Claude OAuth (`pkg/auth`) shared across servers |
-| Testing | Go test + race detector, Vitest, Playwright |
+|-------|------------|
+| Backend | Go 1.24 -- 13 independent HTTP servers, standard library preferred |
+| Frontend | React 19, TypeScript 5.9, Tailwind CSS v4, Vite 7 |
+| AI | Claude API via OAuth, SSE streaming, multi-turn tool-use loops |
+| Database | SQLite per product -- no shared state, each server owns its data |
+| Real-time | WebSocket hub with multi-session routing and per-session product contexts |
+| Auth | Claude OAuth (`pkg/auth`) shared across all servers |
+| Testing | Go test + race detector, Vitest, Playwright, 7-layer verification stack |
+| Infrastructure | systemd services, Raspberry Pi (aarch64) + x86 server |
 
-## Architecture
+## Project Structure
 
 ```
 soul/
-  cmd/           13 server entrypoints (chat, tasks, tutor, projects, ...)
-  internal/      Per-product server logic, store, and handlers
-  pkg/           Shared: auth, events
-  web/           React SPA — single frontend, 8 product proxies
-  scout/         Lead pipeline CRM (TheirStack integration)
-  bench/         LLM benchmarking harness (CARS metric, 52 models)
-  sentinel/      CTF challenge platform with embedded challenges
-  tools/         Build, verification, and phase test scripts
+  cmd/              14 server entrypoints (chat, tasks, tutor, projects, ...)
+  internal/         Per-product server logic, stores, handlers, and AI tools
+  pkg/              Shared packages: auth, events
+  web/              React SPA -- single frontend, product proxies, 14 routes
+  scout/            Lead pipeline CRM (TheirStack integration, 7 pipelines)
+  bench/            LLM benchmarking harness (CARS metric, 33 prompts)
+  sentinel/         CTF challenge platform (14 embedded challenges)
+  specs/            YAML module specs (source of truth for types.ts)
+  tests/            Integration, E2E, load, and verification tests
+  tools/            Build, specgen, monitoring scripts
+  deploy/           systemd deployment scripts
 ```
 
-The 13 servers run on fixed ports (`:3002` – `:3026`) and are proxied through the chat server's SPA. Each server is independently deployable and owns its own SQLite database.
+## Quick Start
 
-## Key Products
-
-- **Chat** — Claude streaming interface with multi-session support, custom tools, and subagent dispatch
-- **Tasks** — Autonomous task executor with 3-phase pipeline (impl → review → fix) and merge gates
-- **Tutor** — Interview prep platform with SM-2 spaced repetition and mock interviews
-- **Scout** — Lead research and outreach pipeline with AI-powered job board sweeps
-- **Bench** — LLM benchmarking tool — 30 tasks, 10 categories, CARS efficiency scoring
-- **Sentinel** — CTF security challenge platform with 14 embedded challenges
-- **Projects** — Implementation guide browser with embedded markdown content
-- **Observe** — Pillar-based metrics (Performant, Robust, Accurate, Readable, Scalable, Secure)
-
-## Verification
+**Prerequisites:** Go 1.24+, Node 18+
 
 ```bash
-make verify-static   # Go vet + tsc --noEmit + secret scan + dep audit
-make verify          # L1–L3: static + unit + integration
-make build           # Build all 13 binaries + frontend
-make serve           # Build and run everything
-```
+# Clone
+git clone https://github.com/rishav1305/soul.git
+cd soul
 
-Six design pillars enforced on every merge: Performant, Robust, Accurate, Readable, Scalable, Secure.
-
-## Running
-
-```bash
 # Install dependencies
 go mod download
-cd web && npm install
+cd web && npm install && cd ..
+
+# Build everything (13 server binaries + frontend)
+make build
 
 # Start all servers
 make serve
-
-# Or individual server
-go run cmd/chat/main.go
 ```
 
-Requires Go 1.24+ and Node 18+.
+The chat server starts at `http://localhost:3002`. All other product servers are proxied through it.
+
+### Individual Servers
+
+```bash
+# Run a single server
+go run cmd/chat/main.go serve
+go run cmd/tasks/main.go serve
+go run cmd/scout/main.go serve
+```
+
+### Verification
+
+```bash
+make verify-static   # Go vet + tsc --noEmit + secret scan + dep audit
+make verify          # L1-L3: static + unit + integration tests
+make types           # Regenerate types.ts from YAML specs
+```
+
+## Design Principles
+
+Six pillars enforced on every merge through a 7-layer verification stack:
+
+1. **Performant** -- First token < 200ms, frontend bundle < 300KB gzip
+2. **Robust** -- Zero panics on any input, all DB operations atomic
+3. **Resilient** -- Auto-reconnect with backoff, session restore after restart
+4. **Secure** -- Parameterized SQL only, CSP headers, origin validation on WebSocket
+5. **Sovereign** -- Zero external runtime dependencies, SQLite local, offline-capable
+6. **Transparent** -- Structured logging, no swallowed exceptions, cost tracking per request
+
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| [SoulGraph](https://github.com/rishav1305/soulgraph) | Enterprise multi-agent orchestration POC (LangGraph + Redis + ChromaDB) |
+| [soul-team](https://github.com/rishav1305/soul-team) | Multi-agent team coordination system -- 9 specialized agents across 2 machines |
+| [soul-bench](https://github.com/rishav1305/soul-bench) | Standalone LLM benchmarking tool with CARS efficiency metric |
+
+## Author
+
+**Rishav Chatterjee**
+
+- Portfolio: [rishavchatterjee.com](https://rishavchatterjee.com)
+- LinkedIn: [linkedin.com/in/rishavchatterjee](https://www.linkedin.com/in/rishavchatterjee/)
+- GitHub: [github.com/rishav1305](https://github.com/rishav1305)
+
+## License
+
+MIT
