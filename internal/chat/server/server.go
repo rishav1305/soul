@@ -262,12 +262,13 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("POST /v1/responses/compact", s.handleResponsesCompact)
 	s.mux.HandleFunc("POST /v1/responses", s.handleResponses)
 
-	// Tasks server proxy — forward /api/tasks/* and /api/products/* to tasks server.
+	// Products endpoint — returns registered product metadata for the frontend rail.
+	s.mux.HandleFunc("GET /api/products", s.handleProducts)
+
+	// Tasks server proxy — forward /api/tasks/* to tasks server.
 	if s.tasksProxy != nil {
 		s.mux.Handle("/api/tasks/", s.tasksProxy)
 		s.mux.Handle("/api/tasks", s.tasksProxy)
-		s.mux.Handle("/api/products/", s.tasksProxy)
-		s.mux.Handle("/api/products", s.tasksProxy)
 	}
 
 	// Tutor server proxy — forward /api/tutor/* to tutor server.
