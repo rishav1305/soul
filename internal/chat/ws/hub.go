@@ -419,15 +419,13 @@ func (h *Hub) isOriginAllowed(r *http.Request) bool {
 		}
 	}
 
-	// Allow private network (RFC 1918) origins — LAN access.
+	// Allow private/trusted network origins (RFC 1918, loopback, Tailscale CGNAT).
 	hostOnly := host
 	if idx := strings.LastIndex(host, ":"); idx != -1 {
 		hostOnly = host[:idx]
 	}
-	for _, prefix := range privateNetworkPrefixes {
-		if strings.HasPrefix(hostOnly, prefix) {
-			return true
-		}
+	if isPrivateOrTrustedIP(hostOnly + ":0") {
+		return true
 	}
 
 	return false

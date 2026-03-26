@@ -1,15 +1,15 @@
 /**
  * WSClient — simple WebSocket client with handler fan-out and auto-reconnect.
- * Ported from soul-v1 for the AppShell context-based WebSocket pattern.
- * Distinct from lib/ws.ts (which holds v2 ticket-auth helpers).
+ * Supports async URL factory for ticket-based auth (fresh ticket per connection).
  */
 import type { WSMessage } from './types.ts';
 
 type MessageHandler = (msg: WSMessage) => void;
+type UrlFactory = () => Promise<string> | string;
 
 export class WSClient {
   private ws: WebSocket | null = null;
-  private url: string;
+  private urlFactory: UrlFactory;
   private handlers: MessageHandler[] = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
@@ -18,8 +18,8 @@ export class WSClient {
   private _connected = false;
   private onConnectedChange?: (connected: boolean) => void;
 
-  constructor(url: string, onConnectedChange?: (connected: boolean) => void) {
-    this.url = url;
+  constructor(urlFactory: UrlFactory, onConnectedChange?: (connected: boolean) => void) {
+    this.urlFactory = urlFactory;
     this.onConnectedChange = onConnectedChange;
   }
 
@@ -37,9 +37,10 @@ export class WSClient {
     this.createConnection();
   }
 
-  private createConnection(): void {
+  private async createConnection(): Promise<void> {
     try {
-      this.ws = new WebSocket(this.url);
+      const url = await this.urlFactory();
+      this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
         this.setConnected(true);
@@ -48,9 +49,16 @@ export class WSClient {
 
       this.ws.onmessage = (event: MessageEvent) => {
         try {
-          const msg = JSON.parse(event.data as string) as WSMessage;
-          for (const handler of this.handlers) {
-            handler(msg);
+          const data = event.data as string;
+          // Handle batched messages (JSON array frames from WritePump coalescing)
+          if (data.startsWith('[')) {
+            const msgs = JSON.parse(data) as WSMessage[];
+            for (const msg of msgs) {
+              for (const handler of this.handlers) handler(msg);
+            }
+          } else {
+            const msg = JSON.parse(data) as WSMessage;
+            for (const handler of this.handlers) handler(msg);
           }
         } catch {
           // Ignore malformed messages

@@ -76,3 +76,24 @@ func TestIsOriginAllowed_EmptyOrigin_TailscaleIP(t *testing.T) {
 		t.Error("expected empty-origin from Tailscale IP to be allowed")
 	}
 }
+
+func TestIsOriginAllowed_TailscaleOriginHeader(t *testing.T) {
+	hub := NewHub()
+	// Browser on Tailscale sends Origin with Tailscale CGNAT IP
+	req := httptest.NewRequest("GET", "/ws", nil)
+	req.RemoteAddr = "100.116.180.112:54321"
+	req.Header.Set("Origin", "http://100.116.180.112:3002")
+	if !hub.isOriginAllowed(req) {
+		t.Error("expected Tailscale CGNAT origin to be allowed")
+	}
+}
+
+func TestIsOriginAllowed_TailscaleOriginHeader_DifferentPort(t *testing.T) {
+	hub := NewHub()
+	req := httptest.NewRequest("GET", "/ws", nil)
+	req.RemoteAddr = "100.116.180.112:54321"
+	req.Header.Set("Origin", "http://100.64.0.1:8080")
+	if !hub.isOriginAllowed(req) {
+		t.Error("expected Tailscale CGNAT origin (start of range) to be allowed")
+	}
+}

@@ -1,21 +1,21 @@
 /**
  * useWebSocketContext — context-based WebSocket hook for the AppShell.
- * Ported from soul-v1. Provides a single shared WS connection across all
- * AppShell components via React context.
- *
- * Distinct from hooks/useWebSocket.ts (v2 per-hook ticket-auth pattern).
+ * Provides a single shared WS connection across all AppShell components
+ * via React context, using ticket-based auth for secure WS upgrade.
  *
  * Usage:
  *   1. Wrap app root with <WebSocketContext.Provider value={useWebSocketProvider()}>
- *   2. Any component calls useWebSocket() — reads from the shared context
+ *   2. Any component calls useWebSocketCtx() — reads from the shared context
  */
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { WSClient } from '../lib/ws-client.ts';
+import { fetchWSTicket, getWebSocketURL } from '../lib/ws.ts';
 import type { WSMessage } from '../lib/types.ts';
 
-function getWSUrl(): string {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}/ws`;
+/** Async URL factory: fetches a fresh ticket for each WS connection attempt. */
+async function getAuthenticatedWSUrl(): Promise<string> {
+  const { ticket } = await fetchWSTicket();
+  return getWebSocketURL(ticket);
 }
 
 export interface WebSocketContextValue {
@@ -33,7 +33,7 @@ export function useWebSocketProvider(): WebSocketContextValue {
   // Create client eagerly during render so child components can register
   // handlers in their own effects before connect() fires.
   if (!clientRef.current) {
-    clientRef.current = new WSClient(getWSUrl(), setConnected);
+    clientRef.current = new WSClient(getAuthenticatedWSUrl, setConnected);
   }
 
   useEffect(() => {
