@@ -6,7 +6,7 @@
 ![SQLite](https://img.shields.io/badge/SQLite-per_server-003B57?logo=sqlite&logoColor=white)
 ![127 Tools](https://img.shields.io/badge/Claude_Tools-127-blueviolet)
 
-Multi-agent AI platform. 13 Go microservices, 79 packages, single WebSocket interface. Claude tool-use routes through a product context layer to specialized backend services — task execution, interview prep, lead pipeline CRM, LLM benchmarking, CTF challenges, distributed compute, compliance scanning. Each server owns its SQLite database. Zero external runtime dependencies.
+Multi-agent AI platform. 13 Go microservices, 79 packages, 9 specialized AI agents distributed across 2 machines (Raspberry Pi 5 + x86 server). Claude tool-use routes through a product context layer to 21 backend products — task execution, interview prep, lead pipeline CRM, LLM benchmarking, CTF challenges, distributed compute, compliance scanning. Each server owns its SQLite database. Zero external runtime dependencies.
 
 ## Architecture
 
@@ -74,6 +74,19 @@ Multi-agent AI platform. 13 Go microservices, 79 packages, single WebSocket inte
 | Auth | Claude OAuth — shared credential, 0600 file permissions |
 | Testing | Go test + race detector, Vitest, Playwright |
 
+## Design Pillars
+
+Six non-negotiable constraints enforced on every merge:
+
+| Pillar | What it means |
+|--------|--------------|
+| **Performant** | First token < 200ms, frontend < 300KB gzipped, zero unnecessary re-renders |
+| **Robust** | No panic on any input (fuzz-tested), defined behavior for nil/empty/oversized |
+| **Resilient** | Auto-reconnect on disconnect, session restore on restart, graceful degradation |
+| **Secure** | Zero secrets in code, all input sanitized, parameterized SQL, OAuth 0600 |
+| **Sovereign** | Self-hosted everything, no CDN/SaaS dependencies, offline-capable |
+| **Transparent** | Full observability, every error user-visible, type system prevents invalid states |
+
 ## Quick Start
 
 ```bash
@@ -87,3 +100,12 @@ Requires Go 1.24+, Node 18+, Claude OAuth credentials at `~/.claude/.credentials
 ```bash
 make verify   # L1-L3: static analysis + unit + integration tests
 ```
+
+## Author
+
+**Rishav Chatterjee** — Senior AI Architect
+
+- Portfolio: [rishavchatterjee.com](https://rishavchatterjee.com)
+- CARS Dashboard: [rishavchatterjee.com/cars](https://rishavchatterjee.com/cars)
+- SoulGraph: [github.com/rishav1305/soulgraph](https://github.com/rishav1305/soulgraph)
+- LinkedIn: [linkedin.com/in/rishavchatterjee](https://linkedin.com/in/rishavchatterjee)
