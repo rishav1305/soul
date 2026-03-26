@@ -4,6 +4,7 @@ import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
 import { ChatSessionsProvider, useChatSessions } from '../../hooks/useChatSessions.tsx';
+import { WebSocketContext, useWebSocketProvider } from '../../hooks/useWebSocketContext.ts';
 import type { PlannerTask, TaskStage, TaskFilters, ProductInfo } from '../../lib/types.ts';
 import ProductRail, { RAIL_WIDTH, PANEL_WIDTH } from './ProductRail.tsx';
 import ProductView from './ProductView.tsx';
@@ -375,9 +376,12 @@ function AppShellInner() {
 }
 
 export default function AppShell() {
+  const ws = useWebSocketProvider();
   return (
-    <ChatSessionsProvider>
-      <AppShellInner />
-    </ChatSessionsProvider>
+    <WebSocketContext.Provider value={ws}>
+      <ChatSessionsProvider>
+        <AppShellInner />
+      </ChatSessionsProvider>
+    </WebSocketContext.Provider>
   );
 }
