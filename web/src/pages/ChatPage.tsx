@@ -45,7 +45,7 @@ export function ChatPage() {
   useEffect(() => {
     const product = searchParams.get('product');
     if (product && product !== activeProduct) {
-      setProduct(product);
+      setProduct(product as import('../lib/types').ChatProduct);
       // Clear the query param to keep URL clean
       setSearchParams({}, { replace: true });
     }

@@ -33,7 +33,8 @@ export function CommandPalette({ commands, filter, onSelect, onClose }: CommandP
         setSelected(i => (i - 1 + filtered.length) % filtered.length);
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        onSelect(filtered[selected]);
+        const cmd = filtered[selected];
+        if (cmd) onSelect(cmd);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onClose();

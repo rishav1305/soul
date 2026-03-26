@@ -84,7 +84,7 @@ function extractImagePath(output: string): string | null {
   const apiMatch = output.match(/\/(api\/screenshots\/[^\s"]+)/i);
   if (apiMatch) return '/' + apiMatch[1];
   const match = output.match(/(\/[^\s"]+\.(?:png|jpg|jpeg|gif|webp))/i);
-  return match ? `/api/screenshot?path=${encodeURIComponent(match[1])}` : null;
+  return match?.[1] ? `/api/screenshot?path=${encodeURIComponent(match[1])}` : null;
 }
 
 const MAX_OUTPUT = 3000;

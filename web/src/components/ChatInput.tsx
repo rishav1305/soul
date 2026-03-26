@@ -6,17 +6,6 @@ import type { SlashCommand } from './CommandPalette';
 import { ThinkingToggle } from './ThinkingToggle';
 import { useModels } from '../hooks/useModels';
 
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 640);
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 639px)');
-    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-  return mobile;
-}
-
 function shortModelName(name: string): string {
   return name.replace(/^Claude\s+/i, '');
 }
@@ -26,7 +15,7 @@ function fileToAttachment(file: File): Promise<ChatAttachment> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const base64 = result.split(',')[1];
+      const base64 = result.split(',')[1] ?? '';
       resolve({
         name: file.name,
         mediaType: file.type,
@@ -138,7 +127,6 @@ interface SpeechRecognitionInstance {
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(function ChatInput({ onSend, onStop, disabled, isStreaming, activeProduct, onSetProduct }, ref) {
   const [value, setValue] = useState('');
   const { models } = useModels();
-  const isMobile = useIsMobile();
   const [selectedModel, setSelectedModel] = useState<string>('');
 
   // API list is authoritative: use stored preference only if it is still valid,
@@ -146,7 +134,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   useEffect(() => {
     if (models.length === 0) return;
     const stored = localStorage.getItem('soul-model');
-    const resolved = stored && models.some(m => m.id === stored) ? stored : models[0].id;
+    const resolved = stored && models.some(m => m.id === stored) ? stored : (models[0]?.id ?? '');
     setSelectedModel(resolved);
     localStorage.setItem('soul-model', resolved);
   }, [models]);
@@ -247,7 +235,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
     setAttachments(prev => prev.filter((_, i) => i !== idx));
   }, []);
 
-  const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = useCallback((e: ClipboardEvent<HTMLElement>) => {
     const files = Array.from(e.clipboardData.files);
     if (files.length > 0) {
       e.preventDefault();
@@ -315,7 +303,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let transcript = '';
       for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
+        transcript += event.results[i]?.[0]?.transcript ?? '';
       }
       setValue(prev => {
         // Replace from where speech started, keep any text typed before

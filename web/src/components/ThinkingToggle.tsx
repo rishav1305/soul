@@ -13,11 +13,13 @@ interface ThinkingToggleProps {
 
 export function ThinkingToggle({ value, onChange }: ThinkingToggleProps) {
   const currentIndex = THINKING_STATES.findIndex(s => s.type === value);
-  const current = THINKING_STATES[currentIndex >= 0 ? currentIndex : 0];
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const current = THINKING_STATES[safeIndex] ?? THINKING_STATES[0]!;
 
   const cycle = () => {
-    const nextIndex = (currentIndex + 1) % THINKING_STATES.length;
-    onChange(THINKING_STATES[nextIndex].type);
+    const nextIndex = (safeIndex + 1) % THINKING_STATES.length;
+    const next = THINKING_STATES[nextIndex];
+    if (next) onChange(next.type);
   };
 
   return (

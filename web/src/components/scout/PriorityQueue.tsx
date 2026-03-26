@@ -15,8 +15,6 @@ interface PriorityItem {
   actions: string[];
 }
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
 const ACTION_STAGES = new Set([
   'qualified', 'proposal-ready', 'screening', 'interviewing', 'negotiating',
 ]);
@@ -129,7 +127,7 @@ function computePriorityItems(leads: ScoutLead[]): PriorityItem[] {
   }
 
   // Sort by urgency
-  items.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+  items.sort((a, b) => (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2));
 
   return items;
 }

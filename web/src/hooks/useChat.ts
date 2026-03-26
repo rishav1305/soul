@@ -567,7 +567,7 @@ export function useChat(): UseChatReturn {
             const tools = [...(last.toolCalls ?? [])];
             const idx = tools.findIndex(t => t.id === payload.id);
             if (idx === -1) return prev;
-            tools[idx] = { ...tools[idx], status: 'complete', output: payload.output };
+            tools[idx] = { ...tools[idx]!, status: 'complete', output: payload.output };
             return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
           });
           break;
@@ -583,7 +583,7 @@ export function useChat(): UseChatReturn {
             const tools = [...(last.toolCalls ?? [])];
             const idx = tools.findIndex(t => t.id === payload.id);
             if (idx === -1) return prev;
-            tools[idx] = { ...tools[idx], status: 'error', output: payload.output };
+            tools[idx] = { ...tools[idx]!, status: 'error', output: payload.output };
             return [...prev.slice(0, -1), { ...last, toolCalls: tools }];
           });
           break;

@@ -165,7 +165,7 @@ function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallData[] }) {
   const runningCount = toolCalls.filter(tc => tc.status === 'running').length;
   const errorCount = toolCalls.filter(tc => tc.status === 'error').length;
 
-  if (toolCalls.length === 1) {
+  if (toolCalls.length === 1 && toolCalls[0]) {
     return (
       <div className="mt-2 pl-1 border-l border-border-subtle">
         <ToolCallBlock tool={toolCalls[0]} />
@@ -215,7 +215,7 @@ export function MessageBubble({ message, isStreaming, onEdit, onRetry, searchQue
   const chatModeLabel = useMemo(() => {
     if (!isUser || !message.content) return null;
     const match = message.content.match(/^\/(code|architect|brainstorm)\s/i);
-    return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : null;
+    return match?.[1] ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : null;
   }, [isUser, message.content]);
   const displayContent = useMemo(() => {
     if (!chatModeLabel || !message.content) return message.content;
