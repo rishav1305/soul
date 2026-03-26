@@ -1,0 +1,282 @@
+[
+  {
+    "module": "behavioral",
+    "category": "leadership",
+    "topic": "Ownership and Accountability",
+    "difficulty": "medium",
+    "question": "Tell me about a time you took ownership of a project or initiative that was outside your direct responsibilities. What motivated you, what did you do, and what was the outcome?",
+    "answer": "Use STAR-L format:\n\n**Situation:** Describe the project/initiative that needed ownership and why no one was stepping up.\n**Task:** What specifically needed to happen? What was at stake (timeline, revenue, team morale)?\n**Action:** Detail YOUR specific actions — volunteering, creating a plan, rallying stakeholders, removing blockers. Use 'I' not 'we'.\n**Result:** Quantify impact — time saved, revenue impact, customer satisfaction improvement, process adopted by team.\n**Learning:** What did this teach you about ownership? How did it change your approach going forward?\n\nStrong answers demonstrate: proactive behavior, cross-functional influence, measurable impact, and self-awareness about WHY you stepped up.",
+    "explanation": "This question maps to Amazon's 'Ownership' LP and Google's 'General Cognitive Ability'. Interviewers want to see you operate beyond your job description. A weak answer describes following orders; a strong answer shows initiative, strategic thinking, and quantified results. Senior engineers should show they influenced others without formal authority.",
+    "source": "behavioral:leadership:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "leadership",
+    "topic": "Influencing Without Authority",
+    "difficulty": "hard",
+    "question": "Describe a situation where you needed to convince a team or stakeholder to adopt a technical approach they were initially resistant to. How did you build alignment?",
+    "answer": "Use STAR-L format:\n\n**Situation:** Context — what was the technical decision? Who was resistant and why?\n**Task:** What needed to happen for the project to succeed? Why was your approach important?\n**Action:** How did you build your case? (data, prototypes, POCs, 1-on-1 meetings, addressing concerns individually, finding common ground, making concessions on non-critical points)\n**Result:** Did they adopt it? What was the measurable impact? How did the relationship evolve?\n**Learning:** What did you learn about influence, empathy, and technical communication?\n\nKey signals: empathy for opposing views, data-driven persuasion, willingness to compromise on non-essentials, patience.",
+    "explanation": "Tests influence and communication skills critical for senior/staff engineers. Amazon maps this to 'Have Backbone; Disagree and Commit'. Google evaluates 'Googleyness' and collaborative problem-solving. The best answers show you understood WHY people resisted (not just that they were wrong), addressed root concerns, and maintained relationships regardless of outcome.",
+    "source": "behavioral:leadership:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "leadership",
+    "topic": "Mentoring and Growing Others",
+    "difficulty": "medium",
+    "question": "Tell me about a time you helped a junior engineer or teammate grow significantly. What approach did you take and what was the impact on the team?",
+    "answer": "Use STAR-L format:\n\n**Situation:** Who were you mentoring? What was their starting level and what gaps did you identify?\n**Task:** What growth was needed? How did it connect to team/org goals?\n**Action:** Specific mentoring techniques — pair programming, code reviews with teaching intent, stretch assignments, regular 1-on-1s, creating psychological safety for questions.\n**Result:** Measurable growth — promotions, increased velocity, independent project delivery, mentee now mentoring others.\n**Learning:** What did YOU learn about teaching, leadership, and different learning styles?\n\nStrong answers show: tailored approach (not one-size-fits-all), patience, genuine investment in others' success, multiplier effect on team.",
+    "explanation": "This is a multiplier signal — it shows you scale your impact beyond your own output. Amazon's 'Develop the Best' and Google's 'Leadership' both evaluate this. At senior+ levels, growing others IS your job. Weak answers describe generic code reviews; strong answers show you diagnosed specific gaps and designed targeted growth plans.",
+    "source": "behavioral:leadership:003"
+  },
+  {
+    "module": "behavioral",
+    "category": "conflict",
+    "topic": "Technical Disagreement Resolution",
+    "difficulty": "medium",
+    "question": "Tell me about a time you had a significant technical disagreement with a colleague. How did you handle it and what was the outcome?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the technical decision? What were the competing approaches? Why did it matter?\n**Task:** What needed to be resolved and by when? What were the constraints?\n**Action:** How did you engage? (Listened to their reasoning, identified shared goals, proposed evaluation criteria, built prototypes, involved data/benchmarks, escalated appropriately if needed)\n**Result:** What approach was chosen? How did performance/reliability/velocity change? How did the working relationship evolve?\n**Learning:** What did you learn about constructive disagreement and technical decision-making?\n\nCritical: Show you focused on the PROBLEM, not the PERSON. Show intellectual humility — maybe you were wrong, or the answer was a synthesis.",
+    "explanation": "Maps to Amazon's 'Have Backbone; Disagree and Commit' and Meta's collaboration values. Interviewers are evaluating: Can you disagree productively? Do you resort to authority or data? Can you commit once a decision is made, even if you disagreed? Red flags: ego-driven arguments, inability to see the other side, holding grudges after the decision.",
+    "source": "behavioral:conflict:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "conflict",
+    "topic": "Cross-Team Conflict",
+    "difficulty": "hard",
+    "question": "Describe a time when two teams had conflicting priorities that blocked progress on your project. How did you navigate the situation?",
+    "answer": "Use STAR-L format:\n\n**Situation:** Which teams, what conflict, what was blocked? What were the stakes?\n**Task:** What needed to happen for your project to proceed? What constraints existed (org structure, politics, timelines)?\n**Action:** How did you identify the root cause of the conflict? Did you facilitate a meeting? Find a creative compromise? Escalate to leadership with a proposed solution? Build a shared roadmap?\n**Result:** Was the conflict resolved? Timeline impact? Did you establish a process to prevent recurrence?\n**Learning:** What did this teach you about organizational dynamics and cross-functional collaboration?\n\nShow: systems thinking, empathy for both sides' constraints, solution orientation over blame.",
+    "explanation": "Tests organizational awareness and diplomacy — critical for staff+ levels. Companies like Google and Amazon want to see you can operate in complex orgs without escalating everything to management. Strong answers show you understood each team's incentives and found a solution that aligned both.",
+    "source": "behavioral:conflict:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "failure",
+    "topic": "Learning from Technical Mistakes",
+    "difficulty": "medium",
+    "question": "Tell me about a time you made a significant technical mistake or a project you led that failed. What happened and what did you learn?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the project/decision? What was the context and pressure?\n**Task:** What were you trying to achieve? What was the expected outcome?\n**Action:** What went wrong and what was YOUR role in the failure? What did you do when you realized things were going wrong? (Owned it, communicated early, led the recovery effort, conducted post-mortem)\n**Result:** What was the impact? How did you recover? What safeguards did you put in place?\n**Learning:** What fundamental insight did you gain? How did it change your approach permanently?\n\nCritical: OWN the failure. Don't blame others or circumstances. Show genuine self-reflection, not rehearsed humility.",
+    "explanation": "This is primarily a self-awareness test. Amazon's 'Earn Trust' requires admitting mistakes. Google values intellectual humility. The WORST answer is 'I can't think of a failure' — it signals lack of risk-taking or self-awareness. The BEST answers show: you took real risks, owned real consequences, learned deeply, and changed your behavior. The learning should be specific and permanent, not generic.",
+    "source": "behavioral:failure:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "failure",
+    "topic": "Missing a Deadline or Goal",
+    "difficulty": "medium",
+    "question": "Tell me about a time you missed a deadline or failed to deliver on a commitment. How did you handle it?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the commitment? Who was depending on you? What was the context?\n**Task:** What were you supposed to deliver and by when?\n**Action:** When did you realize you would miss it? How early did you communicate? What did you do to mitigate the impact? (Re-scoped, found alternatives, negotiated timeline, brought in help)\n**Result:** What was the actual impact? How did stakeholders respond? What process changes resulted?\n**Learning:** What did this teach you about estimation, communication, and risk management?\n\nKey: Early communication > heroic last-minute efforts. Show you protected stakeholder trust through transparency.",
+    "explanation": "Tests communication under pressure and professional maturity. Every engineer misses deadlines — what matters is HOW you handle it. The interviewers want to see: early warning (not surprising people on the due date), proactive mitigation, honest assessment of root cause, and concrete process improvements to prevent recurrence.",
+    "source": "behavioral:failure:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "teamwork",
+    "topic": "Building High-Performing Teams",
+    "difficulty": "hard",
+    "question": "Tell me about a time you joined or inherited a struggling team. What did you do to improve performance and morale?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What team, what problems (low velocity, poor quality, attrition, unclear direction)?\n**Task:** What improvement was needed? What were the constraints (couldn't fire people, limited budget, tight timeline)?\n**Action:** How did you diagnose the root cause? (1-on-1s, process audit, technical debt assessment, stakeholder alignment) What changes did you implement? (Clear goals, improved processes, psychological safety, celebrating wins, addressing underperformers)\n**Result:** Measurable improvements — velocity increase, bug reduction, retention improvement, team satisfaction scores.\n**Learning:** What did you learn about team dynamics and engineering culture?\n\nShow: diagnostic mindset, empathy, patience (culture change takes time), concrete actions not just inspiration.",
+    "explanation": "A staff+ level question testing leadership beyond code. Google evaluates this under 'Leadership' and Amazon under 'Hire and Develop the Best'. Strong answers show you diagnosed before prescribing (didn't just apply the same playbook), addressed root causes (not symptoms), and measured improvement. Weak answers describe surface-level process changes without understanding why the team was struggling.",
+    "source": "behavioral:teamwork:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "teamwork",
+    "topic": "Collaboration Under Pressure",
+    "difficulty": "medium",
+    "question": "Describe a time when your team was under significant pressure to deliver. How did you contribute to keeping the team focused and productive?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the pressure? (Launch deadline, outage, competitive threat, exec visibility)\n**Task:** What needed to happen? What was YOUR role vs. the team's?\n**Action:** How did you contribute? (Breaking down the problem, taking on unpleasant tasks, reducing scope intelligently, shielding team from noise, maintaining quality standards under pressure, keeping morale up)\n**Result:** Did you deliver? What was the quality? How was team morale afterward?\n**Learning:** What did you learn about sustainable vs. unsustainable pressure?\n\nShow: grace under pressure, prioritization skill, team-first mentality, quality consciousness even when rushed.",
+    "explanation": "Tests your behavior under stress — a strong signal for cultural fit. Companies want engineers who elevate the team under pressure, not heroes who burn out or cut corners. Best answers show you maintained both delivery AND quality by making smart tradeoffs, not by working 80-hour weeks.",
+    "source": "behavioral:teamwork:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "innovation",
+    "topic": "Driving Technical Innovation",
+    "difficulty": "hard",
+    "question": "Tell me about a time you identified a significant technical improvement or innovation that wasn't on anyone's roadmap. How did you drive it from idea to implementation?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the current state? What problem or opportunity did you see that others didn't?\n**Task:** What did you envision? Why wasn't it already being pursued? (Competing priorities, skepticism, risk aversion)\n**Action:** How did you validate the idea? (Data gathering, prototyping, building a business case) How did you get buy-in? (Found allies, demonstrated value, started small, showed early wins)\n**Result:** Was it adopted? What was the measurable impact? (Performance improvement, cost savings, developer productivity, customer impact)\n**Learning:** What did you learn about driving change in organizations?\n\nShow: vision, initiative, pragmatism (started small, proved value), persistence, business awareness.",
+    "explanation": "Maps to Amazon's 'Invent and Simplify' and Google's 'Innovation'. Senior engineers are expected to identify and drive improvements, not just execute tickets. The best answers show a complete innovation cycle: problem identification → validation → prototype → buy-in → implementation → measurement. Weak answers describe ideas without execution, or execution without measurable impact.",
+    "source": "behavioral:innovation:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "innovation",
+    "topic": "Simplifying Complex Systems",
+    "difficulty": "medium",
+    "question": "Tell me about a time you significantly simplified a complex system, process, or codebase. What approach did you take and what was the result?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was complex and why? (Technical debt, over-engineering, organic growth, unclear requirements)\n**Task:** Why was simplification needed? What was the cost of complexity? (Onboarding time, bugs, velocity, operational burden)\n**Action:** How did you approach simplification? (Identified core vs. accidental complexity, proposed alternatives, managed migration, ensured backward compatibility, measured before/after)\n**Result:** Quantify the simplification — reduced lines of code, fewer incidents, faster onboarding, reduced operational cost.\n**Learning:** What principles of simplification did you discover?\n\nShow: ability to distinguish essential vs. accidental complexity, courage to remove things, pragmatic migration strategy.",
+    "explanation": "Tests architectural judgment and the courage to remove rather than add. Amazon's 'Invent and Simplify' specifically values simplification. Google values elegant solutions. The trap is describing adding a new abstraction layer on top of complexity — true simplification REMOVES things. Strong answers show you understood the system deeply enough to identify what could be eliminated.",
+    "source": "behavioral:innovation:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "ambiguity",
+    "topic": "Navigating Unclear Requirements",
+    "difficulty": "hard",
+    "question": "Tell me about a time you had to make progress on a project with unclear or changing requirements. How did you handle the ambiguity?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was ambiguous? (Unclear scope, conflicting stakeholders, evolving market, new domain)\n**Task:** What needed to be delivered despite the uncertainty? What were the constraints?\n**Action:** How did you create clarity? (Asked the RIGHT questions, identified what COULD be decided now vs. later, built for flexibility, prototyped to learn, established decision criteria, time-boxed exploration)\n**Result:** What was delivered? How did it handle the eventual clarity/changes? Was it over/under-engineered in retrospect?\n**Learning:** What did you learn about operating under ambiguity?\n\nShow: comfort with uncertainty, ability to make progress without perfect information, reversible decisions, structured exploration.",
+    "explanation": "Critical for senior roles at every major tech company. Amazon's 'Bias for Action' values calculated risk-taking in ambiguous situations. Google values structured thinking. The anti-pattern is paralysis — waiting for perfect requirements. The pro-pattern is making reversible decisions quickly, building learning loops, and knowing which decisions to defer vs. commit to early.",
+    "source": "behavioral:ambiguity:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "ambiguity",
+    "topic": "Making Decisions with Incomplete Data",
+    "difficulty": "medium",
+    "question": "Describe a situation where you had to make an important technical decision without having all the data you wanted. What was your approach?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What decision needed to be made? What information was missing and why couldn't you get it? (Time pressure, cost, unavailable data)\n**Task:** What was at stake? What were the consequences of deciding wrong vs. not deciding at all?\n**Action:** How did you reason through it? (Identified must-have vs. nice-to-have info, assessed reversibility, consulted experts, established fallback plans, documented assumptions for future validation)\n**Result:** Was the decision correct? How did you validate it later? What did you do when assumptions proved wrong/right?\n**Learning:** What framework for decision-making under uncertainty did you develop?\n\nShow: analytical rigor even with incomplete data, risk awareness, bias toward action, contingency planning.",
+    "explanation": "Tests decision-making quality under real-world constraints. Amazon's 'Bias for Action' explicitly states 'many decisions are reversible and do not need extensive study.' The best answers show a clear decision framework: reversible vs. irreversible decisions, minimum viable information, explicit assumption tracking, and post-decision validation.",
+    "source": "behavioral:ambiguity:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "customer_focus",
+    "topic": "Customer Obsession",
+    "difficulty": "medium",
+    "question": "Tell me about a time you went above and beyond for a customer or end-user. How did you identify their need and what did you do about it?",
+    "answer": "Use STAR-L format:\n\n**Situation:** Who was the customer? What was their pain point that wasn't being addressed?\n**Task:** What opportunity did you see? Why wasn't the organization already addressing it?\n**Action:** How did you identify the need? (User research, support tickets, usage data, direct conversation) What did you build/change? How did you prioritize it against other work?\n**Result:** Measurable customer impact — satisfaction scores, retention, adoption, support ticket reduction, revenue.\n**Learning:** What did this teach you about understanding customer needs vs. stated requests?\n\nShow: genuine empathy, data-informed intuition, ability to distinguish what customers ASK for vs. what they NEED.",
+    "explanation": "Amazon's #1 Leadership Principle. Also valued at Google (user focus) and Meta (move fast with bold bets for users). The trap is describing a feature request you implemented — that's not obsession, that's order-taking. Strong answers show you DISCOVERED an unmet need through observation or data, then advocated for addressing it. The best stories show you understood the user's job-to-be-done, not just their surface request.",
+    "source": "behavioral:customer_focus:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "customer_focus",
+    "topic": "Balancing User Needs vs Technical Constraints",
+    "difficulty": "hard",
+    "question": "Tell me about a time you had to balance what was best for the user with significant technical constraints or engineering tradeoffs. How did you navigate it?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What did users need? What were the technical constraints? (Performance, scalability, timeline, technical debt)\n**Task:** What was the tradeoff space? What were the non-negotiables on each side?\n**Action:** How did you evaluate options? (Quantified user impact, measured engineering cost, proposed creative alternatives, involved both engineering and product stakeholders) What solution did you choose and why?\n**Result:** What was the user experience outcome? What was the engineering cost? How did it hold up over time?\n**Learning:** What framework did you develop for navigating these tradeoffs?\n\nShow: ability to hold both user and engineering perspectives, creative problem-solving, principled compromise.",
+    "explanation": "Tests engineering judgment and product thinking — essential for senior+ roles. The worst answer is pure engineering (ignoring users) or pure product (ignoring constraints). The best answer shows you found a creative solution that served users AND was technically sound, or made an explicit, principled tradeoff with clear reasoning. Document the decision framework you used.",
+    "source": "behavioral:customer_focus:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "self_awareness",
+    "topic": "Receiving and Acting on Feedback",
+    "difficulty": "medium",
+    "question": "Tell me about a time you received critical feedback that was hard to hear. How did you respond and what changed as a result?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the feedback? Who gave it? What was the context?\n**Task:** What needed to change? Why was the feedback valid (even if it stung)?\n**Action:** How did you respond in the moment? (Didn't get defensive, asked clarifying questions, thanked them) What concrete changes did you make? How did you track improvement?\n**Result:** What improved? Did the feedback-giver notice the change? How did it affect your growth trajectory?\n**Learning:** What did this teach you about blind spots and growth mindset?\n\nCritical: Show GENUINE vulnerability, not rehearsed humility. The feedback should be specific and the change should be observable.",
+    "explanation": "Primarily a self-awareness and growth mindset test. All major tech companies value this, but it's especially important at Google ('Googleyness' includes intellectual humility) and Amazon ('Learn and Be Curious'). Red flags: vague feedback ('I was told to improve communication'), defensive framing ('they misunderstood me'), or trivial examples. Green flags: specific feedback, genuine emotional response, concrete behavioral change, measurable improvement.",
+    "source": "behavioral:self_awareness:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "self_awareness",
+    "topic": "Identifying and Addressing Weaknesses",
+    "difficulty": "medium",
+    "question": "What is a skill or area where you have significantly improved over the past 2-3 years? How did you identify the gap and what did you do about it?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the skill gap? How did you become aware of it? (Performance review, project failure, peer comparison, self-reflection)\n**Task:** Why was this important to address? What would happen if you didn't improve?\n**Action:** What specific steps did you take? (Courses, mentors, deliberate practice, stretch assignments, reading, side projects) How did you measure progress?\n**Result:** Where are you now vs. where you started? How has this improvement impacted your work and team?\n**Learning:** What did this teach you about your learning process and self-development?\n\nShow: honest self-assessment, structured approach to growth, evidence of improvement, ongoing commitment to learning.",
+    "explanation": "Tests growth mindset and self-development skills. The best answers show a real gap (not a humble-brag like 'I was too dedicated'), a structured improvement plan, and measurable progress. This is closely related to Amazon's 'Learn and Be Curious'. Interviewers are looking for someone who actively manages their own growth, not someone who waits for training programs.",
+    "source": "behavioral:self_awareness:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "technical_judgment",
+    "topic": "Making Build vs Buy Decisions",
+    "difficulty": "hard",
+    "question": "Tell me about a time you had to decide whether to build a custom solution or use an existing tool/framework/service. Walk me through your decision process.",
+    "answer": "Use STAR-L format:\n\n**Situation:** What capability was needed? What were the options (build custom, open-source, commercial product, managed service)?\n**Task:** What criteria mattered? (Cost, maintenance burden, performance requirements, customization needs, team expertise, time-to-market)\n**Action:** How did you evaluate? (Prototyped alternatives, calculated TCO, assessed team capability, considered long-term maintenance, involved stakeholders) What did you decide and why?\n**Result:** How did the choice work out? Cost vs. benefit over 6-12 months? Would you make the same decision again?\n**Learning:** What framework did you develop for build-vs-buy decisions?\n\nShow: multi-dimensional analysis (not just 'we could build it cheaper'), long-term thinking, honest assessment of team capabilities.",
+    "explanation": "Tests engineering judgment and business awareness. A common senior engineer trap is defaulting to 'build it ourselves' because it's more interesting. Strong answers consider: total cost of ownership (not just build cost), opportunity cost, maintenance burden, hiring implications, and strategic alignment. The best answers show a clear, repeatable decision framework.",
+    "source": "behavioral:technical_judgment:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "technical_judgment",
+    "topic": "Dealing with Technical Debt",
+    "difficulty": "medium",
+    "question": "Tell me about a time you had to balance delivering new features with addressing technical debt. How did you prioritize and what was the outcome?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the technical debt? How was it affecting the team? (Velocity, reliability, morale, onboarding)\n**Task:** How did you make the case for addressing it vs. building features? What stakeholders needed convincing?\n**Action:** How did you quantify the cost of the debt? (Incident frequency, time spent on workarounds, velocity metrics) How did you propose addressing it? (Dedicated sprint, boy-scout rule, incremental refactoring alongside features, platform team)\n**Result:** What was the outcome? Measurable improvement in velocity/reliability/developer experience?\n**Learning:** What did you learn about managing technical debt sustainably?\n\nShow: ability to speak business language about technical problems, pragmatic approach (not perfectionism), incremental progress.",
+    "explanation": "Tests the ability to bridge engineering and business perspectives. Interviewers want to see you can articulate technical debt in terms stakeholders care about (velocity, reliability, cost) not just 'the code is ugly.' Strong answers show you found a sustainable approach — neither ignoring debt nor stopping all feature work. Amazon's 'Frugality' and 'Insist on the Highest Standards' both apply here.",
+    "source": "behavioral:technical_judgment:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "delivery",
+    "topic": "Delivering Under Tight Deadlines",
+    "difficulty": "medium",
+    "question": "Tell me about a time you successfully delivered a critical project under a very tight deadline. What tradeoffs did you make and how did you ensure quality?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was the project? Why was the deadline tight? (External event, competitive pressure, customer commitment, regulatory)\n**Task:** What needed to be delivered by when? What was negotiable vs. non-negotiable?\n**Action:** How did you plan? (Scope prioritization, risk identification, parallel workstreams, cutting scope intelligently, daily check-ins, automated testing to maintain quality speed)\n**Result:** Did you deliver on time? What was the quality? What was the customer/business impact?\n**Learning:** What did you learn about estimation, prioritization, and quality under pressure?\n\nShow: intelligent scope management (cutting the right things), maintaining quality where it matters, clear communication, no heroics.",
+    "explanation": "Tests prioritization and execution skills. The trap is describing a heroic all-nighter — that's a red flag, not a green flag. Strong answers show you PLANNED for the constraint: identified must-haves vs. nice-to-haves early, cut scope intelligently (not randomly), maintained quality in critical paths, and communicated proactively. Amazon's 'Deliver Results' LP is the direct mapping.",
+    "source": "behavioral:delivery:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "delivery",
+    "topic": "Scaling a System or Process",
+    "difficulty": "hard",
+    "question": "Tell me about a time you had to scale a system, team, or process to handle significantly more load or complexity. What was your approach?",
+    "answer": "Use STAR-L format:\n\n**Situation:** What was growing? (Traffic, data volume, team size, product complexity) What were the symptoms of scaling problems?\n**Task:** What scale needed to be achieved? What were the constraints? (Budget, timeline, backward compatibility)\n**Action:** How did you approach it? (Measured current bottlenecks, designed for the next order of magnitude, implemented incrementally, monitored for regressions, planned for further growth)\n**Result:** What scale was achieved? What was the performance improvement? How much headroom was created?\n**Learning:** What principles of scaling did you discover?\n\nShow: measurement-driven approach, incremental execution, thinking ahead of current needs, understanding of fundamental limits.",
+    "explanation": "Tests systems thinking and scalability experience — critical for senior roles at any major tech company. Google, Amazon, and Meta all deal with massive scale, so they value engineers who think in terms of 10x-100x growth. Strong answers show you measured before optimizing, designed for the next order of magnitude (not just current needs), and understood the tradeoffs between vertical and horizontal scaling.",
+    "source": "behavioral:delivery:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "narrative",
+    "topic": "Tell Me About Yourself",
+    "difficulty": "easy",
+    "question": "Walk me through your background. Tell me about yourself and what brings you to this role.",
+    "answer": "Structure your response in 5 sections (keep under 2 minutes total):\n\n**1. Opening Hook:** A compelling one-liner that captures your professional identity. Example: 'I am an AI engineer who builds systems at the intersection of large language models and production infrastructure.'\n\n**2. Career Journey:** Walk through 2-3 key career transitions. Focus on growth arcs, not just titles. What skills did you build at each stage?\n\n**3. Current Focus:** What are you doing now? What is the most impactful thing you have worked on recently? Quantify one result.\n\n**4. Why This Company:** Connect your background to THIS specific opportunity. What excites you about their mission, product, or technical challenges?\n\n**5. Forward-Looking Close:** End confidently with what you want to accomplish next. 'I am looking for a role where I can [specific value you'll add].'",
+    "explanation": "This is often the FIRST question and sets the tone for the entire interview. Most candidates ramble through their resume chronologically — this is a missed opportunity. The best answers are tailored to the specific role, tell a coherent career STORY (not a list of jobs), and end with a clear connection to why THIS role at THIS company. Practice this answer more than any other — it's your 2-minute pitch.",
+    "source": "behavioral:narrative:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "narrative",
+    "topic": "Why This Company",
+    "difficulty": "easy",
+    "question": "Why are you interested in this company/role? What specifically attracted you to this opportunity?",
+    "answer": "Structure your response around three dimensions:\n\n**1. Mission/Product:** What specific product, technology, or mission excites you? Be specific — not 'I love your products' but 'Your work on [specific thing] resonated because [personal connection to the problem].'\n\n**2. Technical Challenges:** What engineering challenges at this company match your interests and expertise? Show you've researched their tech stack, engineering blog, or open-source work.\n\n**3. Growth Opportunity:** How does this role fit your career trajectory? What will you learn here that you can't learn where you are now?\n\nEnd with what value YOU bring: 'My experience in [X] directly addresses [specific challenge they're facing].'\n\nKey: This answer must be DIFFERENT for every company. Generic answers are instantly obvious.",
+    "explanation": "Tests research effort and genuine interest. Interviewers can immediately tell if you're giving a generic answer. The minimum research: read their engineering blog (3 posts), understand their recent product launches, know their competitive position, and have an opinion about their tech stack. Strong answers show you've done this homework and found genuine connections to your background.",
+    "source": "behavioral:narrative:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "narrative",
+    "topic": "Why Are You Leaving",
+    "difficulty": "medium",
+    "question": "Why are you looking to leave your current role? What would need to change for you to stay?",
+    "answer": "Frame your answer positively (pull factors, not push factors):\n\n**Good framing:** 'I've accomplished [specific things] and I'm looking for my next growth challenge. This role offers [specific things you want to do next].'\n\n**Bad framing:** 'My manager is terrible, the tech is outdated, and I'm not paid enough.'\n\n**If asked directly about problems:** Be honest but diplomatic. 'I've grown in my current role, and the type of work I'm most passionate about — [specific area] — has more opportunity at a company like yours.'\n\n**The 'what would need to change' follow-up:** Answer honestly but briefly. 'For me to stay, I'd need [more scope / technical challenges / growth path] — and I've explored those options internally.'\n\nCritical: NEVER speak negatively about current employer, manager, or colleagues.",
+    "explanation": "A trap question disguised as a casual inquiry. Interviewers are evaluating: professionalism (do you badmouth employers?), self-awareness (do you know what you want?), and risk (are you a flight risk or someone who runs from problems?). The best answers focus on WHAT YOU WANT, not what you're escaping. If you have legitimate concerns, frame them as growth-oriented choices.",
+    "source": "behavioral:narrative:003"
+  },
+  {
+    "module": "behavioral",
+    "category": "hr_tactical",
+    "topic": "Salary Expectations",
+    "difficulty": "hard",
+    "question": "What are your salary expectations for this role?",
+    "answer": "**Strategy 1 — Defer (preferred early in process):** 'I'd prefer to learn more about the role's scope and responsibilities before discussing compensation. What's the budget range for this position?'\n\n**Strategy 2 — Range (if pressed):** 'Based on my research of market rates for [role level] in [location], and my [X years] of experience with [specific skills], I'm targeting a total compensation range of [$X - $Y]. But I'm flexible and want to find a package that works for both sides.'\n\n**Strategy 3 — Total comp focus:** 'I evaluate opportunities on total compensation — base, equity, bonus, and benefits. I'm less focused on any single number and more interested in the overall package and growth trajectory.'\n\nKey principles:\n- Never give a single number — always a range\n- Research market rates before the interview (levels.fyi, Glassdoor, Blind)\n- Anchor high — your stated range bottom should be your target\n- Include equity and bonus in the discussion, not just base salary",
+    "explanation": "The most tactical question in behavioral interviews. The fundamental principle: whoever names a number first loses negotiating leverage. If you MUST give a range, make your bottom number your actual target. Research extensively on levels.fyi, Glassdoor, and Blind before any salary discussion. For senior/staff roles, total compensation (base + equity + bonus) matters more than base alone.",
+    "source": "behavioral:hr_tactical:001"
+  },
+  {
+    "module": "behavioral",
+    "category": "hr_tactical",
+    "topic": "Greatest Weakness",
+    "difficulty": "medium",
+    "question": "What is your greatest weakness? OR: What is something you are actively working to improve?",
+    "answer": "The best answer has three parts:\n\n**1. Genuine weakness (not a humble-brag):** Choose something real but not disqualifying. Good examples: 'I tend to over-engineer solutions when simpler ones would suffice', 'I sometimes struggle to delegate because I want to ensure quality', 'I can be impatient when explaining concepts I find intuitive.'\n\n**2. Self-awareness of impact:** 'This has meant that [specific negative consequence] — for example, [brief concrete example].'\n\n**3. Active mitigation:** 'Here's what I'm doing about it: [specific actions]. For example, [concrete recent example of improvement].'\n\nAvoid:\n- Humble-brags ('I work too hard', 'I'm a perfectionist')\n- Irrelevant weaknesses ('I'm bad at cooking')\n- Disqualifying weaknesses ('I can't work with other people')\n- Claiming no weaknesses",
+    "explanation": "Tests self-awareness and growth mindset. Interviewers have heard 'I'm a perfectionist' thousands of times — it signals rehearsed answers, not genuine reflection. The best answers are disarmingly honest about a real weakness, demonstrate you understand its impact on your work and team, and show concrete evidence of improvement. The weakness should be relevant to work but not core to the job you're applying for.",
+    "source": "behavioral:hr_tactical:002"
+  },
+  {
+    "module": "behavioral",
+    "category": "hr_tactical",
+    "topic": "Career Gap Explanation",
+    "difficulty": "medium",
+    "question": "I notice a gap in your employment history. Can you explain what happened during that time?",
+    "answer": "**Frame the gap positively and briefly:**\n\n**If you were learning:** 'I took time to [specific learning — courses, certifications, side projects, open source contributions]. During that period I [specific accomplishment].'\n\n**If personal:** 'I took time to handle a personal matter that's now resolved. During that period, I stayed current by [reading, contributing to open source, taking courses, building projects].'\n\n**If laid off:** 'My team was affected by [restructuring/downsizing]. I used the time to [upskill, contribute to open source, consult]. I'm actually glad it happened because it gave me the chance to [specific positive outcome].'\n\nKey principles:\n- Keep it brief — don't over-explain\n- Pivot to what you DID during the gap (learning, building, contributing)\n- Show you stayed technically current\n- Never badmouth former employer\n- Have a specific project or achievement from the gap period ready",
+    "explanation": "Career gaps are increasingly normalized, but interviewers still ask. The purpose is less about the reason and more about how you spent the time. Did you atrophy or did you grow? The best answers show initiative during the gap — learning, building, contributing. The worst answers are defensive or over-detailed about the reason.",
+    "source": "behavioral:hr_tactical:003"
+  },
+  {
+    "module": "behavioral",
+    "category": "hr_tactical",
+    "topic": "Where Do You See Yourself in 5 Years",
+    "difficulty": "easy",
+    "question": "Where do you see yourself in 5 years? What are your long-term career goals?",
+    "answer": "**Structure:**\n\n**1. Technical depth or breadth:** 'In 5 years, I want to be recognized as an expert in [specific domain] OR I want to have built deep expertise across [2-3 areas].'\n\n**2. Impact scope:** 'I want to be making technical decisions that affect [larger scope — organization-wide architecture, platform direction, product strategy].'\n\n**3. Connection to this role:** 'This role is ideal because [specific skills/challenges] directly build toward that trajectory. I see [specific growth path at this company].'\n\n**Good answers:** Show ambition aligned with the role and company growth.\n**Bad answers:** 'I want your job', 'I want to start my own company', 'I haven't thought about it.'\n\nKey: Your 5-year vision should make the interviewer think 'this person will grow WITH us, not PAST us.'",
+    "explanation": "Tests career intentionality and retention risk. Interviewers want to know: will you stay and grow, or will you leave in 18 months? The best answers show you've thought about your career trajectory AND that this specific role is a logical step on that path. Avoid answers that suggest the role is a stepping stone to something unrelated.",
+    "source": "behavioral:hr_tactical:004"
+  }
+]
