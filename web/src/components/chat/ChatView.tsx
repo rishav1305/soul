@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useChatSessions } from '../../hooks/useChatSessions.tsx';
-import type { Message, SendOptions } from '../../lib/types.ts';
-import { MessageList } from './MessageList.tsx';
-import { ChatInput } from './ChatInput.tsx';
+import { useChatSessions } from '../../hooks/useChatSessions';
+import type { Message, SendOptions } from '../../lib/types';
+import { MessageList } from '../MessageList';
+import { ChatInput } from '../ChatInput';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
