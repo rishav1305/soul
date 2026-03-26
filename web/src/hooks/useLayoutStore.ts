@@ -19,8 +19,8 @@ const DEFAULT_STATE: LayoutState = {
   filters: { stage: 'all', priority: 'all', product: 'all' },
   activeProduct: null,
   railPosition: 'bottom',
-  chatPosition: 'bottom',
-  tasksPosition: 'bottom',
+  chatPosition: 'right',
+  tasksPosition: 'right',
   railExpanded: false,
   railHeightVh: 35,
   railTab: 'chat',
@@ -42,13 +42,23 @@ const DEFAULT_STATE: LayoutState = {
   rightChatWidth: 420,
   rightTasksWidth: 420,
   rightChatExpanded: true,
-  rightTasksExpanded: false,
+  rightTasksExpanded: true,
 };
+
+// Bump this when layout defaults change to force migration for existing users.
+const LAYOUT_VERSION = 2; // v2: chat+tasks default to right panel
+const VERSION_KEY = 'soul-layout-version';
 
 function loadState(): LayoutState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_STATE;
+    const storedVersion = Number(localStorage.getItem(VERSION_KEY) || '0');
+    if (!raw || storedVersion < LAYOUT_VERSION) {
+      // Force new defaults when version bumps
+      localStorage.setItem(VERSION_KEY, String(LAYOUT_VERSION));
+      localStorage.removeItem(STORAGE_KEY);
+      return DEFAULT_STATE;
+    }
     const parsed = JSON.parse(raw) as Partial<LayoutState>;
     return {
       ...DEFAULT_STATE,
