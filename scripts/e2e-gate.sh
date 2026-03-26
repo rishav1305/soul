@@ -49,7 +49,6 @@ tier_header() {
 
 tier_result() {
     local tier="$1" name="$2" blocking="$3"
-    local tier_fails=$FAIL_COUNT
     if [ "$blocking" = "blocking" ] && [ "$BLOCKING_FAIL" -gt 0 ]; then
         echo -e "  ${RED}▸ Tier $tier ($name): FAIL [BLOCKING — aborting]${NC}"
         return 1
@@ -264,23 +263,22 @@ tier4_functional() {
     sessions_status=$(curl_auth_status "${BASE_URL}/api/sessions" 2>/dev/null)
     if [ "$sessions_status" = "200" ]; then
         local session_count
-        session_count=$(curl_auth "${BASE_URL}/api/sessions" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else "?")' 2>/dev/null || echo "?")
+        session_count=$(curl_auth "${BASE_URL}/api/sessions" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else len(d.get("sessions",d.get("data",[]))) if isinstance(d,dict) else "?")' 2>/dev/null || echo "?")
         pass "/api/sessions → 200 ($session_count sessions)"
     else
         fail_blocking "/api/sessions → $sessions_status"
     fi
 
     # Create session
-    local create_response create_status create_body
-    create_response=$(curl -s -H "$(auth_header)" -X POST -H "Content-Type: application/json" \
+    local create_tmpfile="/tmp/e2e-session-create"
+    local create_status
+    create_status=$(curl -s -H "$(auth_header)" -X POST -H "Content-Type: application/json" \
         -d '{"title":"e2e-gate-test"}' \
-        -w "\n%{http_code}" "${BASE_URL}/api/sessions" 2>/dev/null || echo -e "\n000")
-    create_status=$(echo "$create_response" | tail -1)
-    create_body=$(echo "$create_response" | head -n -1)
+        -o "$create_tmpfile" -w "%{http_code}" "${BASE_URL}/api/sessions" 2>/dev/null || echo "000")
 
     local test_session_id=""
     if [ "$create_status" = "201" ] || [ "$create_status" = "200" ]; then
-        test_session_id=$(echo "$create_body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+        test_session_id=$(python3 -c 'import json; d=json.load(open("'"$create_tmpfile"'")); print(d.get("id","") or d.get("session",{}).get("id",""))' 2>/dev/null || echo "")
         pass "POST /api/sessions → $create_status (id=${test_session_id:0:8}...)"
     else
         fail_blocking "POST /api/sessions → $create_status"
@@ -291,10 +289,12 @@ tier4_functional() {
         local delete_status
         delete_status=$(curl -s -o /dev/null -w "%{http_code}" -H "$(auth_header)" -X DELETE "${BASE_URL}/api/sessions/${test_session_id}" 2>/dev/null || echo "000")
         if [ "$delete_status" = "200" ] || [ "$delete_status" = "204" ]; then
-            pass "DELETE /api/sessions/$test_session_id → $delete_status"
+            pass "DELETE /api/sessions/${test_session_id:0:8}... → $delete_status"
         else
-            warn "DELETE /api/sessions/$test_session_id → $delete_status"
+            warn "DELETE /api/sessions/${test_session_id:0:8}... → $delete_status"
         fi
+    else
+        warn "DELETE test skipped — session create returned empty id"
     fi
 
     # WS ticket
