@@ -834,9 +834,11 @@ export interface ProductInfo {
 
 export interface WSMessage {
   type: string;
-  session_id?: string;
+  sessionId?: string;
+  session_id?: string; // legacy alias — server uses camelCase sessionId
   content?: string;
   data?: unknown;
+  [key: string]: unknown; // allow extra fields like model, thinking, etc.
 }
 
 // ── Chat message types (v1 port) ────────────────────────────────────────

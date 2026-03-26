@@ -287,7 +287,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
     send({
       type: 'chat.send',
       content,
-      session_id: sid ? String(sid) : undefined,
+      sessionId: sid ? String(sid) : undefined,
       data: options ? {
         model: options.model,
         chat_type: options.chatType,
@@ -301,14 +301,14 @@ function useChatSessionsInternal(): ChatSessionsValue {
   useEffect(() => {
     const unsub = onMessage((msg: WSMessage) => {
       // Determine which session this message belongs to
-      const msgSessionId = msg.session_id ? Number(msg.session_id) : activeSessionIdRef.current;
+      const msgSessionId = msg.sessionId ? Number(msg.sessionId) : activeSessionIdRef.current;
       if (!msgSessionId) return;
 
       switch (msg.type) {
 
         case 'session.created': {
-          const data = msg.data as { session_id: number };
-          const newId = data.session_id;
+          const data = msg.data as { session_id: number; sessionId?: number };
+          const newId = data.session_id ?? data.sessionId;
           if (activeSessionIdRef.current === null) {
             _setActiveSessionId(newId);
             saveActiveId(newId);
@@ -326,8 +326,9 @@ function useChatSessionsInternal(): ChatSessionsValue {
         }
 
         case 'session.status_changed': {
-          const data = msg.data as { session_id: number; status: ChatSession['status'] };
-          const sid = data.session_id;
+          const data = msg.data as { session_id?: number; sessionId?: number; status: ChatSession['status'] };
+          const sid = data.session_id ?? data.sessionId;
+          if (!sid) break;
           setSessions((prev) => prev.map((s) =>
             s.id === sid ? { ...s, status: data.status } : s,
           ));
@@ -343,10 +344,11 @@ function useChatSessionsInternal(): ChatSessionsValue {
         }
 
         case 'session.updated': {
-          const data = msg.data as { session_id: number; title: string; summary: string; model: string };
-          if (!data?.session_id) return;
+          const data = msg.data as { session_id?: number; sessionId?: number; title: string; summary: string; model: string };
+          const updatedSid = data.session_id ?? data.sessionId;
+          if (!updatedSid) return;
           setSessions((prev) => prev.map((s) =>
-            s.id === data.session_id
+            s.id === updatedSid
               ? { ...s, title: data.title || s.title, summary: data.summary || s.summary, model: data.model || s.model }
               : s,
           ));
@@ -555,7 +557,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
 
   const stopStreaming = useCallback((targetSessionId?: number) => {
     const sid = targetSessionId ?? activeSessionIdRef.current;
-    send({ type: 'chat.stop', session_id: sid ? String(sid) : undefined });
+    send({ type: 'chat.stop', sessionId: sid ? String(sid) : undefined });
     if (sid) {
       setSessionState(sid, (prev) => ({ ...prev, isStreaming: false }));
     }
