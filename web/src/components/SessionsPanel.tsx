@@ -90,6 +90,8 @@ export function SessionsPanel({
   return (
     <div
       data-testid="sessions-panel"
+      role="complementary"
+      aria-label="Session history"
       className="sessions-transition bg-deep border-l border-border-subtle flex flex-col overflow-hidden"
       style={{ width: open ? 220 : 0 }}
     >

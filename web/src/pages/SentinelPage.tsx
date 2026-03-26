@@ -54,11 +54,14 @@ export function SentinelPage() {
       </div>
 
       {/* Tab nav */}
-      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="sentinel-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="sentinel-tabs" role="tablist" aria-label="Sentinel sections">
         {tabs.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`sentinel-panel-${tab}`}
             className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize whitespace-nowrap ${
               activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'
             }`}
@@ -70,7 +73,7 @@ export function SentinelPage() {
       </nav>
 
       {error && (
-        <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="sentinel-error">
+        <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" role="alert" data-testid="sentinel-error">
           {error}
         </div>
       )}
@@ -106,7 +109,7 @@ export function SentinelPage() {
       )}
 
       {loading && !activeChallenge && challenges.length === 0 && !progress && (
-        <div className="text-center py-8 text-fg-muted">Loading...</div>
+        <div className="text-center py-8 text-fg-muted" role="status" aria-live="polite">Loading...</div>
       )}
     </div>
   );

@@ -107,7 +107,7 @@ export function ChatPage() {
   return (
     <div data-testid="chat-page" className="h-dvh flex">
       {/* Chat content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0">
         <ChatTopBar
           onCreateSession={createSession}
           sessions={sessions}
@@ -127,7 +127,7 @@ export function ChatPage() {
         )}
         <MessageList messages={messages} isStreaming={isStreaming} onSend={sendMessage} onEdit={editAndResend} onRetry={retryMessage} searchQuery={searchQuery} />
         <ChatInput ref={inputRef} onSend={sendMessage} onStop={stopGeneration} disabled={isDisabled} isStreaming={isStreaming} activeProduct={activeProduct} onSetProduct={setProduct} />
-      </div>
+      </main>
 
       {/* Right sessions panel */}
       <SessionsPanel

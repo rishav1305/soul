@@ -361,7 +361,7 @@ export function Sidebar() {
       )}
 
       {/* Nav items */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" data-testid="sidebar-nav">
+      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" data-testid="sidebar-nav" aria-label="Product pages">
         {navItems.map(item => (
           <NavLink
             key={item.to}
@@ -372,7 +372,7 @@ export function Sidebar() {
             title={collapsed && !mobileOpen ? item.label : undefined}
             data-testid={`sidebar-nav-${item.label.toLowerCase()}`}
           >
-            <span className="shrink-0 flex items-center justify-center w-5 h-5">{item.icon}</span>
+            <span className="shrink-0 flex items-center justify-center w-5 h-5" aria-hidden="true">{item.icon}</span>
             {(!collapsed || mobileOpen) && <span>{item.label}</span>}
           </NavLink>
         ))}
@@ -385,6 +385,8 @@ export function Sidebar() {
           className="w-full flex items-center justify-center py-1.5 rounded-lg text-fg-muted hover:text-fg hover:bg-elevated/50 text-xs transition-colors"
           data-testid="sidebar-collapse-btn"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
         >
           {collapsed ? '\u00BB' : '\u00AB'}
         </button>
@@ -397,6 +399,8 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <aside
         data-testid="sidebar"
+        role="navigation"
+        aria-label="Product navigation"
         className="hidden md:flex flex-col bg-deep border-r border-border-subtle h-full sidebar-transition shrink-0"
         style={{ width: collapsed ? 52 : 200 }}
       >
@@ -435,6 +439,8 @@ export function Sidebar() {
             onClick={closeMobile}
           />
           <aside
+            role="navigation"
+            aria-label="Product navigation"
             className="md:hidden fixed top-0 left-0 bottom-0 w-[min(85vw,280px)] bg-deep border-r border-border-subtle z-50 flex flex-col sidebar-transition"
           >
             {sidebarContent}

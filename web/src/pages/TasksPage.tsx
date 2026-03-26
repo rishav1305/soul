@@ -59,6 +59,7 @@ export function TasksPage() {
             value={newTitle}
             onChange={e => setNewTitle(e.target.value)}
             placeholder="Task title"
+            aria-label="Task title"
             className="w-full bg-elevated rounded px-3 py-2 text-sm text-fg placeholder:text-fg-muted outline-none focus:ring-1 focus:ring-soul/50"
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             autoFocus
@@ -68,6 +69,7 @@ export function TasksPage() {
             value={newDesc}
             onChange={e => setNewDesc(e.target.value)}
             placeholder="Description (optional)"
+            aria-label="Task description"
             className="w-full bg-elevated rounded px-3 py-2 text-sm text-fg placeholder:text-fg-muted outline-none focus:ring-1 focus:ring-soul/50 mt-2 resize-none"
             rows={2}
           />
@@ -88,7 +90,7 @@ export function TasksPage() {
       )}
 
       {error && (
-        <div className="px-4 py-2 text-sm text-red-400">{error}</div>
+        <div className="px-4 py-2 text-sm text-red-400" role="alert">{error}</div>
       )}
 
       {/* Kanban columns */}

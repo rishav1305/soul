@@ -18,11 +18,12 @@ export function TopBar({ title, children }: TopBarProps) {
   return (
     <div
       data-testid="top-bar"
+      role="banner"
       className="h-10 flex items-center justify-between pl-11 md:pl-3 pr-3 border-b border-border-subtle bg-deep sticky top-0 z-20"
     >
       {/* Left: diamond + title + status (pl-11 on mobile leaves space for Sidebar hamburger) */}
       <div className="flex items-center gap-2">
-        <svg width="14" height="14" viewBox="0 0 16 16" className="shrink-0">
+        <svg width="14" height="14" viewBox="0 0 16 16" className="shrink-0" aria-hidden="true">
           <defs>
             <linearGradient id="gold-diamond" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#f0c040" />
@@ -38,6 +39,8 @@ export function TopBar({ title, children }: TopBarProps) {
         <span
           data-testid="top-bar-status"
           className={`w-2 h-2 rounded-full ${statusColor}`}
+          role="status"
+          aria-label={`Connection ${status}`}
         />
       </div>
 

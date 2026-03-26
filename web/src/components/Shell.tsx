@@ -113,7 +113,7 @@ export function Shell() {
       {...handlers}
     >
       {/* Header */}
-      <header className="glass flex items-center justify-between px-4 h-11 shrink-0">
+      <header className="glass flex items-center justify-between px-4 h-11 shrink-0" role="banner">
         <div className="flex items-center gap-3">
           {/* Hamburger — visible on mobile only */}
           <button
@@ -149,6 +149,9 @@ export function Shell() {
             data-testid="connection-status"
             className="flex items-center gap-2 text-xs text-fg-muted"
             title={connectionLabel(status)}
+            role="status"
+            aria-live="polite"
+            aria-label={`Connection: ${connectionLabel(status)}`}
           >
             <span className="hidden sm:inline">{connectionLabel(status)}</span>
             <span
@@ -191,13 +194,13 @@ export function Shell() {
         </div>
 
         {/* Chat area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <main className="flex-1 flex flex-col min-w-0">
           {searchOpen && (
             <SearchBar query={searchQuery} onChange={setSearchQuery} onClose={closeSearch} matchCount={matchCount} />
           )}
           <MessageList messages={messages} isStreaming={isStreaming} onSend={sendMessage} onEdit={editAndResend} onRetry={retryMessage} searchQuery={searchQuery} />
           <ChatInput ref={inputRef} onSend={sendMessage} onStop={stopGeneration} disabled={isDisabled} isStreaming={isStreaming} />
-        </div>
+        </main>
       </div>
     </div>
   );

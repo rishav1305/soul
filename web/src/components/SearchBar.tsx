@@ -17,9 +17,11 @@ export function SearchBar({ query, onChange, onClose, matchCount }: SearchBarPro
   return (
     <div
       data-testid="search-bar"
+      role="search"
+      aria-label="Search messages"
       className="flex items-center gap-2 px-4 py-2 bg-surface border-b border-border-subtle shrink-0"
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-fg-muted shrink-0">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-fg-muted shrink-0" aria-hidden="true">
         <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
         <path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
@@ -31,10 +33,11 @@ export function SearchBar({ query, onChange, onClose, matchCount }: SearchBarPro
         onChange={e => onChange(e.target.value)}
         onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         placeholder="Search messages..."
+        aria-label="Search messages"
         className="flex-1 bg-transparent text-sm text-fg placeholder-fg-muted outline-none"
       />
       {query && (
-        <span data-testid="search-match-count" className="text-xs text-fg-muted">
+        <span data-testid="search-match-count" className="text-xs text-fg-muted" aria-live="polite">
           {matchCount} {matchCount === 1 ? 'match' : 'matches'}
         </span>
       )}

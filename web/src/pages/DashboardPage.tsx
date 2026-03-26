@@ -42,7 +42,7 @@ export function DashboardPage() {
         </div>
 
         {error && (
-          <div data-testid="dashboard-error" className="p-3 rounded-lg bg-red-900/30 text-red-400 text-sm">
+          <div data-testid="dashboard-error" role="alert" className="p-3 rounded-lg bg-red-900/30 text-red-400 text-sm">
             {error}
           </div>
         )}

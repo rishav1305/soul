@@ -104,6 +104,8 @@ const SessionItem = React.memo(function SessionItem({
       data-testid="session-item"
       type="button"
       onClick={() => onSwitch(session.id)}
+      aria-selected={isActive}
+      aria-label={`Session: ${title}`}
       className={`w-full text-left px-3 py-3.5 md:py-2.5 group transition-colors cursor-pointer ${
         isActive
           ? 'bg-elevated border-l-2 border-soul'
@@ -243,6 +245,8 @@ export function SessionList({
   return (
     <div
       data-testid="session-list"
+      role="region"
+      aria-label="Chat sessions"
       className="w-64 bg-surface border-r border-border-subtle flex flex-col h-full shrink-0"
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
@@ -253,6 +257,7 @@ export function SessionList({
           data-testid="new-session-button"
           type="button"
           onClick={onCreate}
+          aria-label="Create new session"
           className="px-3 py-2 md:px-2 md:py-1 text-xs font-medium text-fg bg-elevated hover:bg-overlay rounded transition-colors cursor-pointer"
         >
           + New
@@ -266,6 +271,7 @@ export function SessionList({
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search sessions..."
+            aria-label="Search sessions"
             className="w-full px-2 py-1.5 text-sm bg-elevated border border-border-default rounded text-fg placeholder:text-fg-muted outline-none focus:border-soul/40"
           />
         </div>

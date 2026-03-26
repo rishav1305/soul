@@ -254,6 +254,7 @@ export function ObservePage() {
             onChange={(e) => setProduct(e.target.value as ObserveProduct)}
             className="soul-select text-xs"
             data-testid="observe-product-filter"
+            aria-label="Filter by product"
           >
             {products.map(p => (
               <option key={p.value} value={p.value}>{p.label}</option>
@@ -271,9 +272,12 @@ export function ObservePage() {
       )}
 
       {/* Tab nav */}
-      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="observe-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="observe-tabs" role="tablist" aria-label="Observe sections">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`observe-panel-${tab}`}
             className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize whitespace-nowrap ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'}`}
             data-testid={`tab-${tab}`}>
             {tab}
@@ -281,7 +285,7 @@ export function ObservePage() {
         ))}
       </nav>
 
-      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="observe-error">{error}</div>}
+      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" role="alert" data-testid="observe-error">{error}</div>}
 
       {/* Tab content */}
       {activeTab === 'overview' && overview && <OverviewTab overview={overview} />}
@@ -290,7 +294,7 @@ export function ObservePage() {
       )}
       {activeTab === 'tail' && tail && <TailTab tail={tail} />}
       {loading && !overview && pillars.length === 0 && !tail && (
-        <div className="text-center py-8 text-fg-muted">Loading...</div>
+        <div className="text-center py-8 text-fg-muted" role="status" aria-live="polite">Loading...</div>
       )}
     </div>
   );

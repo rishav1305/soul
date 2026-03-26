@@ -57,7 +57,7 @@ function DashboardTab({ dashboard }: { dashboard: TutorDashboard }) {
           <span className={`text-lg font-bold ${scoreColor(readinessPercent)}`} data-testid="readiness-score">{readinessPercent}%</span>
         </div>
         <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
-          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readinessPercent}%` }} data-testid="readiness-bar" />
+          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readinessPercent}%` }} data-testid="readiness-bar" role="progressbar" aria-valuenow={readinessPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Interview readiness" />
         </div>
         <div className="flex gap-3">
           <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400" data-testid="streak-badge">
@@ -379,9 +379,12 @@ export function TutorPage() {
       </div>
 
       {/* Tab nav */}
-      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="tutor-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="tutor-tabs" role="tablist" aria-label="Tutor sections">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`tutor-panel-${tab}`}
             className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize whitespace-nowrap ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-fg-secondary'}`}
             data-testid={`tab-${tab}`}>
             {tab}
@@ -389,7 +392,7 @@ export function TutorPage() {
         ))}
       </nav>
 
-      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="tutor-error">{error}</div>}
+      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" role="alert" data-testid="tutor-error">{error}</div>}
 
       {/* Tab content */}
       {activeTab === 'dashboard' && dashboard && <DashboardTab dashboard={dashboard} />}
@@ -398,7 +401,7 @@ export function TutorPage() {
       {activeTab === 'mocks' && <MocksTab mocks={mocks} navigate={(p: string) => navigate(p)} />}
       {activeTab === 'guide' && <GuideTab />}
       {loading && !dashboard && !analytics && topics.length === 0 && mocks.length === 0 && (
-        <div className="text-center py-8 text-fg-muted">Loading...</div>
+        <div className="text-center py-8 text-fg-muted" role="status" aria-live="polite">Loading...</div>
       )}
     </div>
   );

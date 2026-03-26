@@ -33,7 +33,7 @@ function DashboardTab({ dashboard }: { dashboard: ProjectDashboard }) {
           <span className="text-lg font-bold text-emerald-400">{dashboard.shipped}/{dashboard.total_projects} shipped</span>
         </div>
         <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
-          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${shippedPercent}%` }} data-testid="shipped-progress-bar" />
+          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${shippedPercent}%` }} data-testid="shipped-progress-bar" role="progressbar" aria-valuenow={shippedPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Projects shipped" />
         </div>
       </div>
 
@@ -237,9 +237,12 @@ export function ProjectsPage() {
       </div>
 
       {/* Tab nav */}
-      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="projects-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="projects-tabs" role="tablist" aria-label="Projects sections">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`projects-panel-${tab}`}
             className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'}`}
             data-testid={`tab-${tab}`}>
             {tab}
@@ -247,7 +250,7 @@ export function ProjectsPage() {
         ))}
       </nav>
 
-      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="projects-error">{error}</div>}
+      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" role="alert" data-testid="projects-error">{error}</div>}
 
       {/* Tab content */}
       {activeTab === 'dashboard' && dashboard && <DashboardTab dashboard={dashboard} />}
@@ -255,7 +258,7 @@ export function ProjectsPage() {
       {activeTab === 'timeline' && dashboard && <TimelineTab projects={dashboard.projects} />}
       {activeTab === 'keywords' && <KeywordsTab keywords={keywords} />}
       {loading && !dashboard && keywords.length === 0 && (
-        <div className="text-center py-8 text-fg-muted">Loading...</div>
+        <div className="text-center py-8 text-fg-muted" role="status" aria-live="polite">Loading...</div>
       )}
     </div>
   );

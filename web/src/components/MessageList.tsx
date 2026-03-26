@@ -68,6 +68,9 @@ export function MessageList({ messages, isStreaming, onSend, onEdit, onRetry, se
       <div
         ref={containerRef}
         data-testid="message-list"
+        role="log"
+        aria-live="polite"
+        aria-label="Chat messages"
         className="h-full overflow-y-auto px-4 py-4"
         onScroll={handleScroll}
       >

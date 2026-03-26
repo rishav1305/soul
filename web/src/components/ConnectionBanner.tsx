@@ -75,6 +75,8 @@ export function ConnectionBanner({
   return (
     <div
       data-testid="connection-banner"
+      role="alert"
+      aria-live="assertive"
       className={`flex items-center justify-between px-4 py-2 text-sm border-b ${bgClass} ${textClass} transition-opacity duration-300`}
     >
       <span className="flex items-center">

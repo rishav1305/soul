@@ -35,9 +35,12 @@ export function MeshPage() {
       </div>
 
       {/* Tab nav */}
-      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="mesh-tabs">
+      <nav className="tab-scroll flex gap-1 border-b border-border-subtle pb-px" data-testid="mesh-tabs" role="tablist" aria-label="Mesh sections">
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`mesh-panel-${tab}`}
             className={`px-3 py-1.5 text-sm rounded-t transition-colors capitalize ${activeTab === tab ? 'bg-surface text-fg' : 'text-fg-muted hover:text-zinc-200'}`}
             data-testid={`tab-${tab}`}>
             {tab}
@@ -45,7 +48,7 @@ export function MeshPage() {
         ))}
       </nav>
 
-      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" data-testid="mesh-error">{error}</div>}
+      {error && <div className="text-red-400 text-sm bg-red-400/10 px-3 py-2 rounded" role="alert" data-testid="mesh-error">{error}</div>}
 
       {/* Tab content */}
       {activeTab === 'cluster' && clusterStatus && (
@@ -66,7 +69,7 @@ export function MeshPage() {
       )}
 
       {loading && !clusterStatus && nodes.length === 0 && (
-        <div className="text-center py-8 text-fg-muted">Loading...</div>
+        <div className="text-center py-8 text-fg-muted" role="status" aria-live="polite">Loading...</div>
       )}
     </div>
   );

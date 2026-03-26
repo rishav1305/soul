@@ -84,6 +84,7 @@ export function ChatTopBar({
         <button
           data-testid="chat-new-btn"
           onClick={onCreateSession}
+          aria-label="New chat session"
           className="w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-md text-xs flex items-center justify-center sm:justify-start gap-1.5 bg-[#7c3aed] text-white hover:bg-[#6d28d9] transition-colors cursor-pointer"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="shrink-0">
@@ -98,6 +99,8 @@ export function ChatTopBar({
           <button
             data-testid="chat-running-btn"
             onClick={() => { setRunningOpen(prev => !prev); setUnreadOpen(false); }}
+            aria-label={`Running sessions${runningCount > 0 ? ` (${runningCount})` : ''}`}
+            aria-expanded={runningOpen}
             className={`${btnBase} relative ${runningOpen ? 'bg-elevated text-fg' : ''}`}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={`shrink-0 ${runningCount > 0 ? 'animate-spin' : ''}`}>
@@ -131,6 +134,8 @@ export function ChatTopBar({
           <button
             data-testid="chat-unread-btn"
             onClick={() => { setUnreadOpen(prev => !prev); setRunningOpen(false); }}
+            aria-label={`Unread sessions${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
+            aria-expanded={unreadOpen}
             className={`${btnBase} relative ${unreadOpen ? 'bg-elevated text-fg' : ''}`}
           >
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="shrink-0">
@@ -163,6 +168,8 @@ export function ChatTopBar({
         <button
           data-testid="chat-history-btn"
           onClick={onToggleSessions}
+          aria-label={sessionsOpen ? 'Hide session history' : 'Show session history'}
+          aria-expanded={sessionsOpen}
           className={`${btnBase} ${sessionsOpen ? 'bg-elevated text-fg' : ''}`}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
