@@ -234,10 +234,12 @@ export default function HorizontalRail({
   // Fetch models on mount
   useEffect(() => {
     authFetch('/api/models')
-      .then((r) => r.json())
-      .then((data: ModelInfo[]) => {
-        setRailModels(data);
-        if (data.length > 0) setRailModel(data[0]!.id);
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
+      .then((data) => {
+        // Go API returns {models: [...], thinking_types: [...]} — unwrap
+        const models: ModelInfo[] = Array.isArray(data) ? data : (data.models ?? []);
+        setRailModels(models);
+        if (models.length > 0) setRailModel(models[0]!.id);
       })
       .catch(() => {});
   }, []);

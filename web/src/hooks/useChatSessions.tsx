@@ -171,8 +171,10 @@ function useChatSessionsInternal(): ChatSessionsValue {
     try {
       const res = await authFetch('/api/sessions');
       if (!res.ok) return;
-      const data: ChatSession[] = await res.json();
-      setSessions(data);
+      const data = await res.json();
+      // Go API returns {sessions: [...]} — unwrap to bare array
+      const list: ChatSession[] = Array.isArray(data) ? data : (data.sessions ?? []);
+      setSessions(list);
     } catch { /* ignore */ }
   }, []);
 
@@ -184,7 +186,9 @@ function useChatSessionsInternal(): ChatSessionsValue {
     try {
       const res = await authFetch(`/api/sessions/${id}/messages`);
       if (!res.ok) return;
-      const records: Array<{ id: number; role: string; content: string }> = await res.json();
+      const raw = await res.json();
+      // Go API returns {messages: [...]} — unwrap to bare array
+      const records: Array<{ id: number; role: string; content: string }> = Array.isArray(raw) ? raw : (raw.messages ?? []);
       const hydrated: ChatMessage[] = records.map((r) => ({
         id: String(r.id),
         role: r.role as 'user' | 'assistant',
@@ -204,7 +208,9 @@ function useChatSessionsInternal(): ChatSessionsValue {
       try {
         const res = await authFetch(`/api/sessions/${id}/messages`);
         if (!res.ok) return;
-        const records: Array<{ id: number; role: string; content: string }> = await res.json();
+        const raw = await res.json();
+        // Go API returns {messages: [...]} — unwrap to bare array
+        const records: Array<{ id: number; role: string; content: string }> = Array.isArray(raw) ? raw : (raw.messages ?? []);
         const hydrated: ChatMessage[] = records.map((r) => ({
           id: String(r.id),
           role: r.role as 'user' | 'assistant',

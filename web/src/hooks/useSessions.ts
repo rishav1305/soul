@@ -35,8 +35,10 @@ export function useSessions() {
     try {
       const res = await authFetch('/api/sessions');
       if (!res.ok) return;
-      const data: ChatSession[] = await res.json();
-      setSessions(data);
+      const data = await res.json();
+      // Go API returns {sessions: [...]} — unwrap to bare array
+      const list: ChatSession[] = Array.isArray(data) ? data : (data.sessions ?? []);
+      setSessions(list);
     } catch { /* ignore */ }
   }, []);
 
@@ -64,7 +66,9 @@ export function useSessions() {
       body: JSON.stringify({ title: '' }),
     });
     if (!res.ok) throw new Error('Failed to create session');
-    const session: ChatSession = await res.json();
+    const data = await res.json();
+    // Go API returns {session: {...}} — unwrap
+    const session: ChatSession = data.session ?? data;
     setSessions(prev => [session, ...prev].slice(0, 30));
     setActiveSessionId(session.id);
     return session;
