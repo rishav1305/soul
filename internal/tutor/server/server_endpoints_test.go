@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/eval"
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/eval"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 // newTestServer creates an isolated Server backed by a temp SQLite database.

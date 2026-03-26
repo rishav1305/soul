@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rishav1305/soul-v2/internal/tutor/store"
+	"github.com/rishav1305/soul/internal/tutor/store"
 )
 
 func openModuleTestStore(t *testing.T) *store.Store {
