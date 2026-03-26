@@ -168,5 +168,5 @@ make verify   # L1-L3: static analysis + unit + integration tests
 
 - Portfolio: [rishavchatterjee.com](https://rishavchatterjee.com)
 - CARS Dashboard: [rishavchatterjee.com/cars](https://rishavchatterjee.com/cars)
-- SoulGraph: [github.com/rishav1305/soulgraph](https://github.com/rishav1305/soulgraph)
+- GitHub: [github.com/rishav1305](https://github.com/rishav1305)
 - LinkedIn: [linkedin.com/in/rishavchatterjee](https://linkedin.com/in/rishavchatterjee)
