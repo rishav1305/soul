@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../lib/api.ts';
 
 export interface SlashCommand {
   name: string;
@@ -21,7 +22,7 @@ export function useSlashCommands() {
   const [commands, setCommands] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
 
   useEffect(() => {
-    fetch('/api/skills')
+    authFetch('/api/skills')
       .then(r => r.json())
       .then((skills: { name: string }[]) => {
         const builtinNames = new Set(BUILTIN_COMMANDS.map(b => b.name.toLowerCase()));

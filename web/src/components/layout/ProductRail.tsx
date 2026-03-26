@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { authFetch } from '../../lib/api.ts';
 import type { PlannerTask, PanelPosition, DrawerLayout, ProductInfo } from '../../lib/types.ts';
 
 function productAbbr(name: string): string {
@@ -47,7 +48,7 @@ function AuthSection() {
   const handleReauth = async () => {
     setStatus('loading');
     try {
-      const res = await fetch('/api/reauth', { method: 'POST' });
+      const res = await authFetch('/api/reauth', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setStatus('ok');

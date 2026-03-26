@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ProjectDetail } from '../lib/types';
-import { api } from '../lib/api';
+import { api, authFetch } from '../lib/api';
 import { reportError, reportUsage } from '../lib/telemetry';
 
 interface UseProjectDetailReturn {
@@ -28,7 +28,7 @@ export function useProjectDetail(projectId: number): UseProjectDetailReturn {
     try {
       const [detail, guideText] = await Promise.all([
         api.get<ProjectDetail>(`/api/projects/${projectId}`),
-        fetch(`/api/projects/${projectId}/guide`).then(r => r.ok ? r.json().then(d => d.content || '') : '').catch(() => ''),
+        authFetch(`/api/projects/${projectId}/guide`).then(r => r.ok ? r.json().then(d => d.content || '') : '').catch(() => ''),
       ]);
       setProject(detail);
       setGuide(guideText || '');

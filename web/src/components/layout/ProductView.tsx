@@ -98,12 +98,11 @@ export default function ProductView({
     stocks:          PlaceholderPanel,
   };
 
+  // ── Dedicated product panel (if registered and not a placeholder) ──
   if (activeProduct) {
     const Panel = DEDICATED_PANELS[activeProduct];
-    if (Panel) {
+    if (Panel && Panel !== PlaceholderPanel) {
       const meta = productMetadata?.get(activeProduct);
-      // PlaceholderPanel renders null — skip the chrome wrapper entirely
-      if (Panel === PlaceholderPanel) return null;
       return (
         <div data-testid={`product-view-${activeProduct}`} className="h-full flex flex-col">
           <div className="glass flex items-center gap-2 px-4 h-11 shrink-0 border-b border-border-subtle">
@@ -120,11 +119,10 @@ export default function ProductView({
         </div>
       );
     }
-    // Unknown product not in registry — render blank
-    return null;
+    // Placeholder or unknown products fall through to the Tasks dashboard below
   }
 
-  // ── Global "All Tasks" dashboard (activeProduct === null) ─────────────────
+  // ── Tasks dashboard (default for "soul", placeholder products, or null) ──
 
   return (
     <TaskPanel

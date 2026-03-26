@@ -5,6 +5,7 @@ import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
 import { ChatSessionsProvider, useChatSessions } from '../../hooks/useChatSessions.tsx';
 import { WebSocketContext, useWebSocketProvider } from '../../hooks/useWebSocketContext.ts';
+import { authFetch } from '../../lib/api.ts';
 import type { PlannerTask, TaskStage, TaskFilters, ProductInfo } from '../../lib/types.ts';
 import ProductRail, { RAIL_WIDTH, PANEL_WIDTH } from './ProductRail.tsx';
 import ProductView from './ProductView.tsx';
@@ -32,7 +33,7 @@ function AppShellInner() {
   // Fetch registered products from API on mount
   const [apiProducts, setApiProducts] = useState<ProductInfo[]>([]);
   useEffect(() => {
-    fetch('/api/products')
+    authFetch('/api/products')
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setApiProducts(data); })
       .catch(() => {});

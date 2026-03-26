@@ -11,6 +11,7 @@ import type {
   ChatSession,
   ProductInfo,
 } from '../../lib/types.ts';
+import { authFetch } from '../../lib/api.ts';
 import ChatView from '../chat/ChatView.tsx';
 import SessionDrawer from '../chat/SessionDrawer.tsx';
 import TaskContent from '../planner/TaskContent.tsx';
@@ -195,7 +196,7 @@ export default function RightPanel({
   // ── Reauth handler (shared between rail and drawer) ──
   const handleReauth = useCallback(async () => {
     try {
-      const res = await fetch('/api/reauth', { method: 'POST' });
+      const res = await authFetch('/api/reauth', { method: 'POST' });
       setReauthStatus(res.ok ? 'ok' : 'error');
     } catch {
       setReauthStatus('error');

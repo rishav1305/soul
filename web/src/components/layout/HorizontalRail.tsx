@@ -12,6 +12,7 @@ import type {
   ChatSession,
   SendOptions,
 } from '../../lib/types.ts';
+import { authFetch } from '../../lib/api.ts';
 import { useChat } from '../../hooks/useChat.ts';
 import ChatView from '../chat/ChatView.tsx';
 import SessionDrawer from '../chat/SessionDrawer.tsx';
@@ -232,7 +233,7 @@ export default function HorizontalRail({
 
   // Fetch models on mount
   useEffect(() => {
-    fetch('/api/models')
+    authFetch('/api/models')
       .then((r) => r.json())
       .then((data: ModelInfo[]) => {
         setRailModels(data);
@@ -573,7 +574,7 @@ export default function HorizontalRail({
             type="button"
             onClick={async () => {
               try {
-                const res = await fetch('/api/reauth', { method: 'POST' });
+                const res = await authFetch('/api/reauth', { method: 'POST' });
                 setReauthStatus(res.ok ? 'ok' : 'error');
               } catch {
                 setReauthStatus('error');
@@ -932,7 +933,7 @@ export default function HorizontalRail({
             <button
               type="button"
               onClick={async () => {
-                try { const res = await fetch('/api/reauth', { method: 'POST' }); setReauthStatus(res.ok ? 'ok' : 'error'); } catch { setReauthStatus('error'); }
+                try { const res = await authFetch('/api/reauth', { method: 'POST' }); setReauthStatus(res.ok ? 'ok' : 'error'); } catch { setReauthStatus('error'); }
                 setTimeout(() => setReauthStatus('idle'), 2000);
               }}
               className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}

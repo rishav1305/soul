@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
+import { authFetch } from '../lib/api.ts';
 import type { ChatSession, WSMessage } from '../lib/types.ts';
 
 const SESSION_KEY = 'soul-active-session';
@@ -32,7 +33,7 @@ export function useSessions() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await authFetch('/api/sessions');
       if (!res.ok) return;
       const data: ChatSession[] = await res.json();
       setSessions(data);
@@ -57,7 +58,7 @@ export function useSessions() {
   }, [onMessage]);
 
   const createSession = useCallback(async () => {
-    const res = await fetch('/api/sessions', {
+    const res = await authFetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: '' }),

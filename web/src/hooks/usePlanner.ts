@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
+import { authFetch } from '../lib/api.ts';
 import type { PlannerTask, TaskStage, PlannerActivity, TaskComment, TaskActivityEvent, TaskCommentEvent, WSMessage } from '../lib/types.ts';
 
 const STAGES: TaskStage[] = ['backlog', 'brainstorm', 'active', 'blocked', 'validation', 'done'];
@@ -31,7 +32,7 @@ export function usePlanner() {
 
     async function fetchTasks() {
       try {
-        const res = await fetch('/api/tasks');
+        const res = await authFetch('/api/tasks');
         if (!res.ok) throw new Error(`Failed to fetch tasks: ${res.status}`);
         const data: PlannerTask[] = await res.json();
         if (!cancelled) {
@@ -133,7 +134,7 @@ export function usePlanner() {
 
   const createTask = useCallback(
     async (title: string, description: string, priority: number, product: string) => {
-      const res = await fetch('/api/tasks', {
+      const res = await authFetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description, priority, product }),
@@ -146,7 +147,7 @@ export function usePlanner() {
 
   const updateTask = useCallback(
     async (id: number, updates: Partial<PlannerTask>) => {
-      const res = await fetch(`/api/tasks/${id}`, {
+      const res = await authFetch(`/api/tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -158,7 +159,7 @@ export function usePlanner() {
   );
 
   const deleteTask = useCallback(async (id: number) => {
-    const res = await fetch(`/api/tasks/${id}`, {
+    const res = await authFetch(`/api/tasks/${id}`, {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error(`Failed to delete task: ${res.status}`);
@@ -167,7 +168,7 @@ export function usePlanner() {
   const moveTask = useCallback(
     async (id: number, stage: TaskStage, comment: string) => {
       // v2 backend: PATCH /api/tasks/{id} to change stage (no /move endpoint).
-      const res = await fetch(`/api/tasks/${id}`, {
+      const res = await authFetch(`/api/tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage }),
@@ -177,7 +178,7 @@ export function usePlanner() {
 
       // Post move comment separately if provided.
       if (comment.trim()) {
-        await fetch(`/api/tasks/${id}/comments`, {
+        await authFetch(`/api/tasks/${id}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ author: 'user', type: 'stage_change', body: comment }),
@@ -190,7 +191,7 @@ export function usePlanner() {
   );
 
   const fetchComments = useCallback(async (taskId: number) => {
-    const res = await fetch(`/api/tasks/${taskId}/comments`);
+    const res = await authFetch(`/api/tasks/${taskId}/comments`);
     if (!res.ok) throw new Error(`Failed to fetch comments: ${res.status}`);
     const data: TaskComment[] = await res.json();
     setTaskComments((prev) => ({ ...prev, [taskId]: data }));
@@ -198,7 +199,7 @@ export function usePlanner() {
   }, []);
 
   const addComment = useCallback(async (taskId: number, body: string) => {
-    const res = await fetch(`/api/tasks/${taskId}/comments`, {
+    const res = await authFetch(`/api/tasks/${taskId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ author: 'user', type: 'feedback', body }),

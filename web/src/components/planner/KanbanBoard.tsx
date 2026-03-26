@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
+import { authFetch } from '../../lib/api.ts';
 import type { PlannerTask, TaskStage, PlannerActivity } from '../../lib/types.ts';
 import StageColumn from './StageColumn.tsx';
 
@@ -63,7 +64,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick, taskActivities,
     try {
       await Promise.all(
         Array.from(selectedIds).map((id) =>
-          fetch(`/api/tasks/${id}/move`, {
+          authFetch(`/api/tasks/${id}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ stage, comment: 'Batch move' }),
@@ -84,7 +85,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick, taskActivities,
     try {
       await Promise.all(
         Array.from(selectedIds).map((id) =>
-          fetch(`/api/tasks/${id}`, {
+          authFetch(`/api/tasks/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ priority }),
@@ -105,7 +106,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick, taskActivities,
     try {
       await Promise.all(
         Array.from(selectedIds).map((id) =>
-          fetch(`/api/tasks/${id}`, {
+          authFetch(`/api/tasks/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ product }),
@@ -126,7 +127,7 @@ export default function KanbanBoard({ tasksByStage, onTaskClick, taskActivities,
     try {
       await Promise.all(
         Array.from(selectedIds).map((id) =>
-          fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+          authFetch(`/api/tasks/${id}`, { method: 'DELETE' })
         )
       );
       exitBatch();

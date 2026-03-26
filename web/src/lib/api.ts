@@ -52,6 +52,23 @@ export function uuid(): string {
     .join('');
 }
 
+/**
+ * Drop-in fetch() replacement that injects the Authorization header.
+ * Use this instead of bare fetch() for any /api/* call.
+ */
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401) {
+    clearToken();
+  }
+  return res;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

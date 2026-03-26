@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/api.ts';
 import type { ProfileData } from '../lib/types.ts';
 
 async function callProfileTool(tool: string, input: Record<string, unknown> = {}) {
-  const resp = await fetch(`/api/tools/scout__${tool}/execute`, {
+  const resp = await authFetch(`/api/tools/scout__${tool}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input }),

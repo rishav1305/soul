@@ -15,7 +15,7 @@ import {
   createContext, useContext, type ReactNode,
 } from 'react';
 import { useWebSocketCtx as useWebSocket } from './useWebSocketContext.ts';
-import { uuid } from '../lib/api.ts';
+import { uuid, authFetch } from '../lib/api.ts';
 import type {
   ChatMessage,
   ChatSession,
@@ -169,7 +169,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await authFetch('/api/sessions');
       if (!res.ok) return;
       const data: ChatSession[] = await res.json();
       setSessions(data);
@@ -182,7 +182,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
 
   const loadSessionMessages = useCallback(async (id: number) => {
     try {
-      const res = await fetch(`/api/sessions/${id}/messages`);
+      const res = await authFetch(`/api/sessions/${id}/messages`);
       if (!res.ok) return;
       const records: Array<{ id: number; role: string; content: string }> = await res.json();
       const hydrated: ChatMessage[] = records.map((r) => ({
@@ -202,7 +202,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
     if (pollingRefs.current.has(id)) return; // already polling
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`/api/sessions/${id}/messages`);
+        const res = await authFetch(`/api/sessions/${id}/messages`);
         if (!res.ok) return;
         const records: Array<{ id: number; role: string; content: string }> = await res.json();
         const hydrated: ChatMessage[] = records.map((r) => ({
@@ -241,7 +241,7 @@ function useChatSessionsInternal(): ChatSessionsValue {
     activeSessionIdRef.current = id;
     stopPolling(id);
     // Mark read via API
-    fetch(`/api/sessions/${id}/read`, { method: 'PATCH' }).catch(() => {});
+    authFetch(`/api/sessions/${id}/read`, { method: 'PATCH' }).catch(() => {});
     // Update local status
     setSessions((prev) => prev.map((s) =>
       s.id === id && s.status === 'completed_unread' ? { ...s, status: 'idle' } : s,
