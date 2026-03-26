@@ -23,8 +23,9 @@ export function useSlashCommands() {
 
   useEffect(() => {
     authFetch('/api/skills')
-      .then(r => r.json())
-      .then((skills: { name: string }[]) => {
+      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
+      .then((data) => {
+        const skills: { name: string }[] = Array.isArray(data) ? data : (data.skills ?? []);
         const builtinNames = new Set(BUILTIN_COMMANDS.map(b => b.name.toLowerCase()));
         const skillCommands: SlashCommand[] = skills
           .filter(s => !builtinNames.has(s.name.toLowerCase()))
