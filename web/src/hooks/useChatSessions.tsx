@@ -283,47 +283,105 @@ function useChatSessionsInternal(): ChatSessionsValue {
     };
 
     if (sid) {
+      // Session exists — send immediately
       setSessionState(sid, (prev) => ({
         ...prev,
         isStreaming: true,
         messages: [...prev.messages, userMsg],
       }));
+
+      send({
+        type: 'chat.send',
+        content,
+        sessionId: String(sid),
+        data: options ? {
+          model: options.model,
+          chat_type: options.chatType,
+          context: options.context,
+        } : undefined,
+      });
+      return;
     }
 
-    send({
-      type: 'chat.send',
-      content,
-      sessionId: sid ? String(sid) : undefined,
-      data: options ? {
-        model: options.model,
-        chat_type: options.chatType,
-        context: options.context,
-      } : undefined,
-    });
-  }, [send, setSessionState]);
+    // Deferred session creation: no active session, create one first via REST API,
+    // then send the message. This handles the "new chat" case where the user types
+    // their first message before a session exists.
+    (async () => {
+      try {
+        const res = await authFetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: '' }),
+        });
+        if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
+        const data = await res.json();
+        // Go API returns {session: {...}} — unwrap
+        const session = data.session ?? data;
+        const newId = session.id;
+
+        // Set as active session
+        _setActiveSessionId(newId);
+        saveActiveId(newId);
+        activeSessionIdRef.current = newId;
+
+        // Add optimistic user message to the new session
+        setSessionState(newId, (prev) => ({
+          ...prev,
+          isStreaming: true,
+          messages: [...prev.messages, userMsg],
+        }));
+
+        // Refresh session list so sidebar updates
+        fetchSessions();
+
+        // Now send the actual message via WS
+        send({
+          type: 'chat.send',
+          content,
+          sessionId: String(newId),
+          data: options ? {
+            model: options.model,
+            chat_type: options.chatType,
+            context: options.context,
+          } : undefined,
+        });
+      } catch (err) {
+        console.error('Failed to create session for message:', err);
+      }
+    })();
+  }, [send, setSessionState, fetchSessions]);
 
   /* ── WS message routing ───────────────────────────────── */
 
   useEffect(() => {
     const unsub = onMessage((msg: WSMessage) => {
-      // Determine which session this message belongs to
-      const msgSessionId = msg.sessionId ? Number(msg.sessionId) : activeSessionIdRef.current;
-      if (!msgSessionId) return;
+      // Determine which session this message belongs to.
+      // For session-level events (created, status_changed, updated) the session ID
+      // may be embedded in the data payload rather than the top-level msg.sessionId.
+      const msgSessionId = msg.sessionId ? msg.sessionId : activeSessionIdRef.current;
+
+      // Session-level events must be processed even when no session is active yet,
+      // so we only skip per-session events (chat.*, tool.*) when msgSessionId is null.
+      const isSessionLevelEvent = msg.type?.startsWith('session.') || msg.type === 'pm.notification';
+      if (!msgSessionId && !isSessionLevelEvent) return;
 
       switch (msg.type) {
 
         case 'session.created': {
-          const data = msg.data as { session_id: number; sessionId?: number };
-          const newId = data.session_id ?? data.sessionId;
+          // Go sends {data: {session: {id: "uuid", title: "...", ...}}}
+          const raw = msg.data as Record<string, unknown>;
+          const session = (raw?.session ?? raw) as Record<string, unknown>;
+          const newId = session?.id ?? raw?.session_id ?? raw?.sessionId;
+          if (!newId) break;
           if (activeSessionIdRef.current === null) {
-            _setActiveSessionId(newId);
-            saveActiveId(newId);
-            activeSessionIdRef.current = newId;
+            _setActiveSessionId(newId as string & number);
+            saveActiveId(newId as string & number);
+            activeSessionIdRef.current = newId as string & number;
           }
           setSessionStates((prev) => {
-            if (prev.has(newId)) return prev;
+            if (prev.has(newId as number)) return prev;
             const next = new Map(prev);
-            next.set(newId, prev.get(0) ?? emptySession());
+            next.set(newId as number, prev.get(0) ?? emptySession());
             next.delete(0);
             return next;
           });
@@ -332,32 +390,50 @@ function useChatSessionsInternal(): ChatSessionsValue {
         }
 
         case 'session.status_changed': {
-          const data = msg.data as { session_id?: number; sessionId?: number; status: ChatSession['status'] };
-          const sid = data.session_id ?? data.sessionId;
-          if (!sid) break;
+          // Go sends status changes as session.updated, but handle this type
+          // defensively in case it arrives from other sources.
+          const raw = msg.data as Record<string, unknown>;
+          const session = (raw?.session ?? raw) as Record<string, unknown>;
+          const sid = session?.id ?? raw?.session_id ?? raw?.sessionId;
+          const status = (session?.status ?? raw?.status) as ChatSession['status'] | undefined;
+          if (!sid || !status) break;
           setSessions((prev) => prev.map((s) =>
-            s.id === sid ? { ...s, status: data.status } : s,
+            s.id === sid ? { ...s, status } : s,
           ));
-          if (data.status !== 'running') {
-            stopPolling(sid);
-            setSessionState(sid, (prev) => ({ ...prev, isStreaming: false }));
+          if (status !== 'running') {
+            stopPolling(sid as number);
+            setSessionState(sid as number, (prev) => ({ ...prev, isStreaming: false }));
           }
           // Start background polling if this session is running but not active
-          if (data.status === 'running' && sid !== activeSessionIdRef.current) {
-            startPolling(sid);
+          if (status === 'running' && sid !== activeSessionIdRef.current) {
+            startPolling(sid as number);
           }
           break;
         }
 
         case 'session.updated': {
-          const data = msg.data as { session_id?: number; sessionId?: number; title: string; summary: string; model: string };
-          const updatedSid = data.session_id ?? data.sessionId;
+          // Go sends {data: {session: {id, title, status, ...}}}
+          const raw = msg.data as Record<string, unknown>;
+          const session = (raw?.session ?? raw) as Record<string, unknown>;
+          const updatedSid = session?.id ?? raw?.session_id ?? raw?.sessionId;
           if (!updatedSid) return;
+          const title = (session?.title ?? raw?.title) as string | undefined;
+          const summary = (session?.summary ?? raw?.summary) as string | undefined;
+          const model = (session?.model ?? raw?.model) as string | undefined;
+          const status = (session?.status ?? raw?.status) as ChatSession['status'] | undefined;
           setSessions((prev) => prev.map((s) =>
             s.id === updatedSid
-              ? { ...s, title: data.title || s.title, summary: data.summary || s.summary, model: data.model || s.model }
+              ? { ...s, ...(title ? { title } : {}), ...(summary ? { summary } : {}), ...(model ? { model } : {}), ...(status ? { status } : {}) }
               : s,
           ));
+          // Handle status transitions from session.updated (Go uses this for status changes)
+          if (status && status !== 'running') {
+            stopPolling(updatedSid as number);
+            setSessionState(updatedSid as number, (prev) => ({ ...prev, isStreaming: false }));
+          }
+          if (status === 'running' && updatedSid !== activeSessionIdRef.current) {
+            startPolling(updatedSid as number);
+          }
           break;
         }
 
