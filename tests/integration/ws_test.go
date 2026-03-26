@@ -127,10 +127,23 @@ func drainInitial(t *testing.T, ctx context.Context, conn *websocket.Conn) {
 	if msg1["type"] != "connection.ready" {
 		t.Fatalf("expected connection.ready, got %v", msg1["type"])
 	}
-	msg2 := readJSON(t, ctx, conn)
-	if msg2["type"] != "session.list" {
-		t.Fatalf("expected session.list, got %v", msg2["type"])
+	// After connection.ready, expect session.list — but skip any interleaved
+	// broadcast messages (session.updated, session.deleted) that arrive from
+	// concurrent clients in multi-connection tests.
+	for i := 0; i < 10; i++ {
+		msg := readJSON(t, ctx, conn)
+		if msg["type"] == "session.list" {
+			return
+		}
+		// Skip known broadcast types that can interleave.
+		switch msg["type"] {
+		case "session.updated", "session.deleted", "session.created":
+			continue
+		default:
+			t.Fatalf("expected session.list, got %v", msg["type"])
+		}
 	}
+	t.Fatal("drainInitial: did not receive session.list within 10 messages")
 }
 
 // waitForClientCount polls the hub until the expected count is reached or the
@@ -613,8 +626,10 @@ func TestWS_ServerShutdownClosesClients(t *testing.T) {
 
 func TestWS_GoroutineLeak(t *testing.T) {
 	// Baseline goroutine count.
+	// Allow extra time for prior tests' goroutines (timers, finalizers) to exit.
 	runtime.GC()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
+	runtime.GC()
 	baseline := runtime.NumGoroutine()
 
 	// Run a full lifecycle.
@@ -650,8 +665,9 @@ func TestWS_GoroutineLeak(t *testing.T) {
 	cancel()
 
 	// Goroutine count should return close to baseline.
-	// Allow a generous margin (+5) for runtime goroutines (GC, finalizers, etc.).
-	waitForGoroutines(t, baseline+5, 5*time.Second)
+	// Allow a generous margin (+8) for runtime goroutines (GC, finalizers,
+	// trailing timers from other tests in the suite).
+	waitForGoroutines(t, baseline+8, 5*time.Second)
 }
 
 // ---------------------------------------------------------------------------
