@@ -467,6 +467,7 @@ export default function ProductRail({
 
       {/* Settings */}
       <button
+        data-testid="rail-settings-btn"
         type="button"
         onClick={() => {
           if (!expanded) {

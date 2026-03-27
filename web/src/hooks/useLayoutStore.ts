@@ -26,7 +26,7 @@ const DEFAULT_STATE: LayoutState = {
   railTab: 'chat',
   chatSplitPct: 60,
   drawerLayout: 'split',
-  panelExpanded: false,
+  panelExpanded: true,
   sessionsOpen: false,
   settingsOpen: false,
   autoInjectContext: true,
@@ -46,7 +46,7 @@ const DEFAULT_STATE: LayoutState = {
 };
 
 // Bump this when layout defaults change to force migration for existing users.
-const LAYOUT_VERSION = 2; // v2: chat+tasks default to right panel
+const LAYOUT_VERSION = 3; // v3: product rail expanded by default (full labels)
 const VERSION_KEY = 'soul-layout-version';
 
 function loadState(): LayoutState {

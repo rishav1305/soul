@@ -3,6 +3,7 @@ import { useLayoutStore } from '../../hooks/useLayoutStore.ts';
 import { usePlanner } from '../../hooks/usePlanner.ts';
 import { useNotifications } from '../../hooks/useNotifications.ts';
 import { useProductContext } from '../../hooks/useProductContext.ts';
+import { useMediaQuery } from '../../hooks/useMediaQuery.ts';
 import { ChatSessionsProvider, useChatSessions } from '../../hooks/useChatSessions.tsx';
 import { WebSocketContext, useWebSocketProvider } from '../../hooks/useWebSocketContext.ts';
 import { authFetch } from '../../lib/api.ts';
@@ -27,6 +28,15 @@ function AppShellInner() {
     messages, runningSessions, unreadSessions, connected,
   } = useChatSessions();
   const { toasts: notifications, dismiss } = useNotifications(planner.tasks, layout.toastsEnabled);
+
+  // ── Responsive breakpoints ──
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const isCompact = useMediaQuery('(max-width: 1023px)');
+  // On compact/mobile screens, force the product rail collapsed to save space
+  const effectivePanelExpanded = isCompact ? false : layout.panelExpanded;
+
+  // Mobile navigation overlay state
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
 
@@ -90,8 +100,8 @@ function AppShellInner() {
   const hasTopRail = layout.chatPosition === 'top' || layout.tasksPosition === 'top';
   const hasBottomRail = layout.chatPosition === 'bottom' || layout.tasksPosition === 'bottom';
 
-  // Right panel detection
-  const hasRightPanel = layout.chatPosition === 'right' || layout.tasksPosition === 'right';
+  // Right panel detection — hidden on mobile to give main content full width
+  const hasRightPanel = !isMobile && (layout.chatPosition === 'right' || layout.tasksPosition === 'right');
   const rightPanels: 'both' | 'chat' | 'tasks' = (layout.chatPosition === 'right' && layout.tasksPosition === 'right')
     ? 'both'
     : layout.chatPosition === 'right' ? 'chat' : 'tasks';
@@ -181,7 +191,7 @@ function AppShellInner() {
     };
   };
 
-  const railSpacer = <div className="shrink-0" style={{ width: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }} />;
+  const railSpacer = <div className="shrink-0" style={{ width: effectivePanelExpanded ? PANEL_WIDTH : RAIL_WIDTH }} />;
 
   const renderRail = (pos: 'top' | 'bottom', panels: 'both' | 'chat' | 'tasks') => (
     <div className="flex min-w-0">
@@ -208,38 +218,72 @@ function AppShellInner() {
 
   return (
     <div data-testid="app-shell" className="h-screen bg-deep text-fg font-body noise overflow-hidden flex flex-col">
-      {/* ── Left Product Rail (fixed position) ── */}
-      <ProductRail
-          products={products}
-          activeProduct={layout.activeProduct}
-          tasks={planner.tasks}
-          productMetadata={productMetadata}
-          onProductSelect={(p) => { if (p) layout.setActiveProduct(p); }}
-          expanded={layout.panelExpanded}
-          onToggleExpanded={() => layout.setPanelExpanded(!layout.panelExpanded)}
-          settingsOpen={layout.settingsOpen}
-          onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
-          chatPosition={layout.chatPosition}
-          setChatPosition={layout.setChatPosition}
-          tasksPosition={layout.tasksPosition}
-          setTasksPosition={layout.setTasksPosition}
-          drawerLayout={layout.drawerLayout}
-          setDrawerLayout={layout.setDrawerLayout}
-          autoInjectContext={layout.autoInjectContext}
-          setAutoInjectContext={layout.setAutoInjectContext}
-          showContextChip={layout.showContextChip}
-          setShowContextChip={layout.setShowContextChip}
-          toastsEnabled={layout.toastsEnabled}
-          setToastsEnabled={layout.setToastsEnabled}
-          inlineBadgesEnabled={layout.inlineBadgesEnabled}
-          setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
-      />
+      {/* ── Mobile hamburger button (visible only on mobile) ── */}
+      {isMobile && (
+        <button
+          data-testid="mobile-nav-toggle"
+          type="button"
+          onClick={() => setMobileNavOpen(!mobileNavOpen)}
+          className="fixed top-3 left-3 z-30 w-10 h-10 flex items-center justify-center rounded-lg bg-surface border border-border-subtle text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+          title="Toggle navigation"
+        >
+          {mobileNavOpen ? (
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2 4h12M2 8h12M2 12h12" />
+            </svg>
+          )}
+        </button>
+      )}
+
+      {/* ── Mobile backdrop overlay ── */}
+      {isMobile && mobileNavOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-10"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      {/* ── Left Product Rail (fixed position, hidden on mobile unless nav open) ── */}
+      {(!isMobile || mobileNavOpen) && (
+        <ProductRail
+            products={products}
+            activeProduct={layout.activeProduct}
+            tasks={planner.tasks}
+            productMetadata={productMetadata}
+            onProductSelect={(p) => {
+              if (p) layout.setActiveProduct(p);
+              if (isMobile) setMobileNavOpen(false);
+            }}
+            expanded={isMobile ? true : effectivePanelExpanded}
+            onToggleExpanded={() => layout.setPanelExpanded(!layout.panelExpanded)}
+            settingsOpen={layout.settingsOpen}
+            onSettingsToggle={() => layout.setSettingsOpen(!layout.settingsOpen)}
+            chatPosition={layout.chatPosition}
+            setChatPosition={layout.setChatPosition}
+            tasksPosition={layout.tasksPosition}
+            setTasksPosition={layout.setTasksPosition}
+            drawerLayout={layout.drawerLayout}
+            setDrawerLayout={layout.setDrawerLayout}
+            autoInjectContext={layout.autoInjectContext}
+            setAutoInjectContext={layout.setAutoInjectContext}
+            showContextChip={layout.showContextChip}
+            setShowContextChip={layout.setShowContextChip}
+            toastsEnabled={layout.toastsEnabled}
+            setToastsEnabled={layout.setToastsEnabled}
+            inlineBadgesEnabled={layout.inlineBadgesEnabled}
+            setInlineBadgesEnabled={layout.setInlineBadgesEnabled}
+        />
+      )}
 
       {/* ── Top rail (if any panel lives here) ── */}
       {hasTopRail && renderRail('top', topPanel)}
 
       {/* ── Main area ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative" style={{ marginLeft: layout.panelExpanded ? PANEL_WIDTH : RAIL_WIDTH }}>
+      <div className="flex flex-1 min-h-0 overflow-hidden relative" style={{ marginLeft: isMobile ? 0 : (effectivePanelExpanded ? PANEL_WIDTH : RAIL_WIDTH) }}>
         <div className="flex-1 min-w-0 overflow-hidden">
           <ProductView
             activeProduct={layout.activeProduct}
