@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -912,6 +913,165 @@ func FuzzOAuthCredentials(f *testing.F) {
 		_ = creds.Valid()
 		_ = creds.ExpiresIn()
 	})
+}
+
+// --- StartAutoRefresh tests ---
+
+func TestStartAutoRefresh_RefreshesBeforeExpiry(t *testing.T) {
+	dir := t.TempDir()
+	// Token expires in 2 minutes — within the 5-minute refresh window.
+	expiry := futureMs(2 * time.Minute)
+	path := writeCredFile(t, dir, validCredJSON(t, expiry), 0600)
+
+	var refreshed atomic.Int32
+	srv := newMockOAuthServer(t, func(r *http.Request) (int, oauthRefreshResponse) {
+		refreshed.Add(1)
+		return http.StatusOK, oauthRefreshResponse{
+			AccessToken:  "auto-refreshed-access",
+			RefreshToken: "auto-refreshed-refresh",
+			ExpiresIn:    3600,
+			TokenType:    "Bearer",
+		}
+	})
+
+	origBackoff := refreshBackoff
+	refreshBackoff = []time.Duration{0, 0, 0}
+	t.Cleanup(func() { refreshBackoff = origBackoff })
+
+	logger := &testLogger{}
+	src := NewOAuthTokenSource(path, logger)
+	src.tokenURLOverride = srv.URL
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src.StartAutoRefresh(ctx, 50*time.Millisecond) // fast check interval for test
+
+	// Wait for the goroutine to fire at least one refresh.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	if refreshed.Load() < 1 {
+		t.Errorf("auto-refresh called %d times, want >= 1", refreshed.Load())
+	}
+
+	// Verify the token was updated.
+	src.mu.RLock()
+	tok := src.creds.AccessToken
+	src.mu.RUnlock()
+	if tok != "auto-refreshed-access" {
+		t.Errorf("AccessToken = %q, want %q", tok, "auto-refreshed-access")
+	}
+}
+
+func TestStartAutoRefresh_StopsOnContextCancel(t *testing.T) {
+	dir := t.TempDir()
+	// Token valid and NOT near expiry — no refresh needed.
+	expiry := futureMs(1 * time.Hour)
+	path := writeCredFile(t, dir, validCredJSON(t, expiry), 0600)
+
+	src := NewOAuthTokenSource(path, nil)
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	src.StartAutoRefresh(ctx, 50*time.Millisecond)
+
+	// Cancel immediately — goroutine should exit.
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	// No panic, no hang — test passes if it reaches here.
+}
+
+func TestStartAutoRefresh_SkipsWhenTokenValid(t *testing.T) {
+	dir := t.TempDir()
+	// Token valid and NOT near expiry — no refresh needed.
+	expiry := futureMs(1 * time.Hour)
+	path := writeCredFile(t, dir, validCredJSON(t, expiry), 0600)
+
+	var refreshed atomic.Int32
+	srv := newMockOAuthServer(t, func(r *http.Request) (int, oauthRefreshResponse) {
+		refreshed.Add(1)
+		return http.StatusOK, oauthRefreshResponse{
+			AccessToken:  "should-not-be-used",
+			RefreshToken: "should-not-be-used",
+			ExpiresIn:    3600,
+			TokenType:    "Bearer",
+		}
+	})
+
+	src := NewOAuthTokenSource(path, nil)
+	src.tokenURLOverride = srv.URL
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	src.StartAutoRefresh(ctx, 50*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	if refreshed.Load() != 0 {
+		t.Errorf("auto-refresh called %d times, want 0 (token is valid)", refreshed.Load())
+	}
+}
+
+func TestStartAutoRefresh_FallsBackToDiskOnRefreshFailure(t *testing.T) {
+	dir := t.TempDir()
+	// Token needs refresh.
+	expiry := futureMs(2 * time.Minute)
+	path := writeCredFile(t, dir, validCredJSON(t, expiry), 0600)
+
+	// Mock server always fails.
+	srv := newMockOAuthServer(t, func(r *http.Request) (int, oauthRefreshResponse) {
+		return http.StatusInternalServerError, oauthRefreshResponse{}
+	})
+
+	origBackoff := refreshBackoff
+	refreshBackoff = []time.Duration{0, 0, 0}
+	t.Cleanup(func() { refreshBackoff = origBackoff })
+
+	logger := &testLogger{}
+	src := NewOAuthTokenSource(path, logger)
+	src.tokenURLOverride = srv.URL
+	if _, err := src.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Write a fresh valid token to disk (simulating Claude CLI refresh).
+	freshCreds := credentialsFile{
+		ClaudeAIOAuth: &OAuthCredentials{
+			AccessToken:  "disk-fallback-auto",
+			RefreshToken: "disk-fallback-auto-refresh",
+			ExpiresAt:    futureMs(1 * time.Hour),
+		},
+	}
+	data, _ := json.Marshal(freshCreds)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src.StartAutoRefresh(ctx, 50*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	// Verify the disk fallback was picked up.
+	src.mu.RLock()
+	tok := src.creds.AccessToken
+	src.mu.RUnlock()
+	if tok != "disk-fallback-auto" {
+		t.Errorf("AccessToken = %q, want %q (disk fallback)", tok, "disk-fallback-auto")
+	}
 }
 
 // --- Helper ---

@@ -76,6 +76,13 @@ func runServe() {
 		log.Printf("auth: %v (server will report auth as missing)", err)
 	}
 
+	// Start background auto-refresh for OAuth tokens (checks every 60s,
+	// proactively refreshes within 5-minute expiry window).
+	autoRefreshCtx, autoRefreshCancel := context.WithCancel(context.Background())
+	defer autoRefreshCancel()
+	authSource.StartAutoRefresh(autoRefreshCtx, 0) // 0 = default 60s interval
+	log.Printf("OAuth auto-refresh enabled (60s check interval)")
+
 	// Auto-migrate sessions.db → chat.db
 	if migrated, err := session.MigrateDBPath(dataDir); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)

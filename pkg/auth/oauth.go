@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -446,6 +447,72 @@ func (s *OAuthTokenSource) ReloadFromDisk() bool {
 	}
 
 	return updated
+}
+
+// defaultAutoRefreshInterval is how often the background goroutine checks
+// whether the token needs refreshing. Production callers use this default.
+const defaultAutoRefreshInterval = 60 * time.Second
+
+// StartAutoRefresh launches a background goroutine that periodically checks
+// whether the token needs refreshing and proactively refreshes it before expiry.
+// The goroutine exits when ctx is cancelled (e.g., on server shutdown).
+// checkInterval controls how often the goroutine checks; pass 0 to use the default (60s).
+func (s *OAuthTokenSource) StartAutoRefresh(ctx context.Context, checkInterval time.Duration) {
+	if checkInterval <= 0 {
+		checkInterval = defaultAutoRefreshInterval
+	}
+
+	go func() {
+		ticker := time.NewTicker(checkInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.mu.RLock()
+				creds := s.creds
+				s.mu.RUnlock()
+
+				if creds == nil {
+					continue
+				}
+
+				if !creds.NeedsRefresh() {
+					continue
+				}
+
+				// Token is nearing expiry — attempt proactive refresh.
+				err := s.Refresh()
+				if err == nil {
+					_ = s.logger.Log(events.EventOAuthRefresh, map[string]interface{}{
+						"source": "auto",
+					})
+					continue
+				}
+
+				// Refresh failed — try disk fallback (Claude CLI may have refreshed).
+				if s.ReloadFromDisk() {
+					s.mu.RLock()
+					diskCreds := s.creds
+					s.mu.RUnlock()
+					if diskCreds != nil && diskCreds.Valid() && !diskCreds.NeedsRefresh() {
+						_ = s.logger.Log(events.EventOAuthReload, map[string]interface{}{
+							"source": "auto_fallback",
+						})
+						continue
+					}
+				}
+
+				// Both failed — log warning but keep trying on next tick.
+				_ = s.logger.Log(events.EventOAuthRefresh, map[string]interface{}{
+					"source": "auto",
+					"error":  err.Error(),
+				})
+			}
+		}
+	}()
 }
 
 // truncate returns s truncated to maxLen characters.
