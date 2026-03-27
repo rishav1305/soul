@@ -294,8 +294,10 @@ function useChatSessionsInternal(): ChatSessionsValue {
         type: 'chat.send',
         content,
         sessionId: String(sid),
+        // model and thinking go at top level — Go InboundMessage parses them there
+        model: options?.model,
+        thinking: options?.thinking,
         data: options ? {
-          model: options.model,
           chat_type: options.chatType,
           context: options.context,
         } : undefined,
@@ -339,8 +341,10 @@ function useChatSessionsInternal(): ChatSessionsValue {
           type: 'chat.send',
           content,
           sessionId: String(newId),
+          // model and thinking go at top level — Go InboundMessage parses them there
+          model: options?.model,
+          thinking: options?.thinking,
           data: options ? {
-            model: options.model,
             chat_type: options.chatType,
             context: options.context,
           } : undefined,

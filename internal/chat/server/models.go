@@ -10,7 +10,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rishav1305/soul/pkg/auth"
 )
+
+// modelsBetaHeader includes all beta features needed to probe current-gen models.
+// Opus 4.6 and Sonnet 4.6 require interleaved-thinking; all OAuth calls need the OAuth beta.
+const modelsBetaHeader = "prompt-caching-2024-07-31,interleaved-thinking-2025-05-14," + auth.OAuthBetaHeader
 
 type ModelInfo struct {
 	ID        string `json:"id"`
@@ -93,7 +99,7 @@ func (s *Server) fetchModels() ([]ModelInfo, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	req.Header.Set("anthropic-beta", modelsBetaHeader)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -160,7 +166,7 @@ func (s *Server) probeModel(modelID string) bool {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	req.Header.Set("anthropic-beta", modelsBetaHeader)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
@@ -221,12 +227,14 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Probe each model to filter out ones the OAuth token can't access.
-	// This handles the case where /v1/models lists models the account can't use
-	// for inference (e.g., Claude Code OAuth tokens may only allow Haiku).
-	working := s.probeModels(models)
+	// Trust the /v1/models listing — it returns only models the account has access to.
+	// Probing (sending a 1-token inference request per model) was removed because
+	// Claude Code OAuth tokens can list and use all subscription models via the
+	// streaming API, but probing with non-streaming requests fails for some models
+	// due to OAuth scope restrictions (user:sessions:claude_code).
+	working := models
 	if len(working) == 0 {
-		log.Printf("models: probe found no working models — using fallback list")
+		log.Printf("models: API returned no current-gen models — using fallback list")
 		working = fallbackModels
 	}
 
