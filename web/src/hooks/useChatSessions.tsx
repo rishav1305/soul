@@ -438,7 +438,9 @@ function useChatSessionsInternal(): ChatSessionsValue {
         }
 
         case 'chat.token': {
-          const token = msg.content ?? '';
+          // Go sends token in data.token, not top-level content
+          const payload = msg.data as { token?: string; messageId?: string } | undefined;
+          const token = payload?.token ?? msg.content ?? '';
           setSessionState(msgSessionId, (prev) => {
             const messages = prev.messages;
             const last = messages[messages.length - 1];
@@ -470,7 +472,9 @@ function useChatSessionsInternal(): ChatSessionsValue {
         }
 
         case 'chat.thinking': {
-          const token = msg.content ?? '';
+          // Go would send thinking in data.text or data.token (same pattern as chat.token)
+          const payload = msg.data as { text?: string; token?: string } | undefined;
+          const token = payload?.text ?? payload?.token ?? msg.content ?? '';
           setSessionState(msgSessionId, (prev) => {
             const messages = prev.messages;
             const last = messages[messages.length - 1];
