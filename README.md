@@ -1,26 +1,28 @@
 <p align="center">
-  <!-- TODO: Add soul logo/banner image here -->
   <h1 align="center">Soul</h1>
 </p>
 
 <p align="center">
-  <strong>Multi-agent AI development platform with autonomous task execution</strong>
+  <strong>21 AI products, one WebSocket, zero external dependencies.</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go 1.24+" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React 19" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="Tailwind CSS v4" />
+  <img src="https://img.shields.io/badge/SQLite-per_product-003B57?style=flat&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License MIT" />
 </p>
 
 <p align="center">
-  13 Go microservices. 127 Claude tools. 21 integrated products. 2 machines.
+  13 Go microservices. 127 Claude tools. 21 integrated products. Fully sovereign.
 </p>
 
 ---
 
-<!-- TODO: Add hero screenshot of the chat interface here -->
+<!-- Hero screenshot: Chat UI with product rail visible, dark theme -->
+<!-- To add: capture localhost:3002 with multiple products in the rail -->
 
 ## Why Soul?
 
@@ -68,29 +70,25 @@ graph TD
 
 The chat server acts as the gateway. When a user selects a product context, Claude receives that product's system prompt and tool definitions. Tool calls route through the chat server's dispatcher to the appropriate product's REST API. Up to 5 tool-use rounds per message, with concurrent multi-session WebSocket support.
 
-<!-- TODO: Add screenshot of the product selector / tool dispatch in action -->
+## Products
 
-## Key Products
-
-| Product | Port | Tools | Description |
-|---------|------|-------|-------------|
-| **Chat** | 3002 | 8 built-in | Claude streaming interface with multi-session WebSocket, memories, custom tools, subagent dispatch |
+| Product | Port | Tools | What It Does |
+|---------|------|-------|--------------|
+| **Chat** | 3002 | 8 | Claude streaming with multi-session WebSocket, memories, custom tools, subagent dispatch |
 | **Tasks** | 3004 | 6 | Autonomous task executor -- 3-phase pipeline (implement, review, fix) with merge gates |
-| **Tutor** | 3006 | 7 | Interview prep platform with SM-2 spaced repetition, DSA drills, mock interviews |
+| **Tutor** | 3006 | 7 | Interview prep with SM-2 spaced repetition, DSA drills, mock interviews |
 | **Projects** | 3008 | 6 | Implementation guide browser with 11 embedded skill-building projects |
-| **Observe** | 3010 | 4 | Pillar-based observability dashboard (Performant, Robust, Accurate, Readable, Scalable, Secure) |
+| **Observe** | 3010 | 4 | Pillar-based observability dashboard across 6 quality dimensions |
 | **Infra** | 3012 | 6 | DevOps, DBA, and migration tools |
-| **Quality** | 3014 | 8 | Compliance engine (SOC2/HIPAA/GDPR) with 5 analyzers, QA, and analytics |
+| **Quality** | 3014 | 8 | Compliance engine (SOC2/HIPAA/GDPR) with 5 analyzers and reporting |
 | **Data** | 3016 | 6 | Data engineering, cost operations, and visualization tools |
 | **Docs** | 3018 | 4 | Documentation and API reference tools |
-| **Scout** | 3020 | 55 | Lead pipeline CRM -- 7 pipeline types, 35 AI tools, TheirStack integration, 12-phase runner |
-| **Sentinel** | 3022 | 7 | CTF security challenge platform with 14 embedded challenges and sandboxed AI chatbot |
-| **Mesh** | 3024 | 4 | Distributed compute mesh with Tailscale/mDNS discovery, hub election, JWT auth |
-| **Bench** | 3026 | 4 | LLM benchmarking harness -- 33 prompts, 10 categories, CARS efficiency scoring |
+| **Scout** | 3020 | 55 | Lead pipeline CRM -- 7 pipeline types, 35 AI tools, 12-phase runner |
+| **Sentinel** | 3022 | 7 | CTF security challenge platform with 14 embedded challenges |
+| **Mesh** | 3024 | 4 | Distributed compute mesh with Tailscale/mDNS discovery, hub election |
+| **Bench** | 3026 | 4 | LLM benchmarking harness -- 33 prompts, 10 categories, CARS scoring |
 
 **Total: 127 tools** (119 product + 8 built-in)
-
-<!-- TODO: Add screenshots of key product UIs (Tasks kanban, Scout pipeline, Bench results) -->
 
 ## Tech Stack
 
@@ -182,7 +180,7 @@ Six pillars enforced on every merge through a 7-layer verification stack:
 
 ## Author
 
-**Rishav Chatterjee**
+**Rishav Chatterjee** -- Senior AI Architect
 
 - Portfolio: [rishavchatterjee.com](https://rishavchatterjee.com)
 - LinkedIn: [linkedin.com/in/rishavchatterjee](https://www.linkedin.com/in/rishavchatterjee/)
