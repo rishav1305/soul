@@ -180,6 +180,7 @@ function SettingsContent({
         <button
           type="button"
           onClick={onBack}
+          aria-label="Back to products"
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -345,8 +346,10 @@ export default function ProductRail({
   // ── Settings view (overlays entire panel in expanded mode) ──
   if (settingsOpen && expanded) {
     return (
-      <div
+      <nav
         data-testid="product-rail"
+        role="navigation"
+        aria-label="Product navigation"
         className="fixed left-0 top-0 h-screen bg-surface border-r border-border-subtle z-20 transition-[width] duration-200"
         style={{ width }}
       >
@@ -367,13 +370,15 @@ export default function ProductRail({
           inlineBadgesEnabled={inlineBadgesEnabled}
           setInlineBadgesEnabled={setInlineBadgesEnabled}
         />
-      </div>
+      </nav>
     );
   }
 
   return (
-    <div
+    <nav
       data-testid="product-rail"
+      role="navigation"
+      aria-label="Product navigation"
       className="fixed left-0 top-0 h-screen bg-surface border-r border-border-subtle flex flex-col items-center py-3 gap-1 z-20 transition-[width] duration-200"
       style={{ width }}
     >
@@ -456,6 +461,8 @@ export default function ProductRail({
       <button
         type="button"
         onClick={onToggleExpanded}
+        aria-label={expanded ? 'Collapse product navigation' : 'Expand product navigation'}
+        aria-expanded={expanded}
         className={`flex items-center gap-2 rounded-lg transition-colors cursor-pointer text-fg-secondary hover:text-fg hover:bg-elevated ${
           expanded ? 'w-full mx-2 px-3 py-2' : 'w-10 h-10 justify-center'
         }`}
@@ -475,6 +482,8 @@ export default function ProductRail({
           }
           onSettingsToggle();
         }}
+        aria-label="Settings"
+        aria-expanded={settingsOpen}
         className={`flex items-center gap-2 rounded-lg transition-colors cursor-pointer ${
           settingsOpen ? 'bg-elevated text-fg' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
         } ${expanded ? 'w-full mx-2 px-3 py-2' : 'w-10 h-10 justify-center'}`}
@@ -483,6 +492,6 @@ export default function ProductRail({
         <GearIcon />
         {expanded && <span className="text-sm font-display">Settings</span>}
       </button>
-    </div>
+    </nav>
   );
 }

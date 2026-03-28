@@ -218,6 +218,11 @@ function AppShellInner() {
 
   return (
     <div data-testid="app-shell" className="h-screen bg-deep text-fg font-body noise overflow-hidden flex flex-col">
+      {/* ── Skip to content link (a11y) ── */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-soul focus:text-deep focus:rounded-lg focus:text-sm focus:font-semibold">
+        Skip to main content
+      </a>
+
       {/* ── Mobile hamburger button (visible only on mobile) ── */}
       {isMobile && (
         <button
@@ -225,6 +230,8 @@ function AppShellInner() {
           type="button"
           onClick={() => setMobileNavOpen(!mobileNavOpen)}
           className="fixed top-3 left-3 z-30 w-10 h-10 flex items-center justify-center rounded-lg bg-surface border border-border-subtle text-fg-secondary hover:text-fg transition-colors cursor-pointer"
+          aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={mobileNavOpen}
           title="Toggle navigation"
         >
           {mobileNavOpen ? (
@@ -284,7 +291,7 @@ function AppShellInner() {
 
       {/* ── Main area ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative" style={{ marginLeft: isMobile ? 0 : (effectivePanelExpanded ? PANEL_WIDTH : RAIL_WIDTH) }}>
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <main id="main-content" className="flex-1 min-w-0 overflow-hidden">
           <ProductView
             activeProduct={layout.activeProduct}
             productMetadata={productMetadata}
@@ -311,7 +318,7 @@ function AppShellInner() {
             fetchComments={planner.fetchComments}
             addComment={planner.addComment}
           />
-        </div>
+        </main>
 
         {layout.sessionsOpen && (
           <SessionsDrawer
