@@ -26,7 +26,7 @@ export default function ToastStack({ notifications, onDismiss }: ToastStackProps
   if (notifications.length === 0) return null;
 
   return (
-    <div data-testid="toast-stack" className="fixed top-4 right-4 z-[9000] flex flex-col gap-2 pointer-events-none">
+    <div data-testid="toast-stack" role="status" aria-live="polite" className="fixed top-4 right-4 z-[9000] flex flex-col gap-2 pointer-events-none">
       {notifications.map((n) => (
         <div
           key={n.id}
@@ -59,6 +59,7 @@ export default function ToastStack({ notifications, onDismiss }: ToastStackProps
             type="button"
             onClick={() => onDismiss(n.id)}
             data-testid={`toast-dismiss-${n.id}`}
+            aria-label="Dismiss notification"
             className="text-fg-muted hover:text-fg transition-colors text-sm leading-none mt-0.5 cursor-pointer shrink-0"
           >
             ×

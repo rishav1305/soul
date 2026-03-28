@@ -33,9 +33,9 @@ export default function SessionsDrawer({
   connected,
 }: SessionsDrawerProps) {
   return (
-    <div data-testid="sessions-drawer" className="absolute inset-0 z-50 flex">
+    <div data-testid="sessions-drawer" role="dialog" aria-label="Chat sessions" className="absolute inset-0 z-50 flex">
       {/* Backdrop */}
-      <div data-testid="sessions-drawer-backdrop" className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div data-testid="sessions-drawer-backdrop" aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Drawer — anchored next to left rail */}
       <div className="relative z-10 ml-14 w-64 h-full bg-surface border-r border-border-default flex flex-col shadow-2xl animate-slide-left">
@@ -48,6 +48,7 @@ export default function SessionsDrawer({
             type="button"
             data-testid="sessions-drawer-close"
             onClick={onClose}
+            aria-label="Close sessions drawer"
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">

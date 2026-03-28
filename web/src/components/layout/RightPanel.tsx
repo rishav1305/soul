@@ -248,6 +248,8 @@ export default function RightPanel({
   const chatRail = (
     <div
       data-testid="right-chat-rail"
+      role="complementary"
+      aria-label="Chat panel (collapsed)"
       className="flex flex-col items-center shrink-0 h-full py-2 gap-1 cursor-pointer hover:bg-elevated/50 transition-colors border-l border-border-subtle"
       style={{ width: RAIL_WIDTH }}
       onClick={onToggleChatExpanded}
@@ -263,18 +265,18 @@ export default function RightPanel({
         </span>
       )}
       <div className="flex-1 flex flex-col items-center gap-1.5 mt-2">
-        <button type="button" className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-soul hover:bg-soul/10 transition-colors cursor-pointer" title="Quick: Status" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); }}>
+        <button type="button" aria-label="Quick status" className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-soul hover:bg-soul/10 transition-colors cursor-pointer" title="Quick: Status" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1v4M8 11v4M1 8h4M11 8h4" /></svg>
         </button>
-        <button type="button" className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-soul hover:bg-soul/10 transition-colors cursor-pointer" title="Quick: Search" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); }}>
+        <button type="button" aria-label="Quick search" className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-soul hover:bg-soul/10 transition-colors cursor-pointer" title="Quick: Search" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>
         </button>
       </div>
       <div className="flex flex-col items-center gap-1 mt-auto">
-        <button type="button" onClick={(e) => { e.stopPropagation(); handleReauth(); }} className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
+        <button type="button" aria-label="Refresh AI credentials" onClick={(e) => { e.stopPropagation(); handleReauth(); }} className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" /><path d="M1 1v3h3M13 13v-3h-3" /></svg>
         </button>
-        <button type="button" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); setHistoryOpen(true); }} className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Chat history">
+        <button type="button" aria-label="Chat history" onClick={(e) => { e.stopPropagation(); onToggleChatExpanded(); setHistoryOpen(true); }} className="w-7 h-7 flex items-center justify-center rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Chat history">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.5 2" /></svg>
         </button>
       </div>
@@ -285,6 +287,8 @@ export default function RightPanel({
   const tasksRail = (
     <div
       data-testid="right-tasks-rail"
+      role="complementary"
+      aria-label="Tasks panel (collapsed)"
       className="flex flex-col items-center shrink-0 h-full py-2 gap-1 cursor-pointer hover:bg-elevated/50 transition-colors border-l border-border-subtle"
       style={{ width: RAIL_WIDTH }}
       onClick={onToggleTasksExpanded}
@@ -317,26 +321,26 @@ export default function RightPanel({
 
   // ── Chat drawer (expanded) ──
   const chatDrawer = (
-    <div data-testid="right-chat-drawer" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
+    <div data-testid="right-chat-drawer" role="region" aria-label="Chat" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
       <div className="flex items-center px-3 gap-1.5 h-10 border-b border-border-subtle shrink-0">
         <span className="flex items-center gap-1.5 px-1 h-full text-xs font-display font-semibold text-soul">
           <span className="text-base leading-none">&#9670;</span> Chat
         </span>
         <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} title={connected ? 'Connected' : 'Disconnected'} />
         <div className="flex-1" />
-        <button type="button" data-testid="right-chat-reauth" onClick={handleReauth} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
+        <button type="button" data-testid="right-chat-reauth" aria-label="Refresh AI credentials" onClick={handleReauth} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`} title="Refresh AI credentials">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" /><path d="M1 1v3h3M13 13v-3h-3" /></svg>
           <span className="rp-label-action text-[10px] font-mono">Auth</span>
         </button>
-        <button type="button" data-testid="right-chat-history" onClick={() => setHistoryOpen((o) => !o)} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
+        <button type="button" data-testid="right-chat-history" aria-label="Chat history" aria-expanded={historyOpen} onClick={() => setHistoryOpen((o) => !o)} className={`h-6 flex items-center gap-1 px-1.5 rounded transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.5 2" /></svg>
           <span className="rp-label-action text-[10px] font-mono">History</span>
         </button>
-        <button type="button" data-testid="right-chat-new" onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }} className="h-6 flex items-center gap-1 px-1.5 rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer" title="New chat (Ctrl+Shift+N)">
+        <button type="button" data-testid="right-chat-new" aria-label="New chat" onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }} className="h-6 flex items-center gap-1 px-1.5 rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer" title="New chat (Ctrl+Shift+N)">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg>
           <span className="rp-label-primary text-[10px] font-mono">New</span>
         </button>
-        <button type="button" data-testid="right-chat-collapse" onClick={onToggleChatExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Collapse chat">
+        <button type="button" data-testid="right-chat-collapse" aria-label="Collapse chat" onClick={onToggleChatExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Collapse chat">
           {collapseIcon}
           <span className="rp-label-action text-[10px] font-mono">Close</span>
         </button>
@@ -352,7 +356,7 @@ export default function RightPanel({
 
   // ── Tasks drawer (expanded) ──
   const tasksDrawer = (
-    <div data-testid="right-tasks-drawer" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
+    <div data-testid="right-tasks-drawer" role="region" aria-label="Tasks" className="panel-container flex flex-col min-h-0 flex-1 overflow-hidden">
       <div className="border-b border-border-subtle shrink-0">
         {/* Row 1: Title + Views + Actions */}
         <div className="flex items-center px-2 gap-1.5 h-9">
@@ -373,11 +377,11 @@ export default function RightPanel({
             </button>
           ))}
           <div className="flex-1" />
-          <button type="button" data-testid="right-tasks-new" onClick={() => setShowNewForm(true)} className="h-6 flex items-center gap-1 px-1.5 bg-soul/10 hover:bg-soul/20 text-soul rounded font-display font-semibold transition-colors cursor-pointer shrink-0" title="New task">
+          <button type="button" data-testid="right-tasks-new" aria-label="New task" onClick={() => setShowNewForm(true)} className="h-6 flex items-center gap-1 px-1.5 bg-soul/10 hover:bg-soul/20 text-soul rounded font-display font-semibold transition-colors cursor-pointer shrink-0" title="New task">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg>
             <span className="rp-label-primary text-[10px] font-mono">New</span>
           </button>
-          <button type="button" data-testid="right-tasks-collapse" onClick={onToggleTasksExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer shrink-0" title="Collapse tasks">
+          <button type="button" data-testid="right-tasks-collapse" aria-label="Collapse tasks" onClick={onToggleTasksExpanded} className="h-6 flex items-center gap-1 px-1.5 rounded text-fg-secondary hover:text-fg hover:bg-elevated transition-colors cursor-pointer shrink-0" title="Collapse tasks">
             {collapseIcon}
             <span className="rp-label-action text-[10px] font-mono">Close</span>
           </button>
