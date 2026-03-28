@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { Component, type ComponentType, type ReactNode, type ErrorInfo } from 'react';
 import type {
   PlannerTask,
   TaskStage,
@@ -9,12 +9,55 @@ import type {
   TaskComment,
   ProductInfo,
 } from '../../lib/types.ts';
+import { reportError } from '../../lib/telemetry.ts';
 import TaskPanel from '../planner/TaskPanel.tsx';
 import ScoutPanel from '../panels/ScoutPanel.tsx';
 import TutorPanel from '../panels/TutorPanel.tsx';
 import ProjectsPanel from '../panels/ProjectsPanel.tsx';
 import CompliancePanel from '../panels/CompliancePanel.tsx';
 import PlaceholderPanel from '../panels/PlaceholderPanel.tsx';
+
+/** Lightweight error boundary for product panels — avoids taking down the entire AppShell. */
+class PanelErrorBoundary extends Component<
+  { name: string; children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { name: string; children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    reportError(`PanelError:${this.props.name}`, error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div data-testid={`panel-error-${this.props.name}`} className="flex items-center justify-center h-full">
+          <div className="text-center space-y-3 p-8">
+            <div className="text-2xl">⚠️</div>
+            <h2 className="text-sm font-semibold text-fg">
+              {this.props.name} panel crashed
+            </h2>
+            <p className="text-xs text-fg-muted max-w-xs">
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </p>
+            <button
+              data-testid={`panel-retry-${this.props.name}`}
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-3 py-1.5 text-xs bg-soul text-deep rounded-lg hover:bg-soul/85 transition-colors cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface ProductViewProps {
   activeProduct: string | null;
@@ -114,7 +157,9 @@ export default function ProductView({
             )}
           </div>
           <div className="flex-1 overflow-hidden">
-            <Panel />
+            <PanelErrorBoundary name={activeProduct}>
+              <Panel />
+            </PanelErrorBoundary>
           </div>
         </div>
       );
@@ -125,31 +170,33 @@ export default function ProductView({
   // ── Tasks dashboard (default for "soul", placeholder products, or null) ──
 
   return (
-    <TaskPanel
-      taskView={taskView}
-      gridSubView={gridSubView}
-      panelWidth={panelWidth}
-      filters={filters}
-      setTaskView={setTaskView}
-      setGridSubView={setGridSubView}
-      setPanelWidth={setPanelWidth}
-      setFilters={setFilters}
-      canCollapse={false}
-      onCollapse={() => {}}
-      tasks={tasks}
-      filteredTasks={filteredTasks}
-      tasksByStage={tasksByStage}
-      products={products}
-      loading={loading}
-      createTask={createTask}
-      updateTask={updateTask}
-      moveTask={moveTask}
-      deleteTask={deleteTask}
-      taskActivities={taskActivities}
-      taskStreams={taskStreams}
-      taskComments={taskComments}
-      fetchComments={fetchComments}
-      addComment={addComment}
-    />
+    <PanelErrorBoundary name={activeProduct || 'tasks'}>
+      <TaskPanel
+        taskView={taskView}
+        gridSubView={gridSubView}
+        panelWidth={panelWidth}
+        filters={filters}
+        setTaskView={setTaskView}
+        setGridSubView={setGridSubView}
+        setPanelWidth={setPanelWidth}
+        setFilters={setFilters}
+        canCollapse={false}
+        onCollapse={() => {}}
+        tasks={tasks}
+        filteredTasks={filteredTasks}
+        tasksByStage={tasksByStage}
+        products={products}
+        loading={loading}
+        createTask={createTask}
+        updateTask={updateTask}
+        moveTask={moveTask}
+        deleteTask={deleteTask}
+        taskActivities={taskActivities}
+        taskStreams={taskStreams}
+        taskComments={taskComments}
+        fetchComments={fetchComments}
+        addComment={addComment}
+      />
+    </PanelErrorBoundary>
   );
 }
