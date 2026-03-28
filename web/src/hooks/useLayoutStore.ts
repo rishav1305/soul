@@ -25,7 +25,7 @@ const DEFAULT_STATE: LayoutState = {
   railHeightVh: 35,
   railTab: 'chat',
   chatSplitPct: 60,
-  drawerLayout: 'split',
+  drawerLayout: 'independent',
   panelExpanded: true,
   sessionsOpen: false,
   settingsOpen: false,
@@ -38,15 +38,15 @@ const DEFAULT_STATE: LayoutState = {
   chatRailHeightVh: 35,
   tasksRailExpanded: false,
   tasksRailHeightVh: 35,
-  rightPanelWidth: 480,
-  rightChatWidth: 420,
-  rightTasksWidth: 420,
+  rightPanelWidth: 720,
+  rightChatWidth: 600,
+  rightTasksWidth: 600,
   rightChatExpanded: true,
   rightTasksExpanded: true,
 };
 
 // Bump this when layout defaults change to force migration for existing users.
-const LAYOUT_VERSION = 3; // v3: product rail expanded by default (full labels)
+const LAYOUT_VERSION = 4; // v4: independent layout default, 60% panel width
 const VERSION_KEY = 'soul-layout-version';
 
 function loadState(): LayoutState {

@@ -43,16 +43,16 @@ var knownMaxTokens = map[string]int{
 	"claude-haiku-4":  64000,
 }
 
-var currentGenPrefixes = []string{"claude-opus-4", "claude-sonnet-4", "claude-haiku-4"}
+// Launch config: only Haiku 4.5 is confirmed working with OAuth tokens.
+// Opus/Sonnet removed — CEO confirmed broken (Mar 28). Re-enable when fixed.
+var currentGenPrefixes = []string{"claude-haiku-4"}
 
 var defaultThinkingTypes = []string{"disabled", "adaptive", "enabled"}
 
 // fallbackModels is returned when the Claude API is unreachable.
-// Haiku is listed first as it's the model reliably accessible via Claude Code OAuth tokens.
+// Haiku 4.5 only — the sole model reliably accessible via Claude Code OAuth tokens.
 var fallbackModels = []ModelInfo{
 	{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", MaxTokens: 64000},
-	{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxTokens: 64000},
-	{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", MaxTokens: 64000},
 }
 
 func maxTokensForModel(modelID string) int {
