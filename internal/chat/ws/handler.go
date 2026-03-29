@@ -538,6 +538,13 @@ func (h *MessageHandler) runStream(client *Client, sessionID string, req *stream
 	var totalOutputTokens int
 	var firstTokenLogged bool
 
+	// Haiku models do not support extended thinking — strip the param
+	// to prevent 400 errors from the Claude API.
+	if strings.HasPrefix(req.Model, "claude-haiku") && req.Thinking != nil {
+		log.Printf("ws: stripping thinking param (type=%s) for Haiku model %s", req.Thinking.Type, req.Model)
+		req.Thinking = nil
+	}
+
 	// Tool loop: stream, check for tool_use, dispatch, repeat.
 	for round := 0; round <= maxToolRounds; round++ {
 		roundStart := time.Now()

@@ -138,7 +138,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
     setSelectedModel(resolved);
     localStorage.setItem('soul-model', resolved);
   }, [models]);
-  const [thinkingType, setThinkingType] = useState<ThinkingType>('adaptive');
+  // Haiku models don't support extended thinking — default to disabled
+  const isHaiku = selectedModel.includes('haiku');
+  const [thinkingType, setThinkingType] = useState<ThinkingType>(isHaiku ? 'disabled' : 'adaptive');
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -162,6 +164,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
   }), []);
+
+  // Reset thinking to disabled when switching to a Haiku model
+  useEffect(() => {
+    if (isHaiku && thinkingType !== 'disabled') {
+      setThinkingType('disabled');
+    }
+  }, [isHaiku]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close product menu on outside click.
   useEffect(() => {
@@ -598,7 +607,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
-              <ThinkingToggle value={thinkingType} onChange={setThinkingType} />
+              <ThinkingToggle value={thinkingType} onChange={setThinkingType} disabled={isHaiku} />
             </div>
 
             {/* Mobile: single settings gear → popover with mode + model + thinking */}
@@ -649,7 +658,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                     </button>
                   ))}
                   <div className="border-t border-border-subtle my-1" />
-                  <div className="px-3 pt-1 pb-1 text-[10px] text-fg-muted uppercase tracking-wider font-medium">Thinking</div>
+                  <div className="px-3 pt-1 pb-1 text-[10px] text-fg-muted uppercase tracking-wider font-medium">
+                    Thinking{isHaiku && <span className="ml-1 text-zinc-600">(N/A)</span>}
+                  </div>
                   {([
                     { type: 'disabled' as ThinkingType, label: 'Off' },
                     { type: 'adaptive' as ThinkingType, label: 'Auto' },
@@ -659,9 +670,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputExtendedProps>(fun
                       key={t.type}
                       data-testid={`thinking-option-${t.type}`}
                       type="button"
-                      onClick={() => setThinkingType(t.type)}
-                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-colors cursor-pointer ${
-                        thinkingType === t.type ? 'text-soul bg-soul/10' : 'text-fg-muted hover:text-fg hover:bg-elevated'
+                      onClick={() => !isHaiku && setThinkingType(t.type)}
+                      disabled={isHaiku && t.type !== 'disabled'}
+                      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-colors ${
+                        isHaiku && t.type !== 'disabled' ? 'text-zinc-700 cursor-not-allowed' :
+                        thinkingType === t.type ? 'text-soul bg-soul/10 cursor-pointer' : 'text-fg-muted hover:text-fg hover:bg-elevated cursor-pointer'
                       }`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${thinkingType === t.type ? 'bg-soul' : 'bg-fg-muted/40'}`} />

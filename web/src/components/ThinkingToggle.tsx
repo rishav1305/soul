@@ -9,14 +9,16 @@ const THINKING_STATES: { type: ThinkingType; label: string; className: string }[
 interface ThinkingToggleProps {
   value: ThinkingType;
   onChange: (value: ThinkingType) => void;
+  disabled?: boolean;
 }
 
-export function ThinkingToggle({ value, onChange }: ThinkingToggleProps) {
+export function ThinkingToggle({ value, onChange, disabled }: ThinkingToggleProps) {
   const currentIndex = THINKING_STATES.findIndex(s => s.type === value);
   const safeIndex = currentIndex >= 0 ? currentIndex : 0;
   const current = THINKING_STATES[safeIndex] ?? THINKING_STATES[0]!;
 
   const cycle = () => {
+    if (disabled) return;
     const nextIndex = (safeIndex + 1) % THINKING_STATES.length;
     const next = THINKING_STATES[nextIndex];
     if (next) onChange(next.type);
@@ -25,9 +27,10 @@ export function ThinkingToggle({ value, onChange }: ThinkingToggleProps) {
   return (
     <button
       onClick={cycle}
-      className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${current.className}`}
-      title={`Thinking: ${current.label} (click to cycle)`}
+      className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${disabled ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : current.className}`}
+      title={disabled ? 'Thinking not supported for this model' : `Thinking: ${current.label} (click to cycle)`}
       data-testid="thinking-toggle"
+      disabled={disabled}
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
         <path d="M8 2a4.5 4.5 0 0 1 2.5 8.2V12h-5v-1.8A4.5 4.5 0 0 1 8 2z" />
