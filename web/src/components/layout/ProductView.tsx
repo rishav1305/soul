@@ -11,10 +11,6 @@ import type {
 } from '../../lib/types.ts';
 import { reportError } from '../../lib/telemetry.ts';
 import TaskPanel from '../planner/TaskPanel.tsx';
-import ScoutPanel from '../panels/ScoutPanel.tsx';
-import TutorPanel from '../panels/TutorPanel.tsx';
-import ProjectsPanel from '../panels/ProjectsPanel.tsx';
-import CompliancePanel from '../panels/CompliancePanel.tsx';
 import PlaceholderPanel from '../panels/PlaceholderPanel.tsx';
 
 /** Lightweight error boundary for product panels — avoids taking down the entire AppShell. */
@@ -118,11 +114,11 @@ export default function ProductView({
   // Everything else gets PlaceholderPanel (blank) until a dashboard is built.
   const DEDICATED_PANELS: Record<string, ComponentType> = {
     // Real dashboards
-    compliance:      CompliancePanel,
-    'compliance-go': CompliancePanel,
-    scout:           ScoutPanel,
-    tutor:           TutorPanel,
-    projects:        ProjectsPanel,
+    compliance:      PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
+    "compliance-go": PlaceholderPanel,  // stub
+    scout:           PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
+    tutor:           PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
+    projects:        PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
     // Placeholders — replace each with a real panel when ready
     soul:            PlaceholderPanel,
     qa:              PlaceholderPanel,
