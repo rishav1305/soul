@@ -192,4 +192,74 @@ describe('TaskDetail', () => {
     render(<TaskDetail {...defaultProps} task={makeTask({ acceptance: 'All tests pass' })} />);
     expect(screen.getByText('All tests pass')).toBeTruthy();
   });
+
+  it('Escape key closes the detail', () => {
+    const onClose = vi.fn();
+    render(<TaskDetail {...defaultProps} onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows output content in implementation tab', () => {
+    render(<TaskDetail {...defaultProps} task={makeTask({ output: 'Build output here' })} />);
+    fireEvent.click(screen.getByText('Implementation'));
+    expect(screen.getByText('Build output here')).toBeTruthy();
+  });
+
+  it('auto-switches to implementation tab when stream content arrives', () => {
+    render(<TaskDetail {...defaultProps} streamContent="Streaming..." />);
+    // Implementation tab should be auto-selected
+    expect(screen.getByText('Streaming...')).toBeTruthy();
+  });
+
+  it('displays comment with body text', () => {
+    const comment = {
+      id: 'c1',
+      body: 'Looks good!',
+      author: 'user',
+      createdAt: '2026-03-30T12:00:00Z',
+      type: 'feedback',
+    } as any;
+    render(<TaskDetail {...defaultProps} comments={[comment]} />);
+    // Tab shows "Comments (1)" when comments exist
+    fireEvent.click(screen.getByText('Comments (1)'));
+    expect(screen.getByText('Looks good!')).toBeTruthy();
+  });
+
+  it('does not submit empty comments', async () => {
+    const onAddComment = vi.fn().mockResolvedValue({});
+    render(<TaskDetail {...defaultProps} onAddComment={onAddComment} />);
+    fireEvent.click(screen.getByText('Comments'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('task-detail-submit-comment'));
+    });
+
+    expect(onAddComment).not.toHaveBeenCalled();
+  });
+
+  it('shows priority selector with current priority', () => {
+    render(<TaskDetail {...defaultProps} task={makeTask({ priority: 2 })} />);
+    const select = screen.getByTestId('task-detail-priority') as HTMLSelectElement;
+    expect(select.value).toBe('2');
+  });
+
+  it('shows stage selector with current stage', () => {
+    render(<TaskDetail {...defaultProps} task={makeTask({ stage: 'active' })} />);
+    const select = screen.getByTestId('task-detail-stage') as HTMLSelectElement;
+    expect(select.value).toBe('active');
+  });
+
+  it('shows all tab options', () => {
+    render(<TaskDetail {...defaultProps} />);
+    expect(screen.getByText('Task')).toBeTruthy();
+    expect(screen.getByText('Plan')).toBeTruthy();
+    expect(screen.getByText('Implementation')).toBeTruthy();
+    expect(screen.getByText('Comments')).toBeTruthy();
+  });
+
+  it('shows product label in sidebar', () => {
+    render(<TaskDetail {...defaultProps} task={makeTask({ product: 'chat' })} />);
+    expect(screen.getByText('Product')).toBeTruthy();
+  });
 });

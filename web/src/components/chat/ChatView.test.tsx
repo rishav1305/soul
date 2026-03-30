@@ -194,4 +194,86 @@ describe('ChatView', () => {
     render(<ChatView activeSessionId={1} />);
     expect(screen.queryByText('Drop files to attach')).toBeNull();
   });
+
+  it('drag overlay clears on drop', () => {
+    render(<ChatView activeSessionId={1} />);
+    const view = screen.getByTestId('chat-view');
+    fireEvent.dragOver(view, { preventDefault: vi.fn() });
+    expect(screen.getByText('Drop files to attach')).toBeTruthy();
+    fireEvent.drop(view, { preventDefault: vi.fn(), dataTransfer: { files: [] } });
+    expect(screen.queryByText('Drop files to attach')).toBeNull();
+  });
+
+  it('drag overlay clears on drag leave', () => {
+    render(<ChatView activeSessionId={1} />);
+    const view = screen.getByTestId('chat-view');
+    fireEvent.dragOver(view, { preventDefault: vi.fn() });
+    expect(screen.getByText('Drop files to attach')).toBeTruthy();
+    fireEvent.dragLeave(view, { currentTarget: view, target: view });
+    expect(screen.queryByText('Drop files to attach')).toBeNull();
+  });
+
+  it('opens search bar on Cmd+F (macOS)', () => {
+    render(<ChatView activeSessionId={1} />);
+    fireEvent.keyDown(document, { key: 'f', metaKey: true });
+    expect(screen.getByTestId('chat-search-input')).toBeTruthy();
+  });
+
+  it('search result count shows filtered/total', () => {
+    mockMessages = [
+      { id: 'msg-1', role: 'user', content: 'Hello world', timestamp: new Date(), toolCalls: [] },
+      { id: 'msg-2', role: 'assistant', content: 'Goodbye world', timestamp: new Date(), toolCalls: [] },
+      { id: 'msg-3', role: 'user', content: 'Hello again', timestamp: new Date(), toolCalls: [] },
+    ];
+    render(<ChatView activeSessionId={1} />);
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    fireEvent.change(screen.getByTestId('chat-search-input'), { target: { value: 'Hello' } });
+    const list = screen.getByTestId('message-list');
+    expect(list.getAttribute('data-count')).toBe('2');
+  });
+
+  it('displays token usage with M suffix for large values', () => {
+    mockTokenUsage = { inputTokens: 1500000, outputTokens: 250000, contextPct: 0 };
+    render(<ChatView activeSessionId={1} />);
+    expect(screen.getByText(/1.5M in/)).toBeTruthy();
+  });
+
+  it('hides token usage when tokenUsage is null', () => {
+    mockTokenUsage = null;
+    render(<ChatView activeSessionId={1} />);
+    expect(screen.queryByText(/in.*out/)).toBeNull();
+  });
+
+  it('does not show context chip when no contextChipProduct', () => {
+    render(<ChatView activeSessionId={1} />);
+    expect(screen.queryByTestId('context-inject-chip')).toBeNull();
+  });
+
+  it('shows context percentage warning for high context usage', () => {
+    mockTokenUsage = { inputTokens: 50000, outputTokens: 10000, contextPct: 75 };
+    render(<ChatView activeSessionId={1} />);
+    expect(screen.getByText('75% ctx')).toBeTruthy();
+  });
+
+  it('adapts messages with toolCalls', () => {
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: 'Using tools...',
+        timestamp: new Date('2026-03-30'),
+        toolCalls: [{ id: 'tc-1', name: 'search', input: { q: 'test' }, status: 'completed', output: 'result', progress: 100 }],
+      },
+    ];
+    render(<ChatView activeSessionId={1} />);
+    const list = screen.getByTestId('message-list');
+    expect(list.getAttribute('data-count')).toBe('1');
+    expect(screen.getByTestId('msg-msg-1')).toBeTruthy();
+  });
+
+  it('does not sync when session matches current', () => {
+    mockCurrentSessionId = 5;
+    render(<ChatView activeSessionId={5} />);
+    expect(mockSetActiveSessionId).not.toHaveBeenCalled();
+  });
 });

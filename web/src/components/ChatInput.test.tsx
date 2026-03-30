@@ -217,4 +217,78 @@ describe('ChatInput', () => {
     render(<ChatInput {...defaultProps()} />);
     expect(screen.getByTestId('camera-button')).toBeTruthy();
   });
+
+  it('chat mode buttons switch active mode', () => {
+    render(<ChatInput {...defaultProps()} />);
+    const codeBtn = screen.getByTestId('chat-mode-code');
+    fireEvent.click(codeBtn);
+    // After clicking code, it should have active styling (font-semibold)
+    expect(codeBtn.className).toContain('font-semibold');
+  });
+
+  it('placeholder changes for brainstorm mode', () => {
+    render(<ChatInput {...defaultProps()} />);
+    fireEvent.click(screen.getByTestId('chat-mode-brainstorm'));
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toContain('build');
+  });
+
+  it('placeholder changes for architect mode', () => {
+    render(<ChatInput {...defaultProps()} />);
+    fireEvent.click(screen.getByTestId('chat-mode-architect'));
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toContain('architecture');
+  });
+
+  it('placeholder changes for code mode', () => {
+    render(<ChatInput {...defaultProps()} />);
+    fireEvent.click(screen.getByTestId('chat-mode-code'));
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toContain('code');
+  });
+
+  it('default placeholder says Message...', () => {
+    render(<ChatInput {...defaultProps()} />);
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe('Message...');
+  });
+
+  it('does not send whitespace-only messages', () => {
+    const props = defaultProps();
+    render(<ChatInput {...props} />);
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('send-button'));
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it('Escape does not stop streaming when not streaming', () => {
+    const props = defaultProps();
+    render(<ChatInput {...props} />);
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+    expect(props.onStop).not.toHaveBeenCalled();
+  });
+
+  it('product badge shows General when no product selected', () => {
+    render(<ChatInput {...defaultProps()} />);
+    expect(screen.getByTestId('product-badge').textContent).toBe('General');
+  });
+
+  it('toggles code snippet off on second click', () => {
+    render(<ChatInput {...defaultProps()} />);
+    // Click to open
+    fireEvent.click(screen.getByTestId('code-snippet-button'));
+    expect(screen.getByTestId('code-snippet-input')).toBeTruthy();
+    // Click again to close
+    fireEvent.click(screen.getByTestId('code-snippet-button'));
+    expect(screen.queryByTestId('code-snippet-input')).toBeNull();
+  });
+
+  it('textarea is disabled when disabled prop is true', () => {
+    const props = defaultProps();
+    props.disabled = true;
+    render(<ChatInput {...props} />);
+    expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).disabled).toBe(true);
+  });
 });
