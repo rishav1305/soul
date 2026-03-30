@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rishav1305/soul/internal/chat/stream"
 	"github.com/rishav1305/soul/internal/tasks/store"
@@ -131,6 +132,28 @@ func TestWatcher_NilSender(t *testing.T) {
 	expected := "Received feedback. Agent not configured."
 	if comments[1].Body != expected {
 		t.Errorf("reply body = %q, want %q", comments[1].Body, expected)
+	}
+}
+
+func TestWatcher_Start_ContextCancel(t *testing.T) {
+	s := newTestStore(t)
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test-project")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	done := make(chan struct{})
+	go func() {
+		cw.Start(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Start returned — good
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after context cancel")
 	}
 }
 
