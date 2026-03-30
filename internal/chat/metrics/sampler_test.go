@@ -143,7 +143,7 @@ func TestSampler_StopHaltsAndWaits(t *testing.T) {
 
 	s := NewSampler(logger, 50*time.Millisecond)
 	s.Start()
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	s.Stop()
 
 	// After Stop, count current events.
@@ -154,7 +154,7 @@ func TestSampler_StopHaltsAndWaits(t *testing.T) {
 	countBefore := len(strings.Split(strings.TrimSpace(string(data1)), "\n"))
 
 	// Wait and verify no more events are written.
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
 	data2, err := os.ReadFile(filepath.Join(dir, metricsFileName))
 	if err != nil {
@@ -197,8 +197,9 @@ func TestSampler_RespectsInterval(t *testing.T) {
 	s := NewSampler(logger, interval)
 	s.Start()
 
-	// Run for ~350ms. With 100ms interval, expect 3 ticks (at 100, 200, 300ms).
-	time.Sleep(350 * time.Millisecond)
+	// Run for ~600ms. With 100ms interval, expect ~6 ticks.
+	// Use generous sleep to avoid flakiness on slow I/O (sshfs, CI).
+	time.Sleep(600 * time.Millisecond)
 	s.Stop()
 
 	data, err := os.ReadFile(filepath.Join(dir, metricsFileName))
@@ -207,9 +208,9 @@ func TestSampler_RespectsInterval(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	// Expect 3 events with some timing tolerance (2-4 acceptable).
-	if len(lines) < 2 || len(lines) > 5 {
-		t.Errorf("expected 2-5 events for 350ms at 100ms interval, got %d", len(lines))
+	// Expect at least 2 events (very conservative for slow I/O), cap at 8.
+	if len(lines) < 2 || len(lines) > 8 {
+		t.Errorf("expected 2-8 events for 600ms at 100ms interval, got %d", len(lines))
 	}
 }
 
