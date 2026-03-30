@@ -279,3 +279,171 @@ func TestWithOptions(t *testing.T) {
 		t.Errorf("dataDir = %q, want %q", s.dataDir, "/tmp/test")
 	}
 }
+
+// --- Additional coverage tests ---
+
+func TestRecoveryMiddleware(t *testing.T) {
+	panicker := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+	handler := recoveryMiddleware(panicker)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "internal server error" {
+		t.Errorf("error = %q, want 'internal server error'", body["error"])
+	}
+}
+
+func TestRecoveryMiddleware_NoPanic(t *testing.T) {
+	normal := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+	})
+	handler := recoveryMiddleware(normal)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestHandleGetResult_NoDataDir(t *testing.T) {
+	s := New() // No data dir
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/bench/results/any-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleCompare_NoDataDir(t *testing.T) {
+	s := New() // No data dir
+	req := httptest.NewRequest("GET", "/api/bench/compare?id1=a&id2=b", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleCompare_NotFound(t *testing.T) {
+	s := testServer(t)
+	req := httptest.NewRequest("GET", "/api/bench/compare?id1=nonexistent1&id2=nonexistent2", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleSmoke_InvalidBody(t *testing.T) {
+	s := testServer(t)
+	req := httptest.NewRequest("POST", "/api/bench/smoke", bytes.NewBufferString("not-json"))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleToolExecute_InvalidBody(t *testing.T) {
+	s := testServer(t)
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/tools/bench_list_categories/execute", "application/json", bytes.NewBufferString("not-json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestHandleToolExecute_RunSmokeMissingEndpoint(t *testing.T) {
+	s := testServer(t)
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	body, _ := json.Marshal(toolRequest{Input: map[string]interface{}{}})
+	resp, err := http.Post(ts.URL+"/api/tools/bench_run_smoke/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestHandleToolExecute_Compare(t *testing.T) {
+	s := testServer(t)
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	// bench_compare with empty IDs — should fail from results pkg.
+	body, _ := json.Marshal(toolRequest{Input: map[string]interface{}{
+		"id1": "",
+		"id2": "",
+	}})
+	resp, err := http.Post(ts.URL+"/api/tools/bench_compare/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Will get 500 since results don't exist.
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleListResults_WithSavedResult(t *testing.T) {
+	s := testServer(t)
+
+	// Save a benchmark result.
+	r := &harness.BenchResult{
+		Model:            "test-model",
+		Timestamp:        "2026-03-30T10:00:00Z",
+		Results:          []harness.PromptResult{},
+		CategoryAccuracy: map[string]float64{"smoke-test": 1.0},
+	}
+	if err := results.SaveResult(s.dataDir, r); err != nil {
+		t.Fatalf("SaveResult: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/bench/results", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&body)
+	count, ok := body["count"].(float64)
+	if !ok || count < 1 {
+		t.Errorf("expected at least 1 result, got %v", body["count"])
+	}
+}
