@@ -171,4 +171,28 @@ describe('ProductView', () => {
     render(<ProductView {...defaultProps} activeProduct={null} products={['chat', 'scout', 'tutor']} />);
     expect(screen.getByTestId('task-panel')).toBeTruthy();
   });
+
+  it('renders TaskPanel for null activeProduct with list view', () => {
+    render(<ProductView {...defaultProps} activeProduct={null} taskView="list" />);
+    expect(screen.getByTestId('task-panel').getAttribute('data-view')).toBe('list');
+  });
+
+  it('renders TaskPanel for every known placeholder', () => {
+    const known = ['compliance-go', 'qa', 'observe', 'viz', 'bench', 'migrate', 'devops', 'analytics', 'docs', 'api', 'dba', 'costops', 'mesh', 'dataeng', 'stocks'];
+    for (const product of known) {
+      const { unmount } = render(<ProductView {...defaultProps} activeProduct={product} />);
+      expect(screen.getByTestId('task-panel')).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('renders TaskPanel with undefined productMetadata', () => {
+    render(<ProductView {...defaultProps} activeProduct="soul" productMetadata={undefined} />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('renders TaskPanel when activeProduct is a number-like string', () => {
+    render(<ProductView {...defaultProps} activeProduct="123" />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
 });
