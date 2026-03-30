@@ -281,4 +281,107 @@ describe('useSentinel', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.challenges).toEqual([]);
   });
+
+  it('handles non-Error objects in catch', async () => {
+    mockPost.mockRejectedValue('string error');
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('string error');
+  });
+
+  it('attack sets error on failure', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue(new Error('Attack failed'));
+
+    await act(async () => {
+      await result.current.attack('test payload');
+    });
+
+    expect(result.current.error).toBe('Attack failed');
+    // Attacker entry should still be added even on error
+    expect(result.current.attackHistory.length).toBe(1);
+    expect(result.current.attackHistory[0].role).toBe('attacker');
+  });
+
+  it('configureSandbox sets error on failure', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue(new Error('Config failed'));
+
+    await act(async () => {
+      await result.current.configureSandbox({ name: 'Test', systemPrompt: '', guardrails: [], weaknessLevel: 'none' });
+    });
+
+    expect(result.current.error).toBe('Config failed');
+  });
+
+  it('scanProduct sets error on failure', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue(new Error('Scan failed'));
+
+    await act(async () => {
+      await result.current.scanProduct('chat');
+    });
+
+    expect(result.current.error).toBe('Scan failed');
+  });
+
+  it('scanProduct handles null findings', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue({ findings: null });
+
+    await act(async () => {
+      await result.current.scanProduct('chat');
+    });
+
+    expect(result.current.scanResults).toEqual([]);
+  });
+
+  it('sendSandboxMessage sets error on failure', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue(new Error('Sandbox error'));
+
+    await act(async () => {
+      await result.current.sendSandboxMessage('test');
+    });
+
+    expect(result.current.error).toBe('Sandbox error');
+    // User message should still be added
+    expect(result.current.sandboxMessages.length).toBe(1);
+  });
+
+  it('startChallenge sets error on failure', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue(new Error('Start failed'));
+
+    await act(async () => {
+      await result.current.startChallenge('ch-1');
+    });
+
+    expect(result.current.error).toBe('Start failed');
+    expect(result.current.activeChallenge).toBeNull();
+  });
+
+  it('default sandbox config is empty', async () => {
+    const { result } = renderHook(() => useSentinel());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.sandboxConfig).toEqual({
+      name: '',
+      systemPrompt: '',
+      guardrails: [],
+      weaknessLevel: 'none',
+    });
+  });
 });
