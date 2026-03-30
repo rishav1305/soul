@@ -427,3 +427,122 @@ func TestNewWithMetrics_MiddlewareChain(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
+
+// --- Additional coverage tests ---
+
+func TestHandleDashboard_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+	srv.handleDashboard(rec, req)
+	// Module handles closed-store gracefully — returns default data (200).
+	if rec.Code != http.StatusOK && rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 200 or 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleAnalytics_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/analytics", nil)
+	rec := httptest.NewRecorder()
+	srv.handleAnalytics(rec, req)
+	// Module handles closed-store gracefully — returns default data (200).
+	if rec.Code != http.StatusOK && rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 200 or 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleListTopics_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/topics?module=dsa", nil)
+	rec := httptest.NewRecorder()
+	srv.handleListTopics(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for closed store, got %d", rec.Code)
+	}
+}
+
+func TestHandleListMocks_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/mocks", nil)
+	rec := httptest.NewRecorder()
+	srv.handleListMocks(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for closed store, got %d", rec.Code)
+	}
+}
+
+func TestHandleGetPlan_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/plan", nil)
+	rec := httptest.NewRecorder()
+	srv.handleGetPlan(rec, req)
+	// Planner module handles closed-store gracefully — may return default data (200).
+	if rec.Code != http.StatusOK && rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 200 or 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleDrillDue_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/drill/due", nil)
+	rec := httptest.NewRecorder()
+	srv.handleDrillDue(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for closed store, got %d", rec.Code)
+	}
+}
+
+func TestHandleUpdatePlan_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("PUT", "/api/plan", nil)
+	rec := httptest.NewRecorder()
+	srv.handleUpdatePlan(rec, req)
+	// Planner returns "no active plan" error on closed store → handler maps to 404.
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 404 or 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleGetTopic_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(filepath.Join(dir, "closed.db"))
+	srv := New(WithStore(s))
+	s.Close()
+
+	req := httptest.NewRequest("GET", "/api/topics/1", nil)
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	srv.handleGetTopic(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Error("expected non-200 for closed store")
+	}
+}
