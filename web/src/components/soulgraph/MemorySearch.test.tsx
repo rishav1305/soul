@@ -6,14 +6,14 @@ import type { MemoryResult, MemoryQuery } from './MemorySearch';
 
 function makeResult(overrides: Partial<MemoryResult> = {}): MemoryResult {
   return {
-    id: 'shuri/project_soulgraph.md',
+    doc_id: 'shuri/project_soulgraph.md',
     content: 'SoulGraph migration plan details here',
     metadata: {
       agent: 'shuri',
       type: 'project',
       name: 'SoulGraph Migration',
       description: 'CEO committed to Phase 0',
-      file_path: '/home/rishav/.claude/agent-memory/shuri/project_soulgraph.md',
+      source_path: '/home/rishav/.claude/agent-memory/shuri/project_soulgraph.md',
       updated_at: '2026-03-30T16:00:00',
     },
     score: 0.92,
@@ -275,7 +275,7 @@ describe('MemorySearch', () => {
 
   it('falls back to id when name is missing', async () => {
     const result = makeResult({
-      id: 'some-doc-id',
+      doc_id: 'some-doc-id',
       metadata: { ...makeResult().metadata, name: undefined },
     });
     const onSearch = vi.fn().mockResolvedValue([result]);
@@ -291,8 +291,8 @@ describe('MemorySearch', () => {
 
   it('renders multiple results', async () => {
     const results = [
-      makeResult({ id: 'doc-1', score: 0.9 }),
-      makeResult({ id: 'doc-2', score: 0.7 }),
+      makeResult({ doc_id: 'doc-1', score: 0.9 }),
+      makeResult({ doc_id: 'doc-2', score: 0.7 }),
     ];
     const onSearch = vi.fn().mockResolvedValue(results);
     render(<MemorySearch onSearch={onSearch} />);

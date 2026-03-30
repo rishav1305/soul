@@ -1,14 +1,13 @@
 import { useState, useCallback } from 'react';
-import type { MemoryResult, MemoryQuery } from '../components/soulgraph/MemorySearch';
+import type { MemoryResult, MemoryQuery, MemoryQueryResponse } from '../components/soulgraph/MemorySearch';
 import type { MemoryHealthData } from '../components/soulgraph/MemoryHealth';
 import { reportError, reportUsage } from '../lib/telemetry';
 
 /**
  * SoulGraph memory API base URL.
- * In production, this points to the SoulGraph FastAPI server.
- * Defaults to localhost:9080 (titan-pc Docker).
+ * Banner's API on titan-pc. Per Shuri's confirmed contract (Mar 30).
  */
-const SOULGRAPH_API = 'http://localhost:9080';
+const SOULGRAPH_API = 'http://192.168.0.196:3030';
 
 interface UseMemorySearchReturn {
   results: MemoryResult[];
@@ -42,10 +41,15 @@ export function useMemorySearch(): UseMemorySearchReturn {
         const body = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(body.detail || `HTTP ${res.status}`);
       }
-      const data: MemoryResult[] = await res.json();
-      setResults(data);
-      reportUsage('memory.search', { collection: query.collection, top_k: query.top_k });
-      return data;
+      const data: MemoryQueryResponse = await res.json();
+      setResults(data.results ?? []);
+      reportUsage('memory.search', {
+        collection: query.collection,
+        top_k: query.top_k,
+        total_in_collection: data.total_in_collection,
+        latency_ms: data.latency_ms,
+      });
+      return data.results ?? [];
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       reportError('useMemorySearch.search', err);

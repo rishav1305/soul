@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 
 /** Shape of a single memory search result from /memory/query */
 export interface MemoryResult {
-  id: string;
+  doc_id: string;
   content: string;
   metadata: {
     agent?: string;
@@ -10,10 +10,22 @@ export interface MemoryResult {
     name?: string;
     description?: string;
     category?: string;
-    file_path?: string;
+    source_path?: string;
     updated_at?: string;
+    source_machine?: string;
+    chunk_index?: number;
+    total_chunks?: number;
   };
   score: number;
+}
+
+/** Wrapper response from POST /memory/query */
+export interface MemoryQueryResponse {
+  results: MemoryResult[];
+  query: string;
+  collection: string;
+  total_in_collection: number;
+  latency_ms: number;
 }
 
 /** Query parameters for the memory search API */
@@ -227,16 +239,16 @@ export function MemorySearch({ onSearch, agents = [], loading = false, error = n
 
         {results.map(result => (
           <div
-            key={result.id}
+            key={result.doc_id}
             className="bg-surface rounded-lg p-4 space-y-2 hover:bg-overlay transition-colors"
-            data-testid={`memory-result-${result.id}`}
+            data-testid={`memory-result-${result.doc_id}`}
           >
             {/* Header: name + score */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm" aria-hidden="true">{typeIcon(result.metadata.type)}</span>
                 <span className="text-sm font-medium text-fg truncate" data-testid="memory-result-name">
-                  {result.metadata.name || result.id}
+                  {result.metadata.name || result.doc_id}
                 </span>
                 {result.metadata.agent && (
                   <span
@@ -278,11 +290,11 @@ export function MemorySearch({ onSearch, agents = [], loading = false, error = n
               {result.content}
             </div>
 
-            {/* Footer: file path + updated */}
+            {/* Footer: source path + updated */}
             <div className="flex items-center justify-between text-xs text-fg-muted">
-              {result.metadata.file_path && (
+              {result.metadata.source_path && (
                 <span className="font-mono truncate max-w-[60%]" data-testid="memory-result-path">
-                  {result.metadata.file_path}
+                  {result.metadata.source_path}
                 </span>
               )}
               {result.metadata.updated_at && (

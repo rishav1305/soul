@@ -31,10 +31,16 @@ describe('useMemorySearch', () => {
   });
 
   it('search calls /memory/query with correct body', async () => {
-    const mockResults = [{ id: 'test', content: 'data', metadata: {}, score: 0.9 }];
+    const mockResponse = {
+      results: [{ doc_id: 'test', content: 'data', metadata: {}, score: 0.9 }],
+      query: 'test query',
+      collection: 'soul_agent_memory',
+      total_in_collection: 109,
+      latency_ms: 42.5,
+    };
     mockFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(mockResults),
+      json: () => Promise.resolve(mockResponse),
     });
 
     const { result } = renderHook(() => useMemorySearch());
@@ -48,7 +54,7 @@ describe('useMemorySearch', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:9080/memory/query',
+      'http://192.168.0.196:3030/memory/query',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,7 +65,7 @@ describe('useMemorySearch', () => {
         }),
       }),
     );
-    expect(result.current.results).toEqual(mockResults);
+    expect(result.current.results).toEqual(mockResponse.results);
     expect(result.current.loading).toBe(false);
   });
 
@@ -130,7 +136,7 @@ describe('useMemorySearch', () => {
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ results: [], query: 'succeed', collection: 'soul_agent_memory', total_in_collection: 0, latency_ms: 1 }),
     });
 
     await act(async () => {
@@ -142,7 +148,7 @@ describe('useMemorySearch', () => {
   it('search includes agent_filter and type_filter when provided', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ results: [], query: 'test', collection: 'soul_agent_memory', total_in_collection: 0, latency_ms: 1 }),
     });
 
     const { result } = renderHook(() => useMemorySearch());
@@ -180,7 +186,7 @@ describe('useMemorySearch', () => {
       await result.current.fetchHealth();
     });
 
-    expect(mockFetch).toHaveBeenCalledWith('http://localhost:9080/memory/health');
+    expect(mockFetch).toHaveBeenCalledWith('http://192.168.0.196:3030/memory/health');
     expect(result.current.health).toEqual(healthData);
     expect(result.current.healthLoading).toBe(false);
   });
