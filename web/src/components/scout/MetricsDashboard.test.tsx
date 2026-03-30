@@ -115,4 +115,76 @@ describe('MetricsDashboard', () => {
     });
     expect(onRefresh).toHaveBeenCalled();
   });
+
+  it('formats impressions with K suffix', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByTestId('metrics-stat-impressions').textContent).toContain('15.0K');
+  });
+
+  it('shows both top performing posts', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByTestId('metrics-top-post-0')).toBeTruthy();
+    expect(screen.getByTestId('metrics-top-post-1')).toBeTruthy();
+    expect(screen.getByText('AI Agents')).toBeTruthy();
+    expect(screen.getByText('Go Performance')).toBeTruthy();
+  });
+
+  it('shows impressions for top posts', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByTestId('metrics-top-post-0').textContent).toContain('5.0K impressions');
+    expect(screen.getByTestId('metrics-top-post-1').textContent).toContain('3.0K impressions');
+  });
+
+  it('shows ranking numbers for top posts', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByTestId('metrics-top-post-0').textContent).toContain('#1');
+    expect(screen.getByTestId('metrics-top-post-1').textContent).toContain('#2');
+  });
+
+  it('shows recommendation items', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByTestId('metrics-recommendation-0')).toBeTruthy();
+    expect(screen.getByTestId('metrics-recommendation-1')).toBeTruthy();
+    expect(screen.getByText('Add visuals')).toBeTruthy();
+  });
+
+  it('platform filter buttons change active state', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    const linkedinBtn = screen.getByTestId('metrics-filter-linkedin');
+    await act(async () => {
+      fireEvent.click(linkedinBtn);
+    });
+    // After clicking LinkedIn, its class should include 'bg-soul' (active)
+    expect(linkedinBtn.className).toContain('bg-soul');
+  });
+
+  it('shows stat card labels', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByText('Total Posts')).toBeTruthy();
+    expect(screen.getByText('Total Impressions')).toBeTruthy();
+    expect(screen.getByText('Avg Engagement Rate')).toBeTruthy();
+  });
+
+  it('shows section headers', async () => {
+    await act(async () => {
+      render(<MetricsDashboard />);
+    });
+    expect(screen.getByText('Top Performing')).toBeTruthy();
+    expect(screen.getByText('AI Analysis')).toBeTruthy();
+    expect(screen.getByText('Recommendations')).toBeTruthy();
+  });
 });

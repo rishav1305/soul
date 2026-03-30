@@ -88,4 +88,70 @@ describe('Markdown', () => {
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.getAttribute('src')).toBe('https://example.com/img.png');
   });
+
+  it('renders h2 headings', () => {
+    render(<Markdown content="## Heading 2" />);
+    const h2 = screen.getByText('Heading 2');
+    expect(h2.tagName).toBe('H2');
+  });
+
+  it('renders h3 headings', () => {
+    render(<Markdown content="### Heading 3" />);
+    const h3 = screen.getByText('Heading 3');
+    expect(h3.tagName).toBe('H3');
+  });
+
+  it('renders ordered lists', () => {
+    render(<Markdown content={"1. First\n2. Second\n3. Third"} />);
+    expect(screen.getByText('First')).toBeTruthy();
+    expect(screen.getByText('Second')).toBeTruthy();
+    expect(screen.getByText('Third')).toBeTruthy();
+  });
+
+  it('renders horizontal rules', () => {
+    const { container } = render(<Markdown content={"Above\n\n---\n\nBelow"} />);
+    const hr = container.querySelector('hr');
+    expect(hr).toBeTruthy();
+  });
+
+  it('renders GFM tables', () => {
+    const tableContent = "| Name | Age |\n| --- | --- |\n| Alice | 30 |";
+    const { container } = render(<Markdown content={tableContent} />);
+    expect(container.querySelector('table')).toBeTruthy();
+    expect(container.querySelector('thead')).toBeTruthy();
+    expect(screen.getByText('Name')).toBeTruthy();
+    expect(screen.getByText('Alice')).toBeTruthy();
+  });
+
+  it('renders code block without language', () => {
+    render(<Markdown content={"```\nplain text\n```"} />);
+    const codeBlock = screen.getByTestId('mock-code-block');
+    expect(codeBlock).toBeTruthy();
+    expect(codeBlock.getAttribute('data-language')).toBe('');
+  });
+
+  it('renders multiple paragraphs', () => {
+    render(<Markdown content={"First paragraph\n\nSecond paragraph"} />);
+    expect(screen.getByText('First paragraph')).toBeTruthy();
+    expect(screen.getByText('Second paragraph')).toBeTruthy();
+  });
+
+  it('renders strikethrough text with GFM', () => {
+    render(<Markdown content="~~strikethrough~~" />);
+    const del = screen.getByText('strikethrough');
+    expect(del.tagName).toBe('DEL');
+  });
+
+  it('renders nested inline elements', () => {
+    render(<Markdown content="**bold and *italic***" />);
+    const container = screen.getByTestId('markdown-content');
+    expect(container.querySelector('strong')).toBeTruthy();
+    expect(container.querySelector('em')).toBeTruthy();
+  });
+
+  it('links have noopener noreferrer for security', () => {
+    render(<Markdown content="[Link](https://example.com)" />);
+    const link = screen.getByText('Link') as HTMLAnchorElement;
+    expect(link.getAttribute('rel')).toContain('noreferrer');
+  });
 });
