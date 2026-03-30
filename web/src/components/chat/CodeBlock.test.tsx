@@ -96,4 +96,77 @@ describe('CodeBlock', () => {
     const highlighter = screen.getByTestId('syntax-highlighter');
     expect(highlighter.getAttribute('data-language')).toBe('go');
   });
+
+  it('maps sh alias to Shell label', () => {
+    render(<CodeBlock language="sh" code="echo hi" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('Shell');
+  });
+
+  it('maps yml alias to YAML label', () => {
+    render(<CodeBlock language="yml" code="key: value" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('YAML');
+  });
+
+  it('maps rs alias to Rust label', () => {
+    render(<CodeBlock language="rs" code="fn main() {}" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('Rust');
+  });
+
+  it('maps golang alias to Go label', () => {
+    render(<CodeBlock language="golang" code="package main" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('Go');
+  });
+
+  it('maps jsx alias to JSX label', () => {
+    render(<CodeBlock language="jsx" code="<div />" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('JSX');
+  });
+
+  it('maps dockerfile alias to Dockerfile label', () => {
+    render(<CodeBlock language="dockerfile" code="FROM node:18" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('Dockerfile');
+  });
+
+  it('maps ts alias to TypeScript label', () => {
+    render(<CodeBlock language="ts" code="const x: number = 1" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('TypeScript');
+  });
+
+  it('maps js alias to JavaScript label', () => {
+    render(<CodeBlock language="js" code="const x = 1" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('JavaScript');
+  });
+
+  it('maps md alias to Markdown label', () => {
+    render(<CodeBlock language="md" code="# Hello" />);
+    expect(screen.getByTestId('code-language-label').textContent).toBe('Markdown');
+  });
+
+  it('copy button reverts from Copied! after timeout', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(<CodeBlock language="go" code="test" />);
+    const btn = screen.getByTestId('code-copy-button');
+
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn.textContent).toContain('Copied!');
+
+    await act(async () => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(btn.textContent).toContain('Copy');
+    expect(btn.textContent).not.toContain('Copied!');
+    vi.useRealTimers();
+  });
+
+  it('renders multi-line code correctly', () => {
+    const code = 'line 1\nline 2\nline 3';
+    render(<CodeBlock language="text" code={code} />);
+    const highlighter = screen.getByTestId('syntax-highlighter');
+    expect(highlighter.textContent).toBe(code);
+  });
 });

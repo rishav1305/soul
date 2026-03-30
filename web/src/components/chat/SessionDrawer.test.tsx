@@ -154,4 +154,81 @@ describe('SessionDrawer', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect((input as HTMLInputElement).value).toBe('');
   });
+
+  it('shows session summary text', () => {
+    render(<SessionDrawer {...defaultProps} sessions={[makeSession({ summary: 'Discussed API design' })]} />);
+    expect(screen.getByText('Discussed API design')).toBeTruthy();
+  });
+
+  it('does not show summary div when summary is empty', () => {
+    render(<SessionDrawer {...defaultProps} sessions={[makeSession({ summary: '' })]} />);
+    // Only the title row should exist, no summary div
+    const item = screen.getByTestId('session-item-1');
+    expect(item.querySelectorAll('div').length).toBeGreaterThan(0);
+    expect(item.textContent).not.toContain('undefined');
+  });
+
+  it('shows message count in stats', () => {
+    render(<SessionDrawer {...defaultProps} sessions={[makeSession({ message_count: 42 })]} />);
+    expect(screen.getByTestId('session-item-1').textContent).toContain('42');
+  });
+
+  it('shows model in stats', () => {
+    render(<SessionDrawer {...defaultProps} sessions={[makeSession({ model: 'claude-3-haiku' })]} />);
+    expect(screen.getByTestId('session-item-1').textContent).toContain('claude-3-haiku');
+  });
+
+  it('renders multiple sessions in list order', () => {
+    const sessions = [
+      makeSession({ id: 1, title: 'First Session' }),
+      makeSession({ id: 2, title: 'Second Session' }),
+      makeSession({ id: 3, title: 'Third Session' }),
+    ];
+    render(<SessionDrawer {...defaultProps} sessions={sessions} />);
+    expect(screen.getByTestId('session-item-1')).toBeTruthy();
+    expect(screen.getByTestId('session-item-2')).toBeTruthy();
+    expect(screen.getByTestId('session-item-3')).toBeTruthy();
+  });
+
+  it('shows filtered count in header during search', () => {
+    const sessions = [
+      makeSession({ id: 1, title: 'React Chat' }),
+      makeSession({ id: 2, title: 'Go Backend' }),
+      makeSession({ id: 3, title: 'React Components' }),
+    ];
+    render(<SessionDrawer {...defaultProps} sessions={sessions} />);
+    fireEvent.change(screen.getByTestId('session-drawer-search'), { target: { value: 'React' } });
+    // Header shows "2/3" (filtered/total)
+    expect(screen.getByText('2/3')).toBeTruthy();
+  });
+
+  it('does not highlight inactive sessions with soul border', () => {
+    const sessions = [
+      makeSession({ id: 1, title: 'Active' }),
+      makeSession({ id: 2, title: 'Inactive' }),
+    ];
+    render(<SessionDrawer {...defaultProps} sessions={sessions} activeSessionId={1} />);
+    const inactive = screen.getByTestId('session-item-2');
+    expect(inactive.className).toContain('border-transparent');
+  });
+
+  it('search is case-insensitive', () => {
+    const sessions = [
+      makeSession({ id: 1, title: 'REACT Components' }),
+      makeSession({ id: 2, title: 'Go backend' }),
+    ];
+    render(<SessionDrawer {...defaultProps} sessions={sessions} />);
+    fireEvent.change(screen.getByTestId('session-drawer-search'), { target: { value: 'react' } });
+    expect(screen.queryByTestId('session-item-1')).toBeTruthy();
+    expect(screen.queryByTestId('session-item-2')).toBeNull();
+  });
+
+  it('limits displayed sessions to 30', () => {
+    const sessions = Array.from({ length: 40 }, (_, i) =>
+      makeSession({ id: i + 1, title: `Session ${i + 1}` }),
+    );
+    render(<SessionDrawer {...defaultProps} sessions={sessions} />);
+    expect(screen.getByTestId('session-item-30')).toBeTruthy();
+    expect(screen.queryByTestId('session-item-31')).toBeNull();
+  });
 });
