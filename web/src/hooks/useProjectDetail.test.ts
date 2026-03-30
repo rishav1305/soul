@@ -209,4 +209,91 @@ describe('useProjectDetail', () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/projects/2'));
     expect(mockAuthFetch).toHaveBeenCalledWith('/api/projects/2/guide');
   });
+
+  it('handles non-Error rejection in fetch', async () => {
+    mockGet.mockRejectedValue('raw string error');
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('raw string error');
+  });
+
+  it('error clears on successful refresh', async () => {
+    mockGet.mockRejectedValue(new Error('first failure'));
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.error).toBe('first failure'));
+
+    mockGet.mockResolvedValue(makeProject());
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('guide is empty string when response has no content field', async () => {
+    mockAuthFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}), // no content field
+    });
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.guide).toBe('');
+  });
+
+  it('updateMilestone throws on failure', async () => {
+    mockPatch.mockRejectedValue(new Error('Milestone update failed'));
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(
+      act(async () => { await result.current.updateMilestone(5, { completed: false }); }),
+    ).rejects.toThrow('Milestone update failed');
+  });
+
+  it('recordMetric throws on failure', async () => {
+    mockPost.mockRejectedValue(new Error('Metric post failed'));
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(
+      act(async () => { await result.current.recordMetric('cov', '80', 'pct'); }),
+    ).rejects.toThrow('Metric post failed');
+  });
+
+  it('updateReadiness throws on failure', async () => {
+    mockPost.mockRejectedValue(new Error('Readiness failed'));
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(
+      act(async () => { await result.current.updateReadiness({ tests_passing: false }); }),
+    ).rejects.toThrow('Readiness failed');
+  });
+
+  it('syncPlatform throws on failure', async () => {
+    mockPost.mockRejectedValue(new Error('Sync failed'));
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(
+      act(async () => { await result.current.syncPlatform('gitlab', false); }),
+    ).rejects.toThrow('Sync failed');
+  });
+
+  it('updateMilestone refetches project after success', async () => {
+    mockPatch.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    mockGet.mockClear();
+
+    await act(async () => { await result.current.updateMilestone(3, { title: 'v2' }); });
+    expect(mockGet).toHaveBeenCalledWith('/api/projects/1');
+  });
+
+  it('recordMetric refetches project after success', async () => {
+    mockPost.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useProjectDetail(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    mockGet.mockClear();
+
+    await act(async () => { await result.current.recordMetric('uptime', '99.9', 'pct'); });
+    expect(mockGet).toHaveBeenCalledWith('/api/projects/1');
+  });
 });
