@@ -157,4 +157,76 @@ describe('useObserve', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe('string error');
   });
+
+  it('error clears on successful refresh', async () => {
+    mockGet.mockRejectedValue(new Error('initial fail'));
+    const { result } = renderHook(() => useObserve());
+    await waitFor(() => expect(result.current.error).toBe('initial fail'));
+
+    mockGet.mockImplementation((path: string) => {
+      if (path.startsWith('/api/observe/pillars')) return Promise.resolve({ pillars: [makePillar()] });
+      if (path === '/api/observe/overview') return Promise.resolve(makeOverview());
+      return Promise.resolve(null);
+    });
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('overview is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useObserve());
+    expect(result.current.overview).toBeNull();
+  });
+
+  it('tail is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useObserve());
+    expect(result.current.tail).toBeNull();
+  });
+
+  it('pillar tabs do not fetch overview or tail', async () => {
+    const { result } = renderHook(() => useObserve());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockClear();
+    mockGet.mockImplementation((path: string) => {
+      if (path.startsWith('/api/observe/pillars')) return Promise.resolve({ pillars: [makePillar({ name: 'robust' })] });
+      return Promise.resolve(null);
+    });
+
+    act(() => { result.current.setActiveTab('robust'); });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Should have only called pillars endpoint, not overview or tail
+    const calls = mockGet.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(calls.every((c: string) => c.startsWith('/api/observe/pillars'))).toBe(true);
+  });
+
+  it('setProduct triggers refetch with product filter', async () => {
+    const { result } = renderHook(() => useObserve());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockClear();
+    mockGet.mockImplementation((path: string) => {
+      if (path.startsWith('/api/observe/pillars')) return Promise.resolve({ pillars: [] });
+      if (path === '/api/observe/overview') return Promise.resolve(makeOverview());
+      return Promise.resolve(null);
+    });
+
+    act(() => { result.current.setProduct('scout'); });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/observe/pillars?product=scout'));
+    expect(result.current.product).toBe('scout');
+  });
+
+  it('handles null pillars response inside nested object', async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path.startsWith('/api/observe/pillars')) return Promise.resolve({ pillars: null });
+      if (path === '/api/observe/overview') return Promise.resolve(makeOverview());
+      return Promise.resolve(null);
+    });
+
+    const { result } = renderHook(() => useObserve());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.pillars).toEqual([]);
+  });
 });
