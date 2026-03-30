@@ -91,3 +91,120 @@ func TestLoadOrCreateID_Existing(t *testing.T) {
 		t.Errorf("ID = %q, want %q", got, existing)
 	}
 }
+
+func TestLoadOrCreateID_EmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node-id")
+	if err := os.WriteFile(path, []byte(""), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	id, err := LoadOrCreateID(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateID: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty ID for empty file")
+	}
+}
+
+func TestLoadOrCreateID_WhitespaceFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node-id")
+	if err := os.WriteFile(path, []byte("  \n  \n"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	id, err := LoadOrCreateID(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateID: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty ID for whitespace-only file")
+	}
+}
+
+func TestLoadOrCreateID_UnwritablePath(t *testing.T) {
+	// Try a path that doesn't exist and can't be created
+	_, err := LoadOrCreateID("/proc/nonexistent/node-id")
+	if err == nil {
+		t.Error("expected error for unwritable path")
+	}
+}
+
+func TestSystemSnapshot(t *testing.T) {
+	info, err := SystemSnapshot()
+	if err != nil {
+		t.Fatalf("SystemSnapshot: %v", err)
+	}
+
+	if info.Platform == "" {
+		t.Error("Platform should not be empty")
+	}
+	if info.Arch == "" {
+		t.Error("Arch should not be empty")
+	}
+	if info.CPUCores <= 0 {
+		t.Errorf("CPUCores = %d, should be > 0", info.CPUCores)
+	}
+	if info.Status != "online" {
+		t.Errorf("Status = %q, want online", info.Status)
+	}
+	// Name should be set from hostname
+	if info.Name == "" {
+		t.Error("Name (hostname) should not be empty")
+	}
+}
+
+func TestSystemSnapshot_HasRAM(t *testing.T) {
+	if _, err := os.Stat("/proc/meminfo"); os.IsNotExist(err) {
+		t.Skip("no /proc/meminfo — not Linux")
+	}
+
+	info, err := SystemSnapshot()
+	if err != nil {
+		t.Fatalf("SystemSnapshot: %v", err)
+	}
+	if info.RAMTotalMB <= 0 {
+		t.Errorf("RAMTotalMB = %d, should be > 0 on Linux", info.RAMTotalMB)
+	}
+}
+
+func TestSystemSnapshot_HasStorage(t *testing.T) {
+	info, err := SystemSnapshot()
+	if err != nil {
+		t.Fatalf("SystemSnapshot: %v", err)
+	}
+	// df should work on any Unix system
+	if info.StorageTotalGB <= 0 {
+		t.Errorf("StorageTotalGB = %d, should be > 0", info.StorageTotalGB)
+	}
+}
+
+func TestCapabilityScore_NegativeInputs(t *testing.T) {
+	// Negative values should clamp to 0
+	score := CapabilityScore(NodeInfo{RAMTotalMB: -1000, StorageTotalGB: -100})
+	if score != 0 {
+		t.Errorf("CapabilityScore with negatives = %d, want 0", score)
+	}
+}
+
+func TestCapabilityScore_MidRange(t *testing.T) {
+	// 4GB RAM + 250GB storage
+	score := CapabilityScore(NodeInfo{RAMTotalMB: 4096, StorageTotalGB: 250})
+	// RAM: 4096*40/16384 = 10, Storage: 250*20/500 = 10
+	if score != 20 {
+		t.Errorf("CapabilityScore = %d, want 20", score)
+	}
+}
+
+func TestNodeInfo_ZeroValue(t *testing.T) {
+	var info NodeInfo
+	if info.ID != "" || info.Name != "" || info.Host != "" {
+		t.Error("zero-value NodeInfo should have empty strings")
+	}
+	if info.Port != 0 || info.CPUCores != 0 {
+		t.Error("zero-value NodeInfo should have zero ints")
+	}
+	if info.IsHub {
+		t.Error("zero-value NodeInfo.IsHub should be false")
+	}
+}
