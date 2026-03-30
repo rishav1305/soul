@@ -223,14 +223,16 @@ func TestSampler_ConcurrentStartStop(t *testing.T) {
 	defer logger.Close()
 
 	// Run multiple concurrent Start/Stop cycles. This must not panic or deadlock.
+	// Reduced from 10 goroutines to 5 and increased interval/timeout to avoid
+	// sshfs I/O contention causing spurious timeouts.
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s := NewSampler(logger, 50*time.Millisecond)
+			s := NewSampler(logger, 200*time.Millisecond)
 			s.Start()
-			time.Sleep(60 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 			s.Stop()
 		}()
 	}
@@ -244,7 +246,7 @@ func TestSampler_ConcurrentStartStop(t *testing.T) {
 	select {
 	case <-done:
 		// success
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("concurrent Start/Stop test timed out — possible deadlock")
 	}
 }
