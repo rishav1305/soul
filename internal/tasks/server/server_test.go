@@ -670,3 +670,383 @@ func TestListTasks_FilterByStage(t *testing.T) {
 		t.Errorf("expected 1 active task, got %d", len(tasks))
 	}
 }
+
+func TestListTasks_FilterByProduct(t *testing.T) {
+	srv := newTestServer(t)
+	srv.store.Create("scout task", "", "scout")
+	srv.store.Create("tutor task", "", "tutor")
+
+	req := httptest.NewRequest("GET", "/api/tasks?product=scout", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var tasks []store.Task
+	json.NewDecoder(rec.Body).Decode(&tasks)
+	if len(tasks) != 1 {
+		t.Errorf("expected 1 scout task, got %d", len(tasks))
+	}
+}
+
+// --- CreateTask error paths ---
+
+func TestCreateTask_InvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateTask_EmptyTitle(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader(`{"title":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateTask_WithProduct(t *testing.T) {
+	srv := newTestServer(t)
+	body := `{"title":"Scout task","description":"desc","product":"scout"}`
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	var task store.Task
+	json.NewDecoder(rec.Body).Decode(&task)
+	if task.Product != "scout" {
+		t.Errorf("Product = %q, want scout", task.Product)
+	}
+}
+
+// --- UpdateTask error paths ---
+
+func TestUpdateTask_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("PATCH", "/api/tasks/abc", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestUpdateTask_InvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/tasks/%d", task.ID), strings.NewReader("bad"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestUpdateTask_NotFound(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("PATCH", "/api/tasks/999", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestUpdateTask_InvalidStage(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	body := `{"stage":"nonexistent_stage"}`
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/tasks/%d", task.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for invalid stage", rec.Code)
+	}
+}
+
+// --- DeleteTask error paths ---
+
+func TestDeleteTask_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("DELETE", "/api/tasks/xyz", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestDeleteTask_NotFound(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("DELETE", "/api/tasks/999", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// --- GetTask error paths ---
+
+func TestGetTask_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/tasks/abc", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- StartTask error paths ---
+
+func TestStartTask_InvalidID(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+	req := httptest.NewRequest("POST", "/api/tasks/abc/start", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestStartTask_NotFound(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+	req := httptest.NewRequest("POST", "/api/tasks/999/start", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	// executor.Start on nonexistent task should return not found or bad request
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusBadRequest && rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 404/400/500", rec.Code)
+	}
+}
+
+func TestStartTask_AlreadyRunning(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+
+	// Create and start a task.
+	body := `{"title":"Double start"}`
+	req := httptest.NewRequest("POST", "/api/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	var created store.Task
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	// First start.
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/start", created.ID), nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	// Second start — should conflict.
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/start", created.ID), nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict && rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 409 or 400 for already running", rec.Code)
+	}
+}
+
+// --- StopTask error paths ---
+
+func TestStopTask_NoExecutor(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("no exec", "", "")
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/stop", task.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
+func TestStopTask_InvalidID(t *testing.T) {
+	srv, _ := newTestServerWithExecutor(t)
+	req := httptest.NewRequest("POST", "/api/tasks/abc/stop", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- Sync error paths ---
+
+func TestSyncEndpoint_InvalidCursor(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/tasks/sync?cursor=bogus", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- Activity error paths ---
+
+func TestActivityEndpoint_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/tasks/abc/activity", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestActivityEndpoint_InvalidAfterParam(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tasks/%d/activity?after=xyz", task.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- Comment error path tests ---
+
+func TestCreateComment_InvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/comments", task.ID), strings.NewReader("bad"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateComment_MissingAuthor(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/comments", task.ID), strings.NewReader(`{"body":"text"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for missing author", rec.Code)
+	}
+}
+
+func TestCreateComment_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("POST", "/api/tasks/abc/comments", strings.NewReader(`{"author":"u","body":"b"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestListComments(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	srv.store.InsertComment(task.ID, "user", "feedback", "comment1")
+	srv.store.InsertComment(task.ID, "agent", "response", "comment2")
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tasks/%d/comments", task.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var comments []store.Comment
+	json.NewDecoder(rec.Body).Decode(&comments)
+	if len(comments) != 2 {
+		t.Errorf("expected 2 comments, got %d", len(comments))
+	}
+}
+
+func TestListComments_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/tasks/abc/comments", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestListComments_InvalidAfterParam(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("test", "", "")
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tasks/%d/comments?after=abc", task.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- Dependency error path tests ---
+
+func TestAddDependency_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("POST", "/api/tasks/abc/dependencies", strings.NewReader(`{"depends_on":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestRemoveDependency_InvalidTaskID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("DELETE", "/api/tasks/abc/dependencies/1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestRemoveDependency_InvalidDepIDParsing(t *testing.T) {
+	srv := newTestServer(t)
+	t1, _ := srv.store.Create("task1", "", "")
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/tasks/%d/dependencies/xyz", t1.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// --- Health endpoint with products ---
+
+func TestHealth_ActiveTaskCount(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("active task", "", "")
+	srv.store.Update(task.ID, map[string]interface{}{"stage": "active"})
+
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var body map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["active_tasks"] != float64(1) {
+		t.Errorf("active_tasks = %v, want 1", body["active_tasks"])
+	}
+}
