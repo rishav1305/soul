@@ -71,7 +71,10 @@ func TestHandleGetPrompts_NotFound(t *testing.T) {
 	ts := httptest.NewServer(s.mux)
 	defer ts.Close()
 
-	resp, _ := http.Get(ts.URL + "/api/bench/prompts/nonexistent")
+	resp, err := http.Get(ts.URL + "/api/bench/prompts/nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -106,7 +109,10 @@ func TestHandleGetResult_NotFound(t *testing.T) {
 	ts := httptest.NewServer(s.mux)
 	defer ts.Close()
 
-	resp, _ := http.Get(ts.URL + "/api/bench/results/nonexistent")
+	resp, err := http.Get(ts.URL + "/api/bench/results/nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -183,7 +189,10 @@ func TestHandleToolExecute_Unknown(t *testing.T) {
 	defer ts.Close()
 
 	body, _ := json.Marshal(toolRequest{Input: map[string]interface{}{}})
-	resp, _ := http.Post(ts.URL+"/api/tools/unknown_tool/execute", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(ts.URL+"/api/tools/unknown_tool/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -207,7 +216,10 @@ func TestHandleToolExecute_ListResults(t *testing.T) {
 	defer ts.Close()
 
 	body, _ := json.Marshal(toolRequest{Input: map[string]interface{}{}})
-	resp, _ := http.Post(ts.URL+"/api/tools/bench_list_results/execute", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(ts.URL+"/api/tools/bench_list_results/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {

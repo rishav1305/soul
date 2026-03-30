@@ -47,7 +47,10 @@ func TestHandleToolExecute_Invalid(t *testing.T) {
 	defer ts.Close()
 
 	body, _ := json.Marshal(map[string]interface{}{"input": map[string]string{}})
-	resp, _ := http.Post(ts.URL+"/api/tools/unknown/execute", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(ts.URL+"/api/tools/unknown/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
