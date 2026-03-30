@@ -66,3 +66,38 @@ func TestConnectionHealth_WindowExpiry(t *testing.T) {
 		t.Errorf("expected 0 after window expiry, got %f", rate)
 	}
 }
+
+func TestConnectionHealth_Prune(t *testing.T) {
+	ch := NewConnectionHealth(50 * time.Millisecond)
+
+	// Record some events.
+	ch.RecordConnect()
+	ch.RecordDisconnect("network")
+	ch.RecordReconnectAttempt(true)
+	ch.RecordReconnectLatency(100 * time.Millisecond)
+
+	// Wait past 2x window (100ms).
+	time.Sleep(120 * time.Millisecond)
+
+	// Add fresh events.
+	ch.RecordConnect()
+
+	ch.Prune()
+
+	// After pruning, old events should be gone. Only the fresh connect remains.
+	ch.mu.Lock()
+	connectCount := len(ch.connects)
+	disconnectCount := len(ch.disconnects)
+	reconnectCount := len(ch.reconnects)
+	ch.mu.Unlock()
+
+	if connectCount != 1 {
+		t.Errorf("expected 1 connect after prune, got %d", connectCount)
+	}
+	if disconnectCount != 0 {
+		t.Errorf("expected 0 disconnects after prune, got %d", disconnectCount)
+	}
+	if reconnectCount != 0 {
+		t.Errorf("expected 0 reconnects after prune, got %d", reconnectCount)
+	}
+}

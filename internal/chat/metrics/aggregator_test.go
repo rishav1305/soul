@@ -591,6 +591,368 @@ func TestGetFloatField(t *testing.T) {
 	}
 }
 
+// --- NewAggregatorForProduct ---
+
+func TestNewAggregatorForProduct(t *testing.T) {
+	agg := NewAggregatorForProduct("/tmp/test", "tasks")
+	if agg == nil {
+		t.Fatal("NewAggregatorForProduct returned nil")
+	}
+	if agg.dataDir != "/tmp/test" {
+		t.Errorf("dataDir = %q, want %q", agg.dataDir, "/tmp/test")
+	}
+	if agg.product != "tasks" {
+		t.Errorf("product = %q, want %q", agg.product, "tasks")
+	}
+}
+
+// --- Alerts ---
+
+func TestAlerts_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	report, err := agg.Alerts()
+	if err != nil {
+		t.Fatalf("Alerts: %v", err)
+	}
+	if len(report.Alerts) != 0 {
+		t.Errorf("expected 0 alerts, got %d", len(report.Alerts))
+	}
+}
+
+func TestAlerts_ParsesThresholdBreaches(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEvents(t, dir, []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"alert.threshold","data":{"metric":"latency","field":"p95","value":1200.5,"threshold":1000.0,"severity":"warning"}}`,
+		`{"ts":"2026-03-09T10:00:01Z","event":"alert.threshold","data":{"metric":"error_rate","field":"rate","value":0.15,"threshold":0.05,"severity":"critical"}}`,
+		`{"ts":"2026-03-09T10:00:02Z","event":"alert.resolved","data":{"metric":"latency"}}`,
+	})
+
+	agg := NewAggregator(dir)
+	report, err := agg.Alerts()
+	if err != nil {
+		t.Fatalf("Alerts: %v", err)
+	}
+	if len(report.Alerts) != 2 {
+		t.Fatalf("expected 2 alerts, got %d", len(report.Alerts))
+	}
+	a0 := report.Alerts[0]
+	if a0.Metric != "latency" {
+		t.Errorf("Alerts[0].Metric = %q, want %q", a0.Metric, "latency")
+	}
+	if a0.Value != 1200.5 {
+		t.Errorf("Alerts[0].Value = %f, want 1200.5", a0.Value)
+	}
+	if a0.Severity != "warning" {
+		t.Errorf("Alerts[0].Severity = %q, want %q", a0.Severity, "warning")
+	}
+	a1 := report.Alerts[1]
+	if a1.Metric != "error_rate" {
+		t.Errorf("Alerts[1].Metric = %q, want %q", a1.Metric, "error_rate")
+	}
+	if a1.Severity != "critical" {
+		t.Errorf("Alerts[1].Severity = %q, want %q", a1.Severity, "critical")
+	}
+}
+
+// --- DB ---
+
+func TestDB_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	report, err := agg.DB()
+	if err != nil {
+		t.Fatalf("DB: %v", err)
+	}
+	if len(report.Methods) != 0 {
+		t.Errorf("expected 0 methods, got %d", len(report.Methods))
+	}
+	if len(report.SlowQueries) != 0 {
+		t.Errorf("expected 0 slow queries, got %d", len(report.SlowQueries))
+	}
+}
+
+func TestDB_TracksMethodPerformanceAndSlowQueries(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEvents(t, dir, []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"db.query","data":{"method":"GetSession","duration_ms":5.0}}`,
+		`{"ts":"2026-03-09T10:00:01Z","event":"db.query","data":{"method":"GetSession","duration_ms":10.0}}`,
+		`{"ts":"2026-03-09T10:00:02Z","event":"db.query","data":{"method":"GetSession","duration_ms":15.0}}`,
+		`{"ts":"2026-03-09T10:00:03Z","event":"db.query","data":{"method":"ListTasks","duration_ms":20.0}}`,
+		`{"ts":"2026-03-09T10:00:04Z","event":"db.slow","data":{"method":"GetSession","duration_ms":500.0,"session_id":"s1"}}`,
+	})
+
+	agg := NewAggregator(dir)
+	report, err := agg.DB()
+	if err != nil {
+		t.Fatalf("DB: %v", err)
+	}
+	if len(report.Methods) != 2 {
+		t.Fatalf("expected 2 methods, got %d", len(report.Methods))
+	}
+	gs := report.Methods["GetSession"]
+	if gs == nil {
+		t.Fatal("expected GetSession method stats")
+	}
+	if gs.Count != 3 {
+		t.Errorf("GetSession.Count = %d, want 3", gs.Count)
+	}
+	if gs.P50 != 10*time.Millisecond {
+		t.Errorf("GetSession.P50 = %v, want 10ms", gs.P50)
+	}
+	lt := report.Methods["ListTasks"]
+	if lt == nil {
+		t.Fatal("expected ListTasks method stats")
+	}
+	if lt.Count != 1 {
+		t.Errorf("ListTasks.Count = %d, want 1", lt.Count)
+	}
+	if len(report.SlowQueries) != 1 {
+		t.Fatalf("expected 1 slow query, got %d", len(report.SlowQueries))
+	}
+	if report.SlowQueries[0].Method != "GetSession" {
+		t.Errorf("SlowQuery.Method = %q, want %q", report.SlowQueries[0].Method, "GetSession")
+	}
+	if report.SlowQueries[0].DurationMs != 500.0 {
+		t.Errorf("SlowQuery.DurationMs = %f, want 500.0", report.SlowQueries[0].DurationMs)
+	}
+	if report.SlowQueries[0].SessionID != "s1" {
+		t.Errorf("SlowQuery.SessionID = %q, want %q", report.SlowQueries[0].SessionID, "s1")
+	}
+}
+
+// --- Requests ---
+
+func TestRequests_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	report, err := agg.Requests()
+	if err != nil {
+		t.Fatalf("Requests: %v", err)
+	}
+	if len(report.Paths) != 0 {
+		t.Errorf("expected 0 paths, got %d", len(report.Paths))
+	}
+	if len(report.StatusCodes) != 0 {
+		t.Errorf("expected 0 status codes, got %d", len(report.StatusCodes))
+	}
+}
+
+func TestRequests_TracksPathsAndStatusCodes(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEvents(t, dir, []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"api.request","data":{"path":"/chat","duration_ms":50.0,"status":200}}`,
+		`{"ts":"2026-03-09T10:00:01Z","event":"api.request","data":{"path":"/chat","duration_ms":100.0,"status":200}}`,
+		`{"ts":"2026-03-09T10:00:02Z","event":"api.request","data":{"path":"/tasks","duration_ms":30.0,"status":200}}`,
+		`{"ts":"2026-03-09T10:00:03Z","event":"api.request","data":{"path":"/chat","duration_ms":200.0,"status":500}}`,
+		`{"ts":"2026-03-09T10:00:04Z","event":"api.error","data":{"error":"timeout"}}`,
+	})
+
+	agg := NewAggregator(dir)
+	report, err := agg.Requests()
+	if err != nil {
+		t.Fatalf("Requests: %v", err)
+	}
+	if len(report.Paths) != 2 {
+		t.Fatalf("expected 2 paths, got %d", len(report.Paths))
+	}
+	chatStats := report.Paths["/chat"]
+	if chatStats == nil {
+		t.Fatal("expected /chat path stats")
+	}
+	if chatStats.Count != 3 {
+		t.Errorf("/chat.Count = %d, want 3", chatStats.Count)
+	}
+	if report.StatusCodes[200] != 3 {
+		t.Errorf("StatusCodes[200] = %d, want 3", report.StatusCodes[200])
+	}
+	if report.StatusCodes[500] != 1 {
+		t.Errorf("StatusCodes[500] = %d, want 1", report.StatusCodes[500])
+	}
+}
+
+// --- Frontend ---
+
+func TestFrontend_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	report, err := agg.Frontend()
+	if err != nil {
+		t.Fatalf("Frontend: %v", err)
+	}
+	if report.Errors != 0 {
+		t.Errorf("Errors = %d, want 0", report.Errors)
+	}
+	if len(report.TopErrors) != 0 {
+		t.Errorf("expected 0 top errors, got %d", len(report.TopErrors))
+	}
+	if len(report.SlowRenders) != 0 {
+		t.Errorf("expected 0 slow renders, got %d", len(report.SlowRenders))
+	}
+}
+
+func TestFrontend_TracksErrorsAndRenders(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEvents(t, dir, []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"frontend.error","data":{"component":"ChatPage","message":"null ref"}}`,
+		`{"ts":"2026-03-09T10:00:01Z","event":"frontend.error","data":{"component":"ChatPage","message":"timeout"}}`,
+		`{"ts":"2026-03-09T10:00:02Z","event":"frontend.error","data":{"component":"TasksPage","message":"fetch fail"}}`,
+		`{"ts":"2026-03-09T10:00:03Z","event":"frontend.render","data":{"component":"Dashboard","duration_ms":350.5}}`,
+		`{"ts":"2026-03-09T10:00:04Z","event":"frontend.render","data":{"component":"ChatPage","duration_ms":120.0}}`,
+	})
+
+	agg := NewAggregator(dir)
+	report, err := agg.Frontend()
+	if err != nil {
+		t.Fatalf("Frontend: %v", err)
+	}
+	if report.Errors != 3 {
+		t.Errorf("Errors = %d, want 3", report.Errors)
+	}
+	if report.TopErrors["ChatPage"] != 2 {
+		t.Errorf("TopErrors[ChatPage] = %d, want 2", report.TopErrors["ChatPage"])
+	}
+	if report.TopErrors["TasksPage"] != 1 {
+		t.Errorf("TopErrors[TasksPage] = %d, want 1", report.TopErrors["TasksPage"])
+	}
+	if len(report.SlowRenders) != 2 {
+		t.Fatalf("expected 2 slow renders, got %d", len(report.SlowRenders))
+	}
+	if report.SlowRenders[0].Component != "Dashboard" {
+		t.Errorf("SlowRenders[0].Component = %q, want %q", report.SlowRenders[0].Component, "Dashboard")
+	}
+	if report.SlowRenders[0].DurationMs != 350.5 {
+		t.Errorf("SlowRenders[0].DurationMs = %f, want 350.5", report.SlowRenders[0].DurationMs)
+	}
+}
+
+// --- Usage ---
+
+func TestUsage_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	report, err := agg.Usage()
+	if err != nil {
+		t.Fatalf("Usage: %v", err)
+	}
+	if report.TotalEvents != 0 {
+		t.Errorf("TotalEvents = %d, want 0", report.TotalEvents)
+	}
+	if len(report.PageViews) != 0 {
+		t.Errorf("expected 0 page views, got %d", len(report.PageViews))
+	}
+	if len(report.Actions) != 0 {
+		t.Errorf("expected 0 actions, got %d", len(report.Actions))
+	}
+}
+
+func TestUsage_TracksPageViewsAndActions(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEvents(t, dir, []string{
+		`{"ts":"2026-03-09T10:00:00Z","event":"frontend.usage","data":{"action":"page.view","page":"/chat"}}`,
+		`{"ts":"2026-03-09T10:00:01Z","event":"frontend.usage","data":{"action":"page.view","page":"/chat"}}`,
+		`{"ts":"2026-03-09T10:00:02Z","event":"frontend.usage","data":{"action":"page.view","page":"/tasks"}}`,
+		`{"ts":"2026-03-09T10:00:03Z","event":"frontend.usage","data":{"action":"click.send"}}`,
+		`{"ts":"2026-03-09T10:00:04Z","event":"frontend.usage","data":{"action":"click.send"}}`,
+		`{"ts":"2026-03-09T10:00:05Z","event":"frontend.usage","data":{"action":"toggle.theme"}}`,
+		`{"ts":"2026-03-09T10:00:06Z","event":"frontend.usage","data":{}}`,
+	})
+
+	agg := NewAggregator(dir)
+	report, err := agg.Usage()
+	if err != nil {
+		t.Fatalf("Usage: %v", err)
+	}
+	if report.TotalEvents != 7 {
+		t.Errorf("TotalEvents = %d, want 7", report.TotalEvents)
+	}
+	if report.PageViews["/chat"] != 2 {
+		t.Errorf("PageViews[/chat] = %d, want 2", report.PageViews["/chat"])
+	}
+	if report.PageViews["/tasks"] != 1 {
+		t.Errorf("PageViews[/tasks] = %d, want 1", report.PageViews["/tasks"])
+	}
+	if report.Actions["click.send"] != 2 {
+		t.Errorf("Actions[click.send] = %d, want 2", report.Actions["click.send"])
+	}
+	if report.Actions["toggle.theme"] != 1 {
+		t.Errorf("Actions[toggle.theme] = %d, want 1", report.Actions["toggle.theme"])
+	}
+}
+
+// --- StreamTotalP95 ---
+
+func TestStreamTotalP95_EmptyEvents(t *testing.T) {
+	dir := t.TempDir()
+	agg := NewAggregator(dir)
+
+	p95, err := agg.StreamTotalP95()
+	if err != nil {
+		t.Fatalf("StreamTotalP95: %v", err)
+	}
+	if p95 != 0 {
+		t.Errorf("p95 = %f, want 0", p95)
+	}
+}
+
+func TestStreamTotalP95_ComputesCorrectly(t *testing.T) {
+	dir := t.TempDir()
+	var lines []string
+	// 20 stream end events with total_ms: 100, 200, ..., 2000
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf(
+			`{"ts":"2026-03-09T10:00:%02dZ","event":"ws.stream.end","data":{"total_ms":%d.0}}`,
+			i, i*100,
+		))
+	}
+	writeTestEvents(t, dir, lines)
+
+	agg := NewAggregator(dir)
+	p95, err := agg.StreamTotalP95()
+	if err != nil {
+		t.Fatalf("StreamTotalP95: %v", err)
+	}
+	// idx = int(19 * 0.95) = int(18.05) = 18 → durations[18] = 1900
+	if p95 != 1900.0 {
+		t.Errorf("p95 = %f, want 1900.0", p95)
+	}
+}
+
+// --- ConnectionHealthReport DropRate and ReconnectSuccessRate ---
+
+func TestConnectionHealthReport_DropRate(t *testing.T) {
+	r := &ConnectionHealthReport{TotalConnects: 10, AbnormalDisconnects: 3}
+	if got := r.DropRate(); got != 0.3 {
+		t.Errorf("DropRate = %f, want 0.3", got)
+	}
+}
+
+func TestConnectionHealthReport_DropRate_ZeroConnects(t *testing.T) {
+	r := &ConnectionHealthReport{}
+	if got := r.DropRate(); got != 0 {
+		t.Errorf("DropRate = %f, want 0", got)
+	}
+}
+
+func TestConnectionHealthReport_ReconnectSuccessRate(t *testing.T) {
+	r := &ConnectionHealthReport{ReconnectSuccesses: 8, ReconnectFailures: 2}
+	if got := r.ReconnectSuccessRate(); got != 0.8 {
+		t.Errorf("ReconnectSuccessRate = %f, want 0.8", got)
+	}
+}
+
+func TestConnectionHealthReport_ReconnectSuccessRate_NoReconnects(t *testing.T) {
+	r := &ConnectionHealthReport{}
+	if got := r.ReconnectSuccessRate(); got != 1.0 {
+		t.Errorf("ReconnectSuccessRate = %f, want 1.0", got)
+	}
+}
+
 func TestAggregator_ConnectionHealth(t *testing.T) {
 	dir := t.TempDir()
 

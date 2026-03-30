@@ -471,3 +471,34 @@ func TestEventLogger_Log_RejectsEmptyType(t *testing.T) {
 		t.Error("expected error for empty event type, got nil")
 	}
 }
+
+func TestEventLogger_SetAlertChecker(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewEventLogger(dir, "")
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	defer logger.Close()
+
+	ac := NewAlertChecker(logger)
+	ac.AddThreshold(Threshold{Metric: "latency", Field: "p95", MaxValue: 100.0, Severity: "warning"})
+
+	logger.SetAlertChecker(ac)
+
+	// Log a latency event that should trigger the threshold.
+	err = logger.Log("latency", map[string]interface{}{
+		"p95": 200.0,
+	})
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+
+	// The alert checker should have fired and written an alert.threshold event.
+	data, err := os.ReadFile(filepath.Join(dir, metricsFileName))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), EventAlertThreshold) {
+		t.Error("expected alert.threshold event after threshold breach")
+	}
+}
