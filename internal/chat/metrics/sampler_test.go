@@ -103,8 +103,9 @@ func TestSampler_StartEmitsEvents(t *testing.T) {
 	s := NewSampler(logger, 50*time.Millisecond)
 	s.Start()
 
-	// Wait long enough for several ticks.
-	time.Sleep(280 * time.Millisecond)
+	// Wait long enough for several ticks. Use generous sleep to avoid
+	// flakiness on slow I/O (e.g. sshfs, CI under load).
+	time.Sleep(500 * time.Millisecond)
 	s.Stop()
 
 	data, err := os.ReadFile(filepath.Join(dir, metricsFileName))
@@ -113,8 +114,8 @@ func TestSampler_StartEmitsEvents(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	// With 50ms interval and 280ms sleep, expect 4-6 events (first at 50ms, then 100, 150, 200, 250).
-	// Allow some timing slack.
+	// With 50ms interval and 500ms sleep, expect ~10 events.
+	// Require only 3 to tolerate scheduling jitter and slow I/O.
 	if len(lines) < 3 {
 		t.Errorf("expected at least 3 sample events, got %d", len(lines))
 	}
