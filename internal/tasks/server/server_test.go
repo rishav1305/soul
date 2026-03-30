@@ -1,14 +1,18 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/rishav1305/soul/internal/chat/metrics"
 	"github.com/rishav1305/soul/internal/tasks/executor"
 	"github.com/rishav1305/soul/internal/tasks/store"
 	"github.com/rishav1305/soul/pkg/events"
@@ -374,5 +378,295 @@ func TestCommentsEndpoint_AfterParam(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&comments)
 	if len(comments) != 1 || comments[0].Body != "second" {
 		t.Errorf("expected 1 comment (second), got %d", len(comments))
+	}
+}
+
+// --- Option tests ---
+
+func TestWithHost(t *testing.T) {
+	srv := New(WithHost("0.0.0.0"))
+	if srv.host != "0.0.0.0" {
+		t.Errorf("host = %q, want 0.0.0.0", srv.host)
+	}
+}
+
+func TestWithPort(t *testing.T) {
+	srv := New(WithPort(9999))
+	if srv.port != 9999 {
+		t.Errorf("port = %d, want 9999", srv.port)
+	}
+}
+
+func TestWithMetrics(t *testing.T) {
+	mel, err := metrics.NewEventLogger(t.TempDir(), "test")
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	srv := New(WithMetrics(mel))
+	if srv.metrics != mel {
+		t.Error("expected metrics to be set")
+	}
+}
+
+// --- Middleware tests ---
+
+func TestCSPMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := cspMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Error("expected CSP header to be set")
+	}
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP = %q, want default-src 'none'", csp)
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("expected X-Content-Type-Options: nosniff")
+	}
+	if rec.Header().Get("X-Frame-Options") != "DENY" {
+		t.Error("expected X-Frame-Options: DENY")
+	}
+}
+
+func TestBodyLimitMiddleware_POST(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := bodyLimitMiddleware(10)(inner)
+
+	// POST with body exceeding limit
+	body := strings.NewReader("this body is definitely longer than ten bytes")
+	req := httptest.NewRequest("POST", "/", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", rec.Code)
+	}
+}
+
+func TestBodyLimitMiddleware_GET_NoLimit(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := bodyLimitMiddleware(10)(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestRequestIDMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := requestIDMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	rid := rec.Header().Get("X-Request-ID")
+	if rid == "" {
+		t.Error("expected X-Request-ID header")
+	}
+	if !strings.HasPrefix(rid, "tasks-") {
+		t.Errorf("X-Request-ID = %q, want tasks- prefix", rid)
+	}
+}
+
+func TestRecoveryMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+	handler := recoveryMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 after panic", rec.Code)
+	}
+}
+
+func TestStatusRecorder_WriteHeader(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sr := &statusRecorder{ResponseWriter: rec, status: 200}
+	sr.WriteHeader(http.StatusNotFound)
+	if sr.status != 404 {
+		t.Errorf("status = %d, want 404", sr.status)
+	}
+	if rec.Code != 404 {
+		t.Errorf("underlying recorder code = %d, want 404", rec.Code)
+	}
+}
+
+func TestRequestLoggerMiddleware(t *testing.T) {
+	mel, _ := metrics.NewEventLogger(t.TempDir(), "test")
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := requestLoggerMiddleware(mel)(inner)
+
+	// Normal request — should be logged.
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestRequestLoggerMiddleware_SkipsHealth(t *testing.T) {
+	mel, _ := metrics.NewEventLogger(t.TempDir(), "test")
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := requestLoggerMiddleware(mel)(inner)
+
+	// Health request — should be skipped (no logging).
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestRequestLoggerMiddleware_SkipsStream(t *testing.T) {
+	mel, _ := metrics.NewEventLogger(t.TempDir(), "test")
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := requestLoggerMiddleware(mel)(inner)
+
+	req := httptest.NewRequest("GET", "/api/stream", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+// --- Server lifecycle tests ---
+
+func TestShutdown(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	srv := New(WithStore(s), WithPort(0))
+
+	// Start in background, capture actual port
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Start() }()
+
+	// Give it a moment to start
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	// Double shutdown should not panic
+	srv.Shutdown(ctx)
+}
+
+// --- handleStream SSE test ---
+
+func TestHandleStream(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Use a context with cancel to simulate client disconnect.
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/api/stream", nil).WithContext(ctx)
+
+	// httptest.NewRecorder doesn't implement Flusher — use a custom one.
+	rec := &flushRecorder{ResponseRecorder: httptest.NewRecorder()}
+
+	done := make(chan struct{})
+	go func() {
+		srv.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	// Let the handler start and send the connected event.
+	time.Sleep(50 * time.Millisecond)
+
+	// Broadcast an event.
+	srv.broadcaster.Broadcast(Event{Type: "task.created", Data: `{"id":1}`})
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel context to stop the handler.
+	cancel()
+	<-done
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: connected") {
+		t.Error("expected connected event in SSE stream")
+	}
+	if !strings.Contains(body, "event: task.created") {
+		t.Error("expected task.created event in SSE stream")
+	}
+}
+
+// flushRecorder wraps httptest.ResponseRecorder with a Flush method.
+type flushRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (f *flushRecorder) Flush() {}
+
+// --- Dependency endpoint tests ---
+
+func TestAddDependency_InvalidBody(t *testing.T) {
+	srv := newTestServer(t)
+	t1, _ := srv.store.Create("task", "", "")
+
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/tasks/%d/dependencies", t1.ID), strings.NewReader("bad json"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestListTasks_FilterByStage(t *testing.T) {
+	srv := newTestServer(t)
+	task, _ := srv.store.Create("filtered", "", "")
+	srv.store.Update(task.ID, map[string]interface{}{"stage": "active"})
+
+	req := httptest.NewRequest("GET", "/api/tasks?stage=active", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var tasks []store.Task
+	json.NewDecoder(rec.Body).Decode(&tasks)
+	if len(tasks) != 1 {
+		t.Errorf("expected 1 active task, got %d", len(tasks))
 	}
 }
