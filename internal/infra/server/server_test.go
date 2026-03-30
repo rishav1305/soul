@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestHandleHealth(t *testing.T) {
@@ -105,5 +107,49 @@ func TestCspMiddleware(t *testing.T) {
 
 	if got := w.Header().Get("Content-Security-Policy"); got == "" {
 		t.Error("expected CSP header")
+	}
+}
+
+func TestRecoveryMiddleware_Panic(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+	handler := recoveryMiddleware(inner)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestStartShutdown(t *testing.T) {
+	s := New(WithHost("127.0.0.1"), WithPort(0))
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start() }()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown error: %v", err)
+	}
+}
+
+func TestHandleToolExecute_AllTools(t *testing.T) {
+	s := New()
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	for tool := range validTools {
+		body := []byte(`{}`)
+		resp, err := http.Post(ts.URL+"/api/tools/"+tool+"/execute", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("tool %s: %v", tool, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("tool %s: status = %d, want 200", tool, resp.StatusCode)
+		}
 	}
 }

@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/rishav1305/soul/internal/bench/harness"
 	"github.com/rishav1305/soul/internal/bench/results"
@@ -416,6 +418,35 @@ func TestHandleToolExecute_Compare(t *testing.T) {
 	// Will get 500 since results don't exist.
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+}
+
+func TestStartShutdown(t *testing.T) {
+	s := New(WithHost("127.0.0.1"), WithPort(0))
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start() }()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown error: %v", err)
+	}
+}
+
+func TestCorsMiddleware_NonOptions(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := corsMiddleware(inner)
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got == "" {
+		t.Error("expected CORS header on non-OPTIONS request")
 	}
 }
 
