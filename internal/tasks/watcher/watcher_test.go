@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,24 @@ func (m *mockSender) Send(ctx context.Context, req *stream.Request) (*stream.Res
 		StopReason: "end_turn",
 		Content:    []stream.ContentBlock{{Type: "text", Text: "I've reviewed the feedback."}},
 		Usage:      &stream.Usage{InputTokens: 200, OutputTokens: 50},
+	}, nil
+}
+
+type errorSender struct{ called bool }
+
+func (e *errorSender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	e.called = true
+	return nil, fmt.Errorf("mock agent error: connection refused")
+}
+
+type emptySender struct{ called bool }
+
+func (e *emptySender) Send(ctx context.Context, req *stream.Request) (*stream.Response, error) {
+	e.called = true
+	return &stream.Response{
+		StopReason: "end_turn",
+		Content:    []stream.ContentBlock{},
+		Usage:      &stream.Usage{InputTokens: 100, OutputTokens: 0},
 	}, nil
 }
 
@@ -154,6 +173,168 @@ func TestWatcher_Start_ContextCancel(t *testing.T) {
 		// Start returned — good
 	case <-time.After(2 * time.Second):
 		t.Fatal("Start did not return after context cancel")
+	}
+}
+
+// --- Error path tests ---
+
+func TestWatcher_AgentError(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Active task", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "Please review"); err != nil {
+		t.Fatal(err)
+	}
+
+	es := &errorSender{}
+	cw := New(s, es, "/tmp/test")
+	cw.poll(context.Background())
+
+	if !es.called {
+		t.Fatal("expected sender.Send to be called")
+	}
+
+	comments, err := s.GetComments(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have original comment + error reply.
+	if len(comments) != 2 {
+		t.Fatalf("expected 2 comments, got %d", len(comments))
+	}
+	if !strings.Contains(comments[1].Body, "Agent error") {
+		t.Errorf("expected error reply, got %q", comments[1].Body)
+	}
+}
+
+func TestWatcher_EmptyAgentResponse(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Active task", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "Empty response test"); err != nil {
+		t.Fatal(err)
+	}
+
+	es := &emptySender{}
+	cw := New(s, es, "/tmp/test")
+	cw.poll(context.Background())
+
+	if !es.called {
+		t.Fatal("expected sender.Send to be called")
+	}
+
+	comments, err := s.GetComments(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("expected 2 comments, got %d", len(comments))
+	}
+	if comments[1].Body != "Agent returned empty response." {
+		t.Errorf("expected empty response message, got %q", comments[1].Body)
+	}
+}
+
+func TestWatcher_ValidationStage(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Validation task", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "validation"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertComment(task.ID, "user", "review", "Looks good"); err != nil {
+		t.Fatal(err)
+	}
+
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test")
+	cw.poll(context.Background())
+
+	if !ms.called {
+		t.Fatal("expected sender.Send to be called for validation stage")
+	}
+}
+
+func TestWatcher_BlockedStage(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Blocked task", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "blocked"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "Unblock me"); err != nil {
+		t.Fatal(err)
+	}
+
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test")
+	cw.poll(context.Background())
+
+	if !ms.called {
+		t.Fatal("expected sender.Send to be called for blocked stage")
+	}
+}
+
+func TestWatcher_ClosedStore_Poll(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "closed.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Poll with closed store should not panic — just logs error.
+	cw := New(s, &mockSender{}, "/tmp/test")
+	cw.poll(context.Background())
+}
+
+func TestWatcher_MultipleComments(t *testing.T) {
+	s := newTestStore(t)
+	task, err := s.Create("Multi-comment task", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(task.ID, map[string]interface{}{"stage": "active"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert multiple user comments.
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "First comment"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertComment(task.ID, "user", "feedback", "Second comment"); err != nil {
+		t.Fatal(err)
+	}
+
+	ms := &mockSender{}
+	cw := New(s, ms, "/tmp/test")
+	cw.poll(context.Background())
+
+	if !ms.called {
+		t.Fatal("expected sender to be called")
+	}
+
+	comments, err := s.GetComments(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2 user comments + 2 agent replies = 4.
+	if len(comments) < 4 {
+		t.Errorf("expected at least 4 comments, got %d", len(comments))
 	}
 }
 
