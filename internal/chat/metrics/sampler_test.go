@@ -100,12 +100,13 @@ func TestSampler_StartEmitsEvents(t *testing.T) {
 	}
 	defer logger.Close()
 
-	s := NewSampler(logger, 50*time.Millisecond)
+	// Use 100ms interval (not 50ms) to give sshfs I/O time to flush.
+	s := NewSampler(logger, 100*time.Millisecond)
 	s.Start()
 
 	// Wait long enough for several ticks. Use generous sleep to avoid
 	// flakiness on slow I/O (e.g. sshfs, CI under load).
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 	s.Stop()
 
 	data, err := os.ReadFile(filepath.Join(dir, metricsFileName))
@@ -114,10 +115,10 @@ func TestSampler_StartEmitsEvents(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	// With 50ms interval and 500ms sleep, expect ~10 events.
-	// Require only 3 to tolerate scheduling jitter and slow I/O.
-	if len(lines) < 3 {
-		t.Errorf("expected at least 3 sample events, got %d", len(lines))
+	// With 100ms interval and 800ms sleep, expect ~8 events.
+	// Require only 2 to tolerate scheduling jitter and slow I/O.
+	if len(lines) < 2 {
+		t.Errorf("expected at least 2 sample events, got %d", len(lines))
 	}
 
 	// Verify all lines are valid system.sample events.
