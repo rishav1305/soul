@@ -430,6 +430,118 @@ func TestAuthorize_WrongPassword(t *testing.T) {
 	}
 }
 
+// --- HandleAuthorize GET path (serveAuthForm) ---
+
+func TestHandleAuthorize_GET_RendersForm(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	req := httptest.NewRequest("GET", "/authorize?client_id=c1&redirect_uri=http://localhost/cb&state=xyz&code_challenge=abc&code_challenge_method=S256", nil)
+	rec := httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "text/html") {
+		t.Errorf("expected text/html content type, got %q", ct)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Authorize MCP Client") {
+		t.Error("expected auth form title in response")
+	}
+	if !strings.Contains(body, `value="c1"`) {
+		t.Error("expected client_id in hidden field")
+	}
+	if !strings.Contains(body, `value="http://localhost/cb"`) {
+		t.Error("expected redirect_uri in hidden field")
+	}
+	if !strings.Contains(body, `value="xyz"`) {
+		t.Error("expected state in hidden field")
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("expected password input in form")
+	}
+}
+
+func TestHandleAuthorize_UnsupportedMethod(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	for _, method := range []string{"PUT", "DELETE", "PATCH"} {
+		req := httptest.NewRequest(method, "/authorize", nil)
+		rec := httptest.NewRecorder()
+		h.HandleAuthorize(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s: expected 405, got %d", method, rec.Code)
+		}
+	}
+}
+
+// --- processAuth edge cases ---
+
+func TestHandleAuthorize_POST_InvalidPassword(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	form := url.Values{}
+	form.Set("password", "wrong-password")
+	form.Set("client_id", "c1")
+	form.Set("redirect_uri", "http://localhost/cb")
+	form.Set("code_challenge", "abc")
+	form.Set("code_challenge_method", "S256")
+
+	req := httptest.NewRequest("POST", "/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for wrong password, got %d", rec.Code)
+	}
+}
+
+func TestHandleAuthorize_POST_MissingCodeChallenge(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	form := url.Values{}
+	form.Set("password", testAdmin)
+	form.Set("client_id", "c1")
+	form.Set("redirect_uri", "http://localhost/cb")
+	form.Set("code_challenge_method", "S256")
+	// Missing code_challenge
+
+	req := httptest.NewRequest("POST", "/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing challenge, got %d", rec.Code)
+	}
+}
+
+func TestHandleAuthorize_POST_WrongChallengeMethod(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	form := url.Values{}
+	form.Set("password", testAdmin)
+	form.Set("client_id", "c1")
+	form.Set("redirect_uri", "http://localhost/cb")
+	form.Set("code_challenge", "abc")
+	form.Set("code_challenge_method", "plain") // Must be S256
+
+	req := httptest.NewRequest("POST", "/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for wrong method, got %d", rec.Code)
+	}
+}
+
 func TestToken_WrongPKCEVerifier(t *testing.T) {
 	h := NewOAuthHandler(testSecret, testAdmin)
 
