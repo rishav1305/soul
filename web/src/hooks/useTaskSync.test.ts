@@ -255,4 +255,154 @@ describe('useTaskSync', () => {
     expect(result.current.task?.id).toBe(1);
     expect(result.current.tasks.length).toBe(2);
   });
+
+  it('task is null when no taskId provided', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.task).toBeNull();
+  });
+
+  it('handles stage_changed WS event', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      dispatchTaskEvent('task.stage_changed', makeTask({ id: 1, stage: 'active', seq: 2 }));
+    });
+
+    expect(result.current.tasks[0].stage).toBe('active');
+  });
+
+  it('handles substep_changed WS event', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      dispatchTaskEvent('task.substep_changed', makeTask({ id: 1, title: 'Substep Updated', seq: 2 }));
+    });
+
+    expect(result.current.tasks[0].title).toBe('Substep Updated');
+  });
+
+  it('parses JSON string data in WS events', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      dispatchTaskEvent('task.updated', JSON.stringify(makeTask({ id: 1, title: 'Parsed', seq: 2 })));
+    });
+
+    expect(result.current.tasks[0].title).toBe('Parsed');
+  });
+
+  it('ws:connected event sets connected true', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      window.dispatchEvent(new Event('ws:disconnected'));
+    });
+    expect(result.current.connected).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(new Event('ws:connected'));
+    });
+    expect(result.current.connected).toBe(true);
+  });
+
+  it('ws:disconnected sets connected false', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.connected).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new Event('ws:disconnected'));
+    });
+    expect(result.current.connected).toBe(false);
+  });
+
+  it('deleteTask re-syncs on API failure', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockDelete.mockRejectedValue(new Error('Delete failed'));
+    // After failed delete, full sync should restore task
+    mockGet.mockResolvedValue(makeSyncResponse([makeTask({ id: 1, title: 'Restored' })]));
+
+    await expect(act(async () => {
+      await result.current.deleteTask(1);
+    })).rejects.toThrow('Delete failed');
+
+    // Full sync re-fetched and restored
+    await waitFor(() => expect(result.current.tasks.length).toBe(1));
+  });
+
+  it('handles non-Error objects in sync failure', async () => {
+    mockGet.mockRejectedValue('network error string');
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('Sync failed');
+  });
+
+  it('detail mode fetches activities and comments', async () => {
+    const activity = { id: 1, taskId: 1, type: 'stage_change', data: '{}', createdAt: '2026-03-30T10:00:00Z' };
+    const comment = { id: 1, taskId: 1, author: 'user', type: 'feedback', body: 'Hello', createdAt: '2026-03-30T10:00:00Z' };
+
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/tasks/sync') return Promise.resolve(makeSyncResponse([makeTask()]));
+      if (path.includes('/activity')) return Promise.resolve([activity]);
+      if (path.includes('/comments')) return Promise.resolve([comment]);
+      return Promise.resolve(null);
+    });
+
+    const { result } = renderHook(() => useTaskSync({ taskId: 1, mode: 'detail' }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.activities.length).toBe(1);
+    expect(result.current.comments.length).toBe(1);
+    expect(result.current.comments[0].body).toBe('Hello');
+  });
+
+  it('activities are returned in reverse order', async () => {
+    const act1 = { id: 1, taskId: 1, type: 'created', data: '{}', createdAt: '2026-03-30T10:00:00Z' };
+    const act2 = { id: 2, taskId: 1, type: 'stage_change', data: '{}', createdAt: '2026-03-30T11:00:00Z' };
+
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/tasks/sync') return Promise.resolve(makeSyncResponse([makeTask()]));
+      if (path.includes('/activity')) return Promise.resolve([act1, act2]);
+      if (path.includes('/comments')) return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    const { result } = renderHook(() => useTaskSync({ taskId: 1, mode: 'detail' }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Activities reversed for UI — newest first
+    expect(result.current.activities[0].id).toBe(2);
+    expect(result.current.activities[1].id).toBe(1);
+  });
+
+  it('ignores WS events with no detail type', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Event with empty detail — should not crash
+    act(() => {
+      window.dispatchEvent(new CustomEvent('ws:task-event', { detail: {} }));
+    });
+
+    expect(result.current.tasks.length).toBe(1);
+  });
+
+  it('ignores duplicate task.deleted for non-existent task', async () => {
+    const { result } = renderHook(() => useTaskSync());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      dispatchTaskEvent('task.deleted', { id: 999 });
+    });
+
+    // Still has original task
+    expect(result.current.tasks.length).toBe(1);
+  });
 });
