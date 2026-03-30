@@ -273,4 +273,97 @@ describe('useWebSocket', () => {
     // sessionId defaults to '' when missing
     expect(onMessage).toHaveBeenCalledWith('system.ping', undefined, '', undefined);
   });
+
+  it('sets disconnected status on clean close', async () => {
+    const { result } = renderHook(() => useWebSocket({ url: 'ws://test/ws' }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => {
+      ws.simulateOpen();
+      ws.simulateMessage({ type: 'connection.ready' });
+    });
+    expect(result.current.status).toBe('connected');
+
+    act(() => {
+      ws.simulateClose(1000, 'normal');
+    });
+    expect(result.current.status).toBe('disconnected');
+  });
+
+  it('auth circuit breaker fires after two 401s', async () => {
+    mockFetchWSTicket
+      .mockResolvedValueOnce({ ticket: null, status: 401 })
+      .mockResolvedValueOnce({ ticket: null, status: 401 });
+
+    const { result } = renderHook(() => useWebSocket());
+
+    // First 401 schedules a retry (~1s backoff). Second 401 trips the circuit breaker.
+    // waitFor with extended timeout to allow the real timer to fire.
+    await waitFor(() => {
+      expect(result.current.authError).toBe(true);
+      expect(result.current.status).toBe('error');
+    }, { timeout: 5000 });
+  });
+
+  it('reconnect clears authError', async () => {
+    const { result } = renderHook(() => useWebSocket({ url: 'ws://test/ws' }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(result.current.authError).toBe(false);
+    expect(result.current.reconnectAttempt).toBe(0);
+  });
+
+  it('handles malformed JSON gracefully', async () => {
+    const onMessage = vi.fn();
+    renderHook(() => useWebSocket({ url: 'ws://test/ws', onMessage }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => {
+      ws.simulateOpen();
+      // Send non-JSON data
+      if (ws.onmessage) {
+        ws.onmessage({ data: 'not json {{{' });
+      }
+    });
+
+    // Should not crash, onMessage should not be called with bad data
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
+  it('send does not throw when WebSocket is closed', async () => {
+    const { result } = renderHook(() => useWebSocket({ url: 'ws://test/ws' }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+    ws.readyState = FakeWebSocket.CLOSED;
+
+    // Should not throw
+    act(() => {
+      result.current.send('chat.send', { content: 'test' });
+    });
+
+    expect(ws.sentMessages).toHaveLength(0);
+  });
+
+  it('reconnect creates new WebSocket', async () => {
+    const { result } = renderHook(() => useWebSocket({ url: 'ws://test/ws' }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    // Should have created a second WebSocket
+    expect(FakeWebSocket.instances.length).toBe(2);
+  });
 });

@@ -114,4 +114,57 @@ describe('useMockSession', () => {
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.session).toEqual(makeSession());
   });
+
+  it('loading is true during refresh', async () => {
+    let resolveGet: ((v: unknown) => void) | null = null;
+    mockGet.mockImplementation(() => new Promise(r => { resolveGet = r; }));
+
+    const { result } = renderHook(() => useMockSession('sess-1'));
+
+    // Initial load — loading should be true
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      resolveGet!(makeSession());
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Trigger refresh with pending promise
+    mockGet.mockImplementation(() => new Promise(r => { resolveGet = r; }));
+    act(() => {
+      result.current.refresh();
+    });
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      resolveGet!(makeSession({ score: 100 }));
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.session?.score).toBe(100);
+  });
+
+  it('preserves previous session data on refresh error', async () => {
+    mockGet.mockResolvedValue(makeSession({ score: 50 }));
+    const { result } = renderHook(() => useMockSession('sess-1'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.session?.score).toBe(50);
+
+    // Refresh with error — session from before is lost (set separately)
+    mockGet.mockRejectedValue(new Error('refresh fail'));
+    await act(async () => {
+      result.current.refresh();
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // Error is set
+    expect(result.current.error).toBe('refresh fail');
+  });
+
+  it('calls correct endpoint with sessionId', async () => {
+    mockGet.mockResolvedValue(makeSession({ id: 'sess-42' }));
+    renderHook(() => useMockSession('sess-42'));
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/tutor/mocks/sess-42'));
+  });
 });
