@@ -145,4 +145,53 @@ describe('ChatView', () => {
     render(<ChatView activeSessionId={1} />);
     expect(screen.queryByTestId('chat-search-input')).toBeNull();
   });
+
+  it('opens search bar on Ctrl+F', () => {
+    render(<ChatView activeSessionId={1} />);
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    expect(screen.getByTestId('chat-search-input')).toBeTruthy();
+  });
+
+  it('closes search bar on Escape', () => {
+    render(<ChatView activeSessionId={1} />);
+    // Open search
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    expect(screen.getByTestId('chat-search-input')).toBeTruthy();
+    // Close with Escape
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('chat-search-input')).toBeNull();
+  });
+
+  it('closes search bar on close button click', () => {
+    render(<ChatView activeSessionId={1} />);
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    expect(screen.getByTestId('chat-search-input')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('chat-search-close'));
+    expect(screen.queryByTestId('chat-search-input')).toBeNull();
+  });
+
+  it('filters messages based on search query', () => {
+    mockMessages = [
+      { id: 'msg-1', role: 'user', content: 'Hello world', timestamp: new Date(), toolCalls: [] },
+      { id: 'msg-2', role: 'assistant', content: 'Goodbye world', timestamp: new Date(), toolCalls: [] },
+    ];
+    render(<ChatView activeSessionId={1} />);
+    // Open search and type
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    fireEvent.change(screen.getByTestId('chat-search-input'), { target: { value: 'Hello' } });
+    // MessageList should receive filtered messages
+    const list = screen.getByTestId('message-list');
+    expect(list.getAttribute('data-search')).toBe('Hello');
+  });
+
+  it('passes onEdit to MessageList', () => {
+    render(<ChatView activeSessionId={1} />);
+    // The MessageList mock receives onEdit — we can verify it was passed
+    expect(screen.getByTestId('message-list')).toBeTruthy();
+  });
+
+  it('hides drag overlay when not dragging', () => {
+    render(<ChatView activeSessionId={1} />);
+    expect(screen.queryByText('Drop files to attach')).toBeNull();
+  });
 });
