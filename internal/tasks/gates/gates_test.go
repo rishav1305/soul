@@ -220,3 +220,130 @@ func TestStepVerificationGate_RuntimeGateSkipped(t *testing.T) {
 		t.Errorf("expected pre-merge gate error, got: %v", err)
 	}
 }
+
+// --- Additional coverage tests ---
+
+func TestPreMergeGate_SymlinkCreated(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// PreMergeGate resolves: filepath.Join(worktreeWeb, "..", "..", "web", "node_modules")
+	// So if worktreeWeb = tmpDir/wt/web/, the code looks for tmpDir/web/node_modules.
+	mainNodeModules := filepath.Join(tmpDir, "web", "node_modules")
+	if err := os.MkdirAll(mainNodeModules, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(mainNodeModules, ".package-lock.json"), []byte("{}"), 0644)
+
+	// Create worktree web dir exactly 2 levels below tmpDir.
+	wtWeb := filepath.Join(tmpDir, "wt", "web")
+	if err := os.MkdirAll(wtWeb, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := PreMergeGate(wtWeb)
+	// Should get past symlink creation but fail at tsc (no tsconfig/node).
+	if err == nil {
+		t.Fatal("expected error (no tsc), got nil")
+	}
+	if strings.Contains(err.Error(), "node_modules not found") {
+		t.Errorf("should not fail at node_modules step, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "symlink") {
+		t.Errorf("should not fail at symlink step, got: %v", err)
+	}
+
+	// Verify symlink was created.
+	linkTarget, lErr := os.Readlink(filepath.Join(wtWeb, "node_modules"))
+	if lErr != nil {
+		t.Errorf("symlink not created: %v", lErr)
+	}
+	if linkTarget == "" {
+		t.Error("symlink target is empty")
+	}
+}
+
+func TestPreMergeGate_MainNodeModulesNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create worktree web dir but NOT main web/node_modules.
+	wtWeb := filepath.Join(tmpDir, "wt", "web")
+	if err := os.MkdirAll(wtWeb, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := PreMergeGate(wtWeb)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "node_modules not found") {
+		t.Errorf("error = %q, want 'node_modules not found'", err.Error())
+	}
+}
+
+func TestPreMergeGate_NodeModulesAlreadyExists(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create worktree web dir with node_modules already present.
+	wtWeb := filepath.Join(tmpDir, "web")
+	if err := os.MkdirAll(filepath.Join(wtWeb, "node_modules"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := PreMergeGate(wtWeb)
+	// Should skip symlink logic but fail at tsc.
+	if err == nil {
+		t.Fatal("expected error (no tsc), got nil")
+	}
+	if strings.Contains(err.Error(), "node_modules") {
+		t.Errorf("should skip node_modules step, got: %v", err)
+	}
+}
+
+func TestSmokeTest_SSHFailure(t *testing.T) {
+	// SSH to a non-resolvable host fails fast.
+	_, err := SmokeTest("http://localhost:9999", "invalid-host-zzz-nonexistent", "/tmp/runner.js")
+	if err == nil {
+		t.Fatal("expected error for unreachable SSH host")
+	}
+	if !strings.Contains(err.Error(), "smoke test failed") {
+		t.Errorf("error = %q, want 'smoke test failed'", err.Error())
+	}
+}
+
+func TestRuntimeGate_SSHFailure(t *testing.T) {
+	// SSH to a non-resolvable host fails fast.
+	err := RuntimeGate("http://localhost:9999", "invalid-host-zzz-nonexistent", "/tmp/runner.js")
+	if err == nil {
+		t.Fatal("expected error for unreachable SSH host")
+	}
+	if !strings.Contains(err.Error(), "runtime gate failed") {
+		t.Errorf("error = %q, want 'runtime gate failed'", err.Error())
+	}
+}
+
+func TestStepVerificationGate_BothFail(t *testing.T) {
+	// Non-existent dir fails at PreMerge, never reaches Runtime.
+	err := StepVerificationGate("/nonexistent/dir/12345", "http://x", "invalid-host", "/runner.js")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "pre-merge gate") {
+		t.Errorf("error = %q, want pre-merge error", err.Error())
+	}
+}
+
+func TestRunCmd_EmptyCommand(t *testing.T) {
+	dir := t.TempDir()
+	err := runCmd(dir, 5*time.Second, "sh", "-c", "true")
+	if err != nil {
+		t.Errorf("expected no error from 'true', got: %v", err)
+	}
+}
+
+func TestRunCmd_NonexistentCommand(t *testing.T) {
+	dir := t.TempDir()
+	err := runCmd(dir, 5*time.Second, "/nonexistent/command/12345")
+	if err == nil {
+		t.Fatal("expected error for nonexistent command")
+	}
+}
