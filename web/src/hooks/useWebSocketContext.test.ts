@@ -120,4 +120,36 @@ describe('useWebSocketCtx', () => {
     expect(result.current.onMessage).toBe(contextValue.onMessage);
     expect(result.current.connected).toBe(true);
   });
+
+  it('returns connected=false via context', () => {
+    const contextValue = {
+      send: vi.fn(),
+      onMessage: vi.fn(),
+      connected: false,
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(WebSocketContext.Provider, { value: contextValue }, children);
+
+    const { result } = renderHook(() => useWebSocketCtx(), { wrapper });
+    expect(result.current.connected).toBe(false);
+  });
+
+  it('send from context calls the provided send function', () => {
+    const sendFn = vi.fn();
+    const contextValue = {
+      send: sendFn,
+      onMessage: vi.fn(),
+      connected: true,
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(WebSocketContext.Provider, { value: contextValue }, children);
+
+    const { result } = renderHook(() => useWebSocketCtx(), { wrapper });
+    act(() => {
+      result.current.send({ type: 'chat.send', content: 'hello' } as any);
+    });
+    expect(sendFn).toHaveBeenCalledWith({ type: 'chat.send', content: 'hello' });
+  });
 });

@@ -104,4 +104,45 @@ describe('useProjects', () => {
     act(() => { result.current.refresh(); });
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/projects/dashboard'));
   });
+
+  it('handles non-Error rejection', async () => {
+    mockGet.mockRejectedValue('string error');
+    const { result } = renderHook(() => useProjects());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('string error');
+  });
+
+  it('error clears on successful fetch', async () => {
+    mockGet.mockRejectedValue(new Error('initial fail'));
+    const { result } = renderHook(() => useProjects());
+    await waitFor(() => expect(result.current.error).toBe('initial fail'));
+
+    mockGet.mockResolvedValue(makeDashboard());
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('dashboard is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useProjects());
+    expect(result.current.dashboard).toBeNull();
+  });
+
+  it('keywords are empty initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useProjects());
+    expect(result.current.keywords).toEqual([]);
+  });
+
+  it('error is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useProjects());
+    expect(result.current.error).toBeNull();
+  });
+
+  it('activeTab defaults to dashboard', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useProjects());
+    expect(result.current.activeTab).toBe('dashboard');
+  });
 });
