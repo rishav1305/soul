@@ -231,4 +231,121 @@ describe('useScout', () => {
     act(() => { result.current.refresh(); });
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/scout/leads'));
   });
+
+  it('fetches intelligence tab data (scored leads)', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const scored = [{ id: 1, title: 'Lead', company: 'Co', type: 'job', stage: 'screening', match_score: 90 }];
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/scout/leads/scored') return Promise.resolve(scored);
+      if (path === '/api/scout/sweep/status') return Promise.resolve(null);
+      return Promise.resolve([]);
+    });
+
+    act(() => { result.current.setActiveTab('intelligence'); });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.scoredLeads).toEqual(scored);
+  });
+
+  it('handles non-Error objects in catch', async () => {
+    mockGet.mockRejectedValue('string error');
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('string error');
+  });
+
+  it('handles null optimizations response', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/scout/sweep/status') return Promise.resolve({ running: false, platforms: [], started_at: '', progress: 0, results_found: 0 });
+      if (path === '/api/scout/optimizations') return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    act(() => { result.current.setActiveTab('actions'); });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.optimizations).toEqual([]);
+  });
+
+  it('clears error on successful re-fetch', async () => {
+    mockGet.mockRejectedValueOnce(new Error('Temporary failure'));
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('Temporary failure');
+
+    mockGet.mockResolvedValue([makeLead()]);
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('addLead refreshes pipeline tab specifically', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue(makeLead({ id: 99 }));
+    mockGet.mockClear();
+    mockGet.mockResolvedValue([makeLead(), makeLead({ id: 99 })]);
+
+    await act(async () => {
+      await result.current.addLead({ title: 'Brand New' });
+    });
+
+    // Should have fetched /api/scout/leads (pipeline tab refresh)
+    expect(mockGet).toHaveBeenCalledWith('/api/scout/leads');
+  });
+
+  it('updateLead refreshes current tab after patch', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPatch.mockResolvedValue(makeLead({ stage: 'interviewing' }));
+    mockGet.mockClear();
+    mockGet.mockResolvedValue([makeLead({ stage: 'interviewing' })]);
+
+    await act(async () => {
+      await result.current.updateLead(1, { stage: 'interviewing' });
+    });
+
+    // priority tab leads refresh
+    expect(mockGet).toHaveBeenCalledWith('/api/scout/leads');
+  });
+
+  it('triggerSweep refreshes actions tab after post', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue(undefined);
+    mockGet.mockClear();
+    const sweep = { running: true, platforms: ['linkedin'], started_at: '', progress: 50, results_found: 3 };
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/scout/sweep/status') return Promise.resolve(sweep);
+      if (path === '/api/scout/optimizations') return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    await act(async () => {
+      await result.current.triggerSweep(['linkedin']);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith('/api/scout/sweep/status');
+  });
+
+  it('callAITool returns response data', async () => {
+    const { result } = renderHook(() => useScout());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue({ score: 85, breakdown: {} });
+
+    let response: unknown;
+    await act(async () => {
+      response = await result.current.callAITool('freelance-score', { lead_id: 5 });
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/api/ai/freelance-score', { lead_id: 5 });
+    expect(response).toEqual({ score: 85, breakdown: {} });
+  });
 });

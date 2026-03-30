@@ -123,4 +123,52 @@ describe('ProductView', () => {
       unmount();
     }
   });
+
+  it('renders TaskPanel for compliance-go product', () => {
+    render(<ProductView {...defaultProps} activeProduct="compliance-go" />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('passes kanban taskView to TaskPanel', () => {
+    render(<ProductView {...defaultProps} activeProduct={null} taskView="kanban" />);
+    expect(screen.getByTestId('task-panel').getAttribute('data-view')).toBe('kanban');
+  });
+
+  it('passes grid taskView to TaskPanel', () => {
+    render(<ProductView {...defaultProps} activeProduct={null} taskView="grid" />);
+    expect(screen.getByTestId('task-panel').getAttribute('data-view')).toBe('grid');
+  });
+
+  it('renders TaskPanel for placeholder product with active product set', () => {
+    render(<ProductView {...defaultProps} activeProduct="observe" />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('renders TaskPanel when activeProduct is empty string', () => {
+    render(<ProductView {...defaultProps} activeProduct="" />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('renders TaskPanel correctly with loading=true', () => {
+    render(<ProductView {...defaultProps} activeProduct={null} loading={true} />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('renders TaskPanel with empty tasks', () => {
+    const props = {
+      ...defaultProps,
+      tasks: [],
+      filteredTasks: [],
+      tasksByStage: {
+        backlog: [], brainstorm: [], active: [], blocked: [], validation: [], done: [],
+      } as Record<TaskStage, PlannerTask[]>,
+    };
+    render(<ProductView {...props} activeProduct={null} />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
+
+  it('renders TaskPanel with multiple products', () => {
+    render(<ProductView {...defaultProps} activeProduct={null} products={['chat', 'scout', 'tutor']} />);
+    expect(screen.getByTestId('task-panel')).toBeTruthy();
+  });
 });
