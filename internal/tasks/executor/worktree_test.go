@@ -3,6 +3,7 @@ package executor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -137,5 +138,98 @@ func TestWorktreeHasChanges(t *testing.T) {
 
 	if !wt.HasChanges() {
 		t.Error("HasChanges() = false after writing file, want true")
+	}
+}
+
+// --- Additional worktree coverage tests ---
+
+func TestWorktreeCreateStale(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	// Create a stale directory at the expected worktree path.
+	staleDir := filepath.Join(repo, ".worktrees", "task-99")
+	if err := os.MkdirAll(staleDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(staleDir, "stale.txt"), []byte("old"), 0644)
+
+	wt, err := CreateWorktree(repo, 99)
+	if err != nil {
+		t.Fatalf("CreateWorktree with stale dir: %v", err)
+	}
+	t.Cleanup(func() { _ = wt.Cleanup() })
+
+	// Verify the stale file is gone and fresh worktree has HEAD content.
+	if _, err := os.Stat(filepath.Join(wt.Dir, "stale.txt")); !os.IsNotExist(err) {
+		t.Error("stale.txt should not exist in fresh worktree")
+	}
+	if _, err := os.Stat(filepath.Join(wt.Dir, "README.md")); os.IsNotExist(err) {
+		t.Error("README.md should exist in worktree from HEAD")
+	}
+}
+
+func TestGitCmd_Success(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	err := gitCmd(repo, "status")
+	if err != nil {
+		t.Errorf("gitCmd status: %v", err)
+	}
+}
+
+func TestGitCmd_Failure(t *testing.T) {
+	dir := t.TempDir() // not a git repo
+
+	err := gitCmd(dir, "status")
+	if err == nil {
+		t.Fatal("expected error for non-repo dir")
+	}
+	if !strings.Contains(err.Error(), "git") {
+		t.Errorf("error = %q, should mention git", err.Error())
+	}
+}
+
+func TestWorktreeCleanup_NonexistentDir(t *testing.T) {
+	wt := &Worktree{
+		Dir:    filepath.Join(t.TempDir(), "nonexistent"),
+		Branch: "task/404",
+		repo:   t.TempDir(),
+	}
+
+	// Cleanup on a non-existent dir should not panic.
+	err := wt.Cleanup()
+	_ = err
+}
+
+func TestWorktreeMultipleCommits(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	wt, err := CreateWorktree(repo, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = wt.Cleanup() })
+
+	// First commit.
+	os.WriteFile(filepath.Join(wt.Dir, "file1.txt"), []byte("one"), 0644)
+	hash1, err := wt.Commit("add file1")
+	if err != nil {
+		t.Fatalf("first commit: %v", err)
+	}
+	if hash1 == "" {
+		t.Error("first commit returned empty hash")
+	}
+
+	// Second commit.
+	os.WriteFile(filepath.Join(wt.Dir, "file2.txt"), []byte("two"), 0644)
+	hash2, err := wt.Commit("add file2")
+	if err != nil {
+		t.Fatalf("second commit: %v", err)
+	}
+	if hash2 == "" {
+		t.Error("second commit returned empty hash")
+	}
+	if hash1 == hash2 {
+		t.Error("expected different hashes for two commits")
 	}
 }

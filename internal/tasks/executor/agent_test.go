@@ -3,10 +3,19 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/rishav1305/soul/internal/chat/stream"
 )
+
+// failSender always returns an error. Used by both agent and executor tests.
+type failSender struct{}
+
+func (f *failSender) Send(_ context.Context, _ *stream.Request) (*stream.Response, error) {
+	return nil, fmt.Errorf("mock send failure")
+}
 
 // mockSender implements Sender and returns pre-configured responses in order.
 // Once all pre-configured responses have been consumed it returns a default
@@ -175,4 +184,193 @@ func TestAgentLoopContextCancellation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
 	}
+}
+
+// --- Additional coverage tests ---
+
+func TestAgentLoop_WithActivityCallback(t *testing.T) {
+	var events []string
+	onActivity := func(eventType string, data map[string]interface{}) {
+		events = append(events, eventType)
+	}
+
+	sender := &mockSender{
+		responses: []*stream.Response{
+			newToolUseResponse("t1", "echo hi", 10, 5),
+			newEndTurnResponse("done", 10, 5),
+		},
+	}
+
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 10, onActivity)
+	_, err := loop.Run(context.Background(), "system", "do it")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) < 2 {
+		t.Fatalf("expected at least 2 events, got %d: %v", len(events), events)
+	}
+	if events[0] != "tool_call" {
+		t.Errorf("first event = %q, want tool_call", events[0])
+	}
+	if events[1] != "end_turn" {
+		t.Errorf("second event = %q, want end_turn", events[1])
+	}
+}
+
+func TestAgentLoop_HitLimit_Callback(t *testing.T) {
+	var events []string
+	onActivity := func(eventType string, data map[string]interface{}) {
+		events = append(events, eventType)
+	}
+
+	responses := make([]*stream.Response, 5)
+	for i := range responses {
+		responses[i] = newToolUseResponse("t1", "echo loop", 10, 5)
+	}
+
+	sender := &mockSender{responses: responses}
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 2, onActivity)
+	result, err := loop.Run(context.Background(), "system", "loop")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !result.HitLimit {
+		t.Error("expected HitLimit=true")
+	}
+
+	found := false
+	for _, e := range events {
+		if e == "hit_limit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected hit_limit event, got %v", events)
+	}
+}
+
+func TestAgentLoop_SendError(t *testing.T) {
+	sender := &failSender{}
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 10, nil)
+	_, err := loop.Run(context.Background(), "system", "do it")
+	if err == nil {
+		t.Fatal("expected error from sender")
+	}
+	if !strings.Contains(err.Error(), "send") {
+		t.Errorf("error = %q, should mention send", err.Error())
+	}
+}
+
+func TestAgentLoop_NilUsage(t *testing.T) {
+	sender := &mockSender{
+		responses: []*stream.Response{
+			{
+				Role:       "assistant",
+				StopReason: "end_turn",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "no usage"}},
+				Usage:      nil,
+			},
+		},
+	}
+
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 10, nil)
+	result, err := loop.Run(context.Background(), "system", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalInputTokens != 0 || result.TotalOutputTokens != 0 {
+		t.Errorf("expected 0 tokens with nil usage, got %d/%d", result.TotalInputTokens, result.TotalOutputTokens)
+	}
+}
+
+func TestAgentLoop_UnknownStopReason(t *testing.T) {
+	sender := &mockSender{
+		responses: []*stream.Response{
+			{
+				Role:       "assistant",
+				StopReason: "max_tokens",
+				Content:    []stream.ContentBlock{{Type: "text", Text: "partial"}},
+				Usage:      &stream.Usage{InputTokens: 50, OutputTokens: 25},
+			},
+		},
+	}
+
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 10, nil)
+	result, err := loop.Run(context.Background(), "system", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "partial" {
+		t.Errorf("text = %q, want partial", result.Text)
+	}
+	if result.Iterations != 1 {
+		t.Errorf("iterations = %d, want 1", result.Iterations)
+	}
+}
+
+func TestAgentLoop_ToolCallError(t *testing.T) {
+	// Tool use that references an unknown tool — should get error in output.
+	inputJSON, _ := json.Marshal(map[string]string{"path": "../../etc/passwd"})
+	sender := &mockSender{
+		responses: []*stream.Response{
+			{
+				Role:       "assistant",
+				StopReason: "tool_use",
+				Content: []stream.ContentBlock{
+					{
+						Type:  "tool_use",
+						ID:    "t-err",
+						Name:  "file_read",
+						Input: json.RawMessage(inputJSON),
+					},
+				},
+				Usage: &stream.Usage{InputTokens: 10, OutputTokens: 5},
+			},
+			newEndTurnResponse("handled error", 10, 5),
+		},
+	}
+
+	loop := NewAgentLoop(sender, newTestToolSet(t), 1, 10, nil)
+	result, err := loop.Run(context.Background(), "system", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if !strings.Contains(result.ToolCalls[0].Output, "error") {
+		t.Errorf("tool output = %q, expected error message", result.ToolCalls[0].Output)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"short", "abc", 10, "abc"},
+		{"exact", "abcde", 5, "abcde"},
+		{"long", "abcdefgh", 5, "abcde..."},
+		{"empty", "", 5, ""},
+		{"zero_max", "abc", 0, "..."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncate(tt.input, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotify_NilCallback(t *testing.T) {
+	loop := NewAgentLoop(nil, nil, 0, 0, nil)
+	// Should not panic.
+	loop.notify("test", nil)
+	loop.notify("test", map[string]interface{}{"key": "val"})
 }

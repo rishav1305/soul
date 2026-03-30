@@ -291,3 +291,192 @@ func TestToolTaskUpdate_EmptyInput(t *testing.T) {
 		t.Errorf("expected 'no changes' in output, got: %q", got)
 	}
 }
+
+// --- Additional tool coverage tests ---
+
+func TestToolFileRead_InvalidJSON(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_read", "not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestToolFileRead_EmptyPath(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_read", `{"path":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty path")
+	}
+}
+
+func TestToolFileRead_Truncation(t *testing.T) {
+	ts := newTestToolSet(t)
+
+	// Create a file larger than 100KB.
+	bigContent := strings.Repeat("x", 150*1024)
+	if err := os.WriteFile(filepath.Join(ts.rootDir, "big.txt"), []byte(bigContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ts.Execute("file_read", mustMarshal(t, map[string]string{"path": "big.txt"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "[truncated at 100KB]") {
+		t.Error("expected truncation marker in output")
+	}
+}
+
+func TestToolFileRead_NonexistentFile(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_read", mustMarshal(t, map[string]string{"path": "does_not_exist.txt"}))
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestToolFileWrite_InvalidJSON(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_write", "not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestToolFileWrite_EmptyPath(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_write", `{"path":"","content":"hello"}`)
+	if err == nil {
+		t.Fatal("expected error for empty path")
+	}
+}
+
+func TestToolFileWrite_PathTraversal(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("file_write", mustMarshal(t, map[string]string{
+		"path":    "../../etc/evil",
+		"content": "bad",
+	}))
+	if err == nil {
+		t.Fatal("expected error for path traversal")
+	}
+	if !strings.Contains(err.Error(), "path traversal") {
+		t.Errorf("error = %q, want path traversal mention", err.Error())
+	}
+}
+
+func TestToolBash_InvalidJSON(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("bash", "not json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestToolBash_EmptyCommand(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("bash", `{"command":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty command")
+	}
+}
+
+func TestToolListFiles_InvalidJSON(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("list_files", "not valid json at all")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestToolListFiles_SkipsDirs(t *testing.T) {
+	ts := newTestToolSet(t)
+
+	// Create directories that should be skipped in recursive listing.
+	os.MkdirAll(filepath.Join(ts.rootDir, ".git", "objects"), 0755)
+	os.WriteFile(filepath.Join(ts.rootDir, ".git", "objects", "hidden.txt"), []byte("x"), 0644)
+	os.MkdirAll(filepath.Join(ts.rootDir, "node_modules", "pkg"), 0755)
+	os.WriteFile(filepath.Join(ts.rootDir, "node_modules", "pkg", "index.js"), []byte("x"), 0644)
+	os.MkdirAll(filepath.Join(ts.rootDir, "dist"), 0755)
+	os.WriteFile(filepath.Join(ts.rootDir, "dist", "bundle.js"), []byte("x"), 0644)
+	os.WriteFile(filepath.Join(ts.rootDir, "visible.go"), []byte("package main"), 0644)
+
+	got, err := ts.Execute("list_files", mustMarshal(t, map[string]interface{}{
+		"path":      ".",
+		"recursive": true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "hidden.txt") {
+		t.Error("expected .git contents to be skipped")
+	}
+	if strings.Contains(got, "index.js") {
+		t.Error("expected node_modules contents to be skipped")
+	}
+	if strings.Contains(got, "bundle.js") {
+		t.Error("expected dist contents to be skipped")
+	}
+	if !strings.Contains(got, "visible.go") {
+		t.Error("expected visible.go to be present")
+	}
+}
+
+func TestToolListFiles_PathTraversal(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("list_files", mustMarshal(t, map[string]string{"path": "../../.."}))
+	if err == nil {
+		t.Fatal("expected error for path traversal")
+	}
+}
+
+func TestToolListFiles_NonexistentDir(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("list_files", mustMarshal(t, map[string]string{"path": "no_such_dir"}))
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}
+
+func TestToolTaskUpdate_NoteOnly(t *testing.T) {
+	ts := newTestToolSet(t)
+	got, err := ts.Execute("task_update", mustMarshal(t, map[string]string{"note": "just a note"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "just a note") {
+		t.Errorf("output = %q, want note content", got)
+	}
+}
+
+func TestToolTaskUpdate_InvalidJSON(t *testing.T) {
+	ts := newTestToolSet(t)
+	_, err := ts.Execute("task_update", "bad json")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestResolvePath_RootItself(t *testing.T) {
+	ts := newTestToolSet(t)
+	got, err := ts.resolvePath("")
+	if err != nil {
+		t.Fatalf("resolvePath empty: %v", err)
+	}
+	if got != ts.rootDir {
+		t.Errorf("resolvePath('') = %q, want %q", got, ts.rootDir)
+	}
+}
+
+func TestResolvePath_ValidSubpath(t *testing.T) {
+	ts := newTestToolSet(t)
+	got, err := ts.resolvePath("sub/file.go")
+	if err != nil {
+		t.Fatalf("resolvePath: %v", err)
+	}
+	expected := filepath.Join(ts.rootDir, "sub", "file.go")
+	if got != expected {
+		t.Errorf("resolvePath = %q, want %q", got, expected)
+	}
+}
