@@ -1,6 +1,10 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -618,5 +622,298 @@ func TestBuildTransparentPillar_StaticConstraints(t *testing.T) {
 	}
 	if mp.Status != "static" || cr.Status != "static" {
 		t.Error("static constraints should have status=static")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Server + Handler HTTP tests
+// ---------------------------------------------------------------------------
+
+func newTestObserveServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	// Seed a metrics file so the aggregator has data.
+	logger, err := metrics.NewEventLogger(dir, "")
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	logger.Log(metrics.EventAPIRequest, map[string]interface{}{
+		"method": "GET", "path": "/api/health", "status": 200, "duration_ms": 5,
+	})
+	logger.Close()
+
+	return New(WithDataDir(dir), WithHost("127.0.0.1"), WithPort(0))
+}
+
+func TestWithHost_Observe(t *testing.T) {
+	srv := New(WithHost("0.0.0.0"))
+	if srv.host != "0.0.0.0" {
+		t.Errorf("host = %q, want 0.0.0.0", srv.host)
+	}
+}
+
+func TestWithPort_Observe(t *testing.T) {
+	srv := New(WithPort(9999))
+	if srv.port != 9999 {
+		t.Errorf("port = %d, want 9999", srv.port)
+	}
+}
+
+func TestWithDataDir_Observe(t *testing.T) {
+	srv := New(WithDataDir("/tmp/observe-test"))
+	if srv.dataDir != "/tmp/observe-test" {
+		t.Errorf("dataDir = %q, want /tmp/observe-test", srv.dataDir)
+	}
+}
+
+func TestHandleHealth_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["status"] != "ok" {
+		t.Errorf("status = %q, want ok", body["status"])
+	}
+}
+
+func TestHandleOverview_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/overview", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleLatency_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/latency", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleAlerts_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/alerts", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleDB_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/db", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleRequests_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/requests", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleFrontend_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/frontend", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleUsage_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/usage", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleQuality_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/quality", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleLayers_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/layers", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleSystem_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/system", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleTail_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/tail", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePillars_HTTP(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/pillars", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	// Verify pillars response structure — wrapped in {"pillars": [...]}.
+	var resp struct {
+		Pillars []pillarResult `json:"pillars"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if len(resp.Pillars) != 6 {
+		t.Errorf("expected 6 pillars, got %d", len(resp.Pillars))
+	}
+	names := make(map[string]bool)
+	for _, p := range resp.Pillars {
+		names[p.Name] = true
+	}
+	for _, expected := range []string{"performant", "robust", "resilient", "secure", "sovereign", "transparent"} {
+		if !names[expected] {
+			t.Errorf("missing pillar: %s", expected)
+		}
+	}
+}
+
+func TestHandlePillars_WithProductFilter(t *testing.T) {
+	srv := newTestObserveServer(t)
+	req := httptest.NewRequest("GET", "/api/pillars?product=chat", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestCorsMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := corsMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	origin := rec.Header().Get("Access-Control-Allow-Origin")
+	if origin == "" {
+		t.Error("expected CORS header")
+	}
+}
+
+func TestCorsMiddleware_OPTIONS(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := corsMiddleware(inner)
+
+	req := httptest.NewRequest("OPTIONS", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204 for OPTIONS", rec.Code)
+	}
+}
+
+func TestRecoveryMiddleware_Observe(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test")
+	})
+	handler := recoveryMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "error") {
+		t.Error("expected JSON error in body")
+	}
+}
+
+func TestWriteJSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSON(rec, http.StatusOK, map[string]string{"key": "value"})
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+}
+
+func TestWriteError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeError(rec, http.StatusBadRequest, "bad request")
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "bad request" {
+		t.Errorf("error = %q, want 'bad request'", body["error"])
 	}
 }
