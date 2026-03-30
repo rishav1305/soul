@@ -250,4 +250,109 @@ describe('useBench', () => {
 
     expect(result.current.categories).toEqual([]);
   });
+
+  it('handles non-Error rejection in fetch', async () => {
+    mockGet.mockRejectedValue('string error');
+    const { result } = renderHook(() => useBench());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('string error');
+  });
+
+  it('handles non-Error rejection in runBenchmark', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue('run string error');
+    await act(async () => {
+      await result.current.runBenchmark({ endpoint: 'x', categories: [], gpu: false, max_tokens: 100 });
+    });
+
+    expect(result.current.error).toBe('run string error');
+  });
+
+  it('handles non-Error rejection in compare', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockRejectedValue('compare string error');
+    await act(async () => {
+      await result.current.compare('a', 'b');
+    });
+
+    expect(result.current.error).toBe('compare string error');
+  });
+
+  it('handles non-Error rejection in fetchResultDetail', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockRejectedValue('detail string error');
+    await act(async () => {
+      await result.current.fetchResultDetail('bad');
+    });
+
+    expect(result.current.error).toBe('detail string error');
+  });
+
+  it('handles non-Error rejection in runSmoke', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue('smoke string error');
+    let res: unknown;
+    await act(async () => {
+      res = await result.current.runSmoke('bad');
+    });
+
+    expect(res).toEqual([]);
+    expect(result.current.error).toBe('smoke string error');
+  });
+
+  it('error clears on successful refresh', async () => {
+    mockGet.mockRejectedValue(new Error('initial fail'));
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.error).toBe('initial fail'));
+
+    mockGet.mockResolvedValue([makeCategory()]);
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('runSmoke handles null response', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue(null);
+    let res: unknown;
+    await act(async () => {
+      res = await result.current.runSmoke('http://localhost');
+    });
+    expect(res).toEqual([]);
+  });
+
+  it('runBenchmark handles null results response', async () => {
+    const { result } = renderHook(() => useBench());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue(undefined);
+    mockGet.mockResolvedValue(null);
+
+    await act(async () => {
+      await result.current.runBenchmark({ endpoint: 'x', categories: [], gpu: false, max_tokens: 100 });
+    });
+    expect(result.current.results).toEqual([]);
+  });
+
+  it('selectedResult is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useBench());
+    expect(result.current.selectedResult).toBeNull();
+  });
+
+  it('compareData is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useBench());
+    expect(result.current.compareData).toBeNull();
+  });
 });

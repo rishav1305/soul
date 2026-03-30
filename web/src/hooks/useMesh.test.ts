@@ -194,4 +194,109 @@ describe('useMesh', () => {
     act(() => { result.current.setSelectedNode(null); });
     expect(result.current.selectedNode).toBeNull();
   });
+
+  it('handles non-Error rejection in fetch', async () => {
+    mockGet.mockRejectedValue('string error');
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('string error');
+  });
+
+  it('fetchHeartbeats returns empty on null response', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockResolvedValue(null);
+    await act(async () => {
+      await result.current.fetchHeartbeats('node-1');
+    });
+    expect(result.current.heartbeats).toEqual([]);
+  });
+
+  it('fetchHeartbeats swallows error without setting error state', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockGet.mockRejectedValue(new Error('heartbeat fail'));
+    await act(async () => {
+      await result.current.fetchHeartbeats('node-bad');
+    });
+    // fetchHeartbeats doesn't call setError — only reportError
+    expect(result.current.error).toBeNull();
+  });
+
+  it('generateCode handles null code in response', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockResolvedValue({});
+    await act(async () => {
+      await result.current.generateCode();
+    });
+    expect(result.current.linkCode).toBeNull();
+  });
+
+  it('error clears on successful tab switch', async () => {
+    mockGet.mockRejectedValue(new Error('initial fail'));
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.error).toBe('initial fail'));
+
+    mockGet.mockResolvedValue([makeNode()]);
+    act(() => { result.current.setActiveTab('nodes'); });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it('handles non-Error rejection in generateCode', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue('gen string error');
+    await act(async () => {
+      await result.current.generateCode();
+    });
+    expect(result.current.error).toBe('gen string error');
+  });
+
+  it('handles non-Error rejection in linkNode', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockPost.mockRejectedValue('link string error');
+    await act(async () => {
+      await result.current.linkNode('BAD');
+    });
+    expect(result.current.error).toBe('link string error');
+  });
+
+  it('linkNode clears linkCode on success', async () => {
+    const { result } = renderHook(() => useMesh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // First generate a code
+    mockPost.mockResolvedValue({ code: 'XYZ789' });
+    await act(async () => {
+      await result.current.generateCode();
+    });
+    expect(result.current.linkCode).toBe('XYZ789');
+
+    // Now link — should clear linkCode
+    mockPost.mockResolvedValue({ message: 'linked' });
+    mockGet.mockResolvedValue(makeCluster());
+    await act(async () => {
+      await result.current.linkNode('XYZ789');
+    });
+    expect(result.current.linkCode).toBeNull();
+  });
+
+  it('selectedNode is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useMesh());
+    expect(result.current.selectedNode).toBeNull();
+  });
+
+  it('linkCode is null initially', () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useMesh());
+    expect(result.current.linkCode).toBeNull();
+  });
 });

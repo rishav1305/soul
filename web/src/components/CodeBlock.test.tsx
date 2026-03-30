@@ -106,4 +106,80 @@ describe('CodeBlock', () => {
     fireEvent.click(screen.getByTestId('code-copy-button'));
     expect(screen.getByText('Copied!')).toBeTruthy();
   });
+
+  it('uses fallback copy when clipboard API unavailable', () => {
+    // Remove clipboard API
+    Object.assign(navigator, { clipboard: undefined });
+    // jsdom doesn't define execCommand — add it
+    document.execCommand = vi.fn().mockReturnValue(true);
+    render(<CodeBlock language="go" code="package main" />);
+    fireEvent.click(screen.getByTestId('code-copy-button'));
+    expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(screen.getByText('Copied!')).toBeTruthy();
+  });
+
+  it('shows YAML label for yml alias', () => {
+    render(<CodeBlock language="yml" code="key: value" />);
+    expect(screen.getByText('YAML')).toBeTruthy();
+  });
+
+  it('shows Markdown label for md alias', () => {
+    render(<CodeBlock language="md" code="# Hello" />);
+    expect(screen.getByText('Markdown')).toBeTruthy();
+  });
+
+  it('shows Dockerfile label for dockerfile alias', () => {
+    render(<CodeBlock language="dockerfile" code="FROM node:20" />);
+    expect(screen.getByText('Dockerfile')).toBeTruthy();
+  });
+
+  it('shows JSX label for jsx alias', () => {
+    render(<CodeBlock language="jsx" code="<App />" />);
+    expect(screen.getByText('JSX')).toBeTruthy();
+  });
+
+  it('shows Rust label for rs alias', () => {
+    render(<CodeBlock language="rs" code="fn main() {}" />);
+    expect(screen.getByText('Rust')).toBeTruthy();
+  });
+
+  it('shows Go label for golang alias', () => {
+    render(<CodeBlock language="golang" code="func main() {}" />);
+    expect(screen.getByText('Go')).toBeTruthy();
+  });
+
+  it('hides line numbers at exactly 5 lines', () => {
+    const code = 'a\nb\nc\nd\ne';
+    render(<CodeBlock language="go" code={code} />);
+    const h = screen.getByTestId('mock-syntax-highlighter');
+    expect(h.getAttribute('data-line-numbers')).toBe('false');
+  });
+
+  it('shows line numbers at exactly 6 lines', () => {
+    const code = 'a\nb\nc\nd\ne\nf';
+    render(<CodeBlock language="go" code={code} />);
+    const h = screen.getByTestId('mock-syntax-highlighter');
+    expect(h.getAttribute('data-line-numbers')).toBe('true');
+  });
+
+  it('shows SQL label', () => {
+    render(<CodeBlock language="sql" code="SELECT 1" />);
+    expect(screen.getByText('SQL')).toBeTruthy();
+  });
+
+  it('shows CSS label', () => {
+    render(<CodeBlock language="css" code="body { color: red; }" />);
+    expect(screen.getByText('CSS')).toBeTruthy();
+  });
+
+  it('shows Java label', () => {
+    render(<CodeBlock language="java" code="class Main {}" />);
+    expect(screen.getByText('Java')).toBeTruthy();
+  });
+
+  it('passes lowercase language to highlighter', () => {
+    render(<CodeBlock language="TypeScript" code="const x = 1;" />);
+    const h = screen.getByTestId('mock-syntax-highlighter');
+    expect(h.getAttribute('data-language')).toBe('typescript');
+  });
 });
