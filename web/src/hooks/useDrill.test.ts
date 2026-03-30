@@ -196,4 +196,103 @@ describe('useDrill', () => {
     });
     expect(result.current.evaluation).toBeNull();
   });
+
+  it('startDrill clears error from previous failure', async () => {
+    const { result } = renderHook(() => useDrill());
+
+    // First: error
+    mockPost.mockRejectedValueOnce(new Error('Temp error'));
+    await act(async () => {
+      await result.current.startDrill(10);
+    });
+    expect(result.current.error).toBe('Temp error');
+
+    // Second: success, error should clear
+    mockPost.mockResolvedValueOnce(makeQuestion());
+    await act(async () => {
+      await result.current.startDrill(10);
+    });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('submitAnswer handles non-Error rejection', async () => {
+    mockPost.mockRejectedValue('submit string error');
+    const { result } = renderHook(() => useDrill());
+
+    await act(async () => {
+      await result.current.submitAnswer(1, 'answer');
+    });
+
+    expect(result.current.error).toBe('submit string error');
+  });
+
+  it('submitAnswer clears error from previous failure', async () => {
+    const { result } = renderHook(() => useDrill());
+
+    // First submit fails
+    mockPost.mockRejectedValueOnce(new Error('first error'));
+    await act(async () => {
+      await result.current.submitAnswer(1, 'a');
+    });
+    expect(result.current.error).toBe('first error');
+
+    // Second submit succeeds — error clears
+    mockPost.mockResolvedValueOnce(makeEvaluation());
+    await act(async () => {
+      await result.current.submitAnswer(2, 'b');
+    });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('loading is true during startDrill in-flight', async () => {
+    let resolvePost: ((v: unknown) => void) | null = null;
+    mockPost.mockImplementationOnce(() => new Promise(r => { resolvePost = r; }));
+
+    const { result } = renderHook(() => useDrill());
+
+    let drillPromise: Promise<void>;
+    act(() => {
+      drillPromise = result.current.startDrill(10);
+    });
+
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      resolvePost!(makeQuestion());
+      await drillPromise!;
+    });
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('loading is true during submitAnswer in-flight', async () => {
+    let resolvePost: ((v: unknown) => void) | null = null;
+    mockPost.mockImplementationOnce(() => new Promise(r => { resolvePost = r; }));
+
+    const { result } = renderHook(() => useDrill());
+
+    let answerPromise: Promise<void>;
+    act(() => {
+      answerPromise = result.current.submitAnswer(1, 'test');
+    });
+
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      resolvePost!(makeEvaluation());
+      await answerPromise!;
+    });
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('nextQuestion propagates error from startDrill', async () => {
+    mockPost.mockRejectedValue(new Error('next error'));
+    const { result } = renderHook(() => useDrill());
+
+    await act(async () => {
+      await result.current.nextQuestion(10);
+    });
+
+    expect(result.current.error).toBe('next error');
+    expect(result.current.evaluation).toBeNull();
+  });
 });

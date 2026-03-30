@@ -361,4 +361,151 @@ describe('usePlanner', () => {
     // Should not throw — tasks remain empty
     expect(result.current.tasks).toEqual([]);
   });
+
+  it('createTask throws on non-ok response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await expect(act(async () => {
+      await result.current.createTask('Test', 'desc', 1, 'chat');
+    })).rejects.toThrow('Failed to create task');
+  });
+
+  it('updateTask throws on non-ok response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+    await expect(act(async () => {
+      await result.current.updateTask(1, { title: 'Updated' });
+    })).rejects.toThrow('Failed to update task');
+  });
+
+  it('deleteTask throws on non-ok response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 403 });
+
+    await expect(act(async () => {
+      await result.current.deleteTask(1);
+    })).rejects.toThrow('Failed to delete task');
+  });
+
+  it('moveTask throws on non-ok PATCH response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 400 });
+
+    await expect(act(async () => {
+      await result.current.moveTask(1, 'active', '');
+    })).rejects.toThrow('Failed to move task');
+  });
+
+  it('fetchComments throws on non-ok response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await expect(act(async () => {
+      await result.current.fetchComments(1);
+    })).rejects.toThrow('Failed to fetch comments');
+  });
+
+  it('addComment throws on non-ok response', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mockAuthFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await expect(act(async () => {
+      await result.current.addComment(1, 'test');
+    })).rejects.toThrow('Failed to add comment');
+  });
+
+  it('hit_limit clears stream like end_turn', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      wsHandler!({
+        type: 'task.activity',
+        data: {
+          taskId: 1,
+          activity: { taskId: 1, eventType: 'agent.tool_call', data: 'streaming...' },
+        },
+      });
+    });
+    expect(result.current.taskStreams[1]).toBe('streaming...');
+
+    act(() => {
+      wsHandler!({
+        type: 'task.activity',
+        data: {
+          taskId: 1,
+          activity: { taskId: 1, eventType: 'agent.hit_limit', data: 'limit reached' },
+        },
+      });
+    });
+
+    expect(result.current.taskStreams[1]).toBeUndefined();
+  });
+
+  it('tool_call events not added to taskActivities', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      wsHandler!({
+        type: 'task.activity',
+        data: {
+          taskId: 1,
+          activity: { taskId: 1, eventType: 'agent.tool_call', data: 'tool output' },
+        },
+      });
+    });
+
+    // tool_call goes to streams, NOT activities
+    expect(result.current.taskActivities[1]).toBeUndefined();
+    expect(result.current.taskStreams[1]).toBe('tool output');
+  });
+
+  it('multiple comments accumulate per task via WS', async () => {
+    const { result } = renderHook(() => usePlanner());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      wsHandler!({
+        type: 'task.comment',
+        data: {
+          taskId: 1,
+          comment: { taskId: 1, id: 'c1', author: 'user', body: 'first', type: 'feedback' },
+        },
+      });
+    });
+    act(() => {
+      wsHandler!({
+        type: 'task.comment',
+        data: {
+          taskId: 1,
+          comment: { taskId: 1, id: 'c2', author: 'agent', body: 'second', type: 'feedback' },
+        },
+      });
+    });
+
+    expect(result.current.taskComments[1]?.length).toBe(2);
+    expect(result.current.taskComments[1][0].body).toBe('first');
+    expect(result.current.taskComments[1][1].body).toBe('second');
+  });
+
+  it('unsubscribes from WS on unmount', async () => {
+    const { unmount } = renderHook(() => usePlanner());
+    unmount();
+    expect(mockUnsubscribe).toHaveBeenCalled();
+  });
 });
