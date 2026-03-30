@@ -475,3 +475,130 @@ func TestHandleWebSocket_RejectsInvalidToken(t *testing.T) {
 		t.Errorf("expected 401 for invalid token, got %d", resp.StatusCode)
 	}
 }
+
+// --- Additional coverage tests ---
+
+func TestHandleListNodes_ClosedStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mesh.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hub.New(s)
+	srv := New(testNodeInfo(), s, h, "test-secret")
+
+	s.Close() // Close store to trigger error path.
+
+	req := httptest.NewRequest("GET", "/api/mesh/nodes", nil)
+	w := httptest.NewRecorder()
+	srv.handleListNodes(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestHandleStatus_ClosedStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mesh.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hub.New(s)
+	srv := New(testNodeInfo(), s, h, "test-secret")
+
+	s.Close() // Close store to trigger AggregateResources error.
+
+	req := httptest.NewRequest("GET", "/api/mesh/status", nil)
+	w := httptest.NewRecorder()
+	srv.handleStatus(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestHandleLink_ClosedStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mesh.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hub.New(s)
+	srv := New(testNodeInfo(), s, h, "test-secret")
+
+	s.Close() // Close store to trigger CreateLinkingCode error.
+
+	req := httptest.NewRequest("POST", "/api/mesh/link", nil)
+	w := httptest.NewRecorder()
+	srv.handleLink(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestHandleHeartbeats_ClosedStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mesh.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hub.New(s)
+	srv := New(testNodeInfo(), s, h, "test-secret")
+
+	s.Close() // Close store to trigger GetRecentHeartbeats error.
+
+	req := httptest.NewRequest("GET", "/api/mesh/heartbeats?node_id=node-1", nil)
+	w := httptest.NewRecorder()
+	srv.handleHeartbeats(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestHandleHeartbeats_InvalidLimit(t *testing.T) {
+	s := testServer(t)
+
+	// Non-numeric limit should be silently ignored (uses default 50).
+	req := httptest.NewRequest("GET", "/api/mesh/heartbeats?node_id=node-1&limit=abc", nil)
+	w := httptest.NewRecorder()
+	s.handleHeartbeats(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestHandleHeartbeats_NegativeLimit(t *testing.T) {
+	s := testServer(t)
+
+	// Negative limit should be ignored (uses default 50).
+	req := httptest.NewRequest("GET", "/api/mesh/heartbeats?node_id=node-1&limit=-5", nil)
+	w := httptest.NewRecorder()
+	s.handleHeartbeats(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestHandleToolExecute_EmptyBody(t *testing.T) {
+	s := testServerMinimal()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/tools/{name}/execute", s.handleToolExecute)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/tools/test/execute", "application/json", bytes.NewBufferString(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for empty body", resp.StatusCode)
+	}
+}
