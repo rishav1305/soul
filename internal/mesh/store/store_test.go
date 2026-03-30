@@ -363,6 +363,49 @@ func TestCreateLinkingCode_Duplicate(t *testing.T) {
 	}
 }
 
+func TestOpen_InvalidPath(t *testing.T) {
+	// Try opening a database in a path that doesn't exist.
+	_, err := Open("/nonexistent/path/to/db.sqlite")
+	if err == nil {
+		t.Error("expected error for invalid path")
+	}
+}
+
+func TestOpen_ClosedStoreErrors(t *testing.T) {
+	s := newTestStore(t)
+	s.Close()
+
+	// Operations on closed store should return errors.
+	_, err := s.ListNodes()
+	if err == nil {
+		t.Error("expected error from ListNodes on closed store")
+	}
+	_, err = s.GetNode("any")
+	if err == nil {
+		t.Error("expected error from GetNode on closed store")
+	}
+	err = s.RegisterNode(Node{ID: "x"})
+	if err == nil {
+		t.Error("expected error from RegisterNode on closed store")
+	}
+	_, err = s.GetRecentHeartbeats("x", 5)
+	if err == nil {
+		t.Error("expected error from GetRecentHeartbeats on closed store")
+	}
+	err = s.UpsertPeer(Peer{PeerID: "x"})
+	if err == nil {
+		t.Error("expected error from UpsertPeer on closed store")
+	}
+	_, err = s.ListPeers()
+	if err == nil {
+		t.Error("expected error from ListPeers on closed store")
+	}
+	_, err = s.ValidateLinkingCode("x")
+	if err == nil {
+		t.Error("expected error from ValidateLinkingCode on closed store")
+	}
+}
+
 func TestClose_DoubleClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mesh_close.db")
 	s, err := Open(path)
