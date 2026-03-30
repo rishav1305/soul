@@ -1,7 +1,9 @@
 package modules
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rishav1305/soul/internal/tutor/eval"
@@ -310,5 +312,117 @@ func TestSystemDesignEvaluatorFallback(t *testing.T) {
 	data := result.Data.(map[string]interface{})
 	if data["mode"] != "result" {
 		t.Errorf("expected mode 'result', got %v", data["mode"])
+	}
+}
+
+// --- Template functions ---
+
+func TestSysDesignContentTemplate(t *testing.T) {
+	content := sysDesignContentTemplate("Load Balancer")
+	if content == "" {
+		t.Fatal("sysDesignContentTemplate returned empty string")
+	}
+	if !strings.Contains(content, "# Load Balancer") {
+		t.Error("template missing topic heading")
+	}
+	if !strings.Contains(content, "Key Components") {
+		t.Error("template missing Key Components section")
+	}
+	if !strings.Contains(content, "Scalability") {
+		t.Error("template missing Scalability section")
+	}
+}
+
+func TestWriteSysDesignContent_HappyPath(t *testing.T) {
+	contentDir := t.TempDir()
+	relPath := writeSysDesignContent(contentDir, "distributed", "Load Balancer")
+	if relPath == "" {
+		t.Fatal("writeSysDesignContent returned empty path")
+	}
+	expected := filepath.Join("sysdesign", "distributed", "Load Balancer.md")
+	if relPath != expected {
+		t.Errorf("relPath = %q, want %q", relPath, expected)
+	}
+
+	// Verify file exists and has content.
+	fullPath := filepath.Join(contentDir, relPath)
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("written file is empty")
+	}
+	if !strings.Contains(string(data), "# Load Balancer") {
+		t.Error("file content missing heading")
+	}
+}
+
+func TestWriteSysDesignContent_EmptyContentDir(t *testing.T) {
+	relPath := writeSysDesignContent("", "distributed", "LB")
+	if relPath != "" {
+		t.Errorf("expected empty path for empty contentDir, got %q", relPath)
+	}
+}
+
+func TestGenerateSysDesignFramework(t *testing.T) {
+	framework := generateSysDesignFramework("URL Shortener")
+	if framework == "" {
+		t.Fatal("generateSysDesignFramework returned empty")
+	}
+	if !strings.Contains(framework, "URL Shortener") {
+		t.Error("framework missing topic name")
+	}
+	if !strings.Contains(framework, "Requirements Clarification") {
+		t.Error("framework missing Requirements section")
+	}
+	if !strings.Contains(framework, "Trade-offs") {
+		t.Error("framework missing Trade-offs section")
+	}
+	if !strings.Contains(framework, "Interview Tips") {
+		t.Error("framework missing Interview Tips section")
+	}
+}
+
+// TestSystemDesignResolveTopicBySearch verifies name-only resolution (no category).
+func TestSystemDesignResolveTopicBySearch(t *testing.T) {
+	m := newSysDesignModule(t)
+
+	// Create topic without category match.
+	_, err := m.store.CreateTopic("sysdesign", "storage", "HDFS", "hard", "")
+	if err != nil {
+		t.Fatalf("CreateTopic: %v", err)
+	}
+
+	// Resolve by name only (no category, no topic_id).
+	result, err := m.Learn(map[string]interface{}{
+		"topic": "HDFS",
+	})
+	if err != nil {
+		t.Fatalf("Learn by name-only: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Learn returned nil")
+	}
+}
+
+// TestSystemDesignResolveTopicNotFound verifies error for unknown topic.
+func TestSystemDesignResolveTopicNotFound(t *testing.T) {
+	m := newSysDesignModule(t)
+
+	_, err := m.Learn(map[string]interface{}{
+		"topic": "Nonexistent Topic",
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown topic")
+	}
+}
+
+// TestSystemDesignResolveTopicMissing verifies error for no identifiers.
+func TestSystemDesignResolveTopicMissing(t *testing.T) {
+	m := newSysDesignModule(t)
+	_, err := m.Learn(map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for empty input")
 	}
 }
