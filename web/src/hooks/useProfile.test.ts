@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { renderHook, waitFor, cleanup } from '@testing-library/react';
+import { renderHook, waitFor, cleanup, act } from '@testing-library/react';
 import { useProfile } from './useProfile';
 
 // Mock authFetch
@@ -119,6 +119,128 @@ describe('useProfile', () => {
 
     await waitFor(() => {
       expect(result.current.error).toBe('DB connection failed');
+    });
+  });
+
+  it('pullFromSupabase sets pulling true during pull', async () => {
+    let resolvePull: ((v: unknown) => void) | null = null;
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (url.includes('profile_pull')) {
+        return new Promise((resolve) => { resolvePull = resolve; });
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ structured_json: '{}' }),
+      });
+    });
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let pullPromise: Promise<void>;
+    act(() => {
+      pullPromise = result.current.pullFromSupabase();
+    });
+
+    // pulling should be true while in-flight
+    await waitFor(() => expect(result.current.pulling).toBe(true));
+
+    // Resolve it
+    await act(async () => {
+      resolvePull!({ json: () => Promise.resolve({ success: true }) });
+      await pullPromise!;
+    });
+    expect(result.current.pulling).toBe(false);
+  });
+
+  it('pullFromSupabase handles network error', async () => {
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (url.includes('profile_pull')) {
+        return Promise.reject(new Error('Network timeout'));
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ structured_json: '{}' }),
+      });
+    });
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await result.current.pullFromSupabase();
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Network timeout');
+    });
+    expect(result.current.pulling).toBe(false);
+  });
+
+  it('handles non-Error in fetch catch', async () => {
+    mockAuthFetch.mockRejectedValue('string fetch error');
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.error).toBe('Failed to load profile');
+  });
+
+  it('handles non-Error in pull catch', async () => {
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (url.includes('profile_pull')) {
+        return Promise.reject('pull string error');
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ structured_json: '{}' }),
+      });
+    });
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await result.current.pullFromSupabase();
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Pull failed');
+    });
+  });
+
+  it('fetchProfile clears error on success', async () => {
+    // First call: error
+    mockAuthFetch.mockRejectedValueOnce(new Error('Temporary error'));
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('Temporary error');
+
+    // Second call: success
+    mockAuthFetch.mockResolvedValueOnce({
+      json: () => Promise.resolve({
+        structured_json: JSON.stringify({ name: 'Test' }),
+      }),
+    });
+
+    await result.current.fetchProfile();
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(result.current.profile).toEqual({ name: 'Test' });
+  });
+
+  it('pull failure with no output defaults error message', async () => {
+    mockAuthFetch.mockImplementation((url: string) => {
+      if (url.includes('profile_pull')) {
+        return Promise.resolve({
+          json: () => Promise.resolve({ success: false }),
+        });
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ structured_json: '{}' }),
+      });
+    });
+
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await result.current.pullFromSupabase();
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Pull failed');
     });
   });
 });

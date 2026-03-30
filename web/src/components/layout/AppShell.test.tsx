@@ -208,4 +208,65 @@ describe('AppShell', () => {
     expect(main).toBeTruthy();
     expect(main?.tagName).toBe('MAIN');
   });
+
+  it('has dark theme background class', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('bg-deep');
+  });
+
+  it('has noise overlay class', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('noise');
+  });
+
+  it('has overflow-hidden to prevent scroll leaking', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('overflow-hidden');
+  });
+
+  it('has full screen height', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('h-screen');
+  });
+
+  it('renders with font-body class', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('font-body');
+  });
+
+  it('renders text-fg for default text color', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('text-fg');
+  });
+
+  it('does not render right panel when positions are bottom', () => {
+    render(<AppShell />);
+    // Both chatPosition and tasksPosition are 'bottom' in mock, so no right panel
+    expect(screen.queryByTestId('right-panel')).toBeNull();
+  });
+
+  it('does not render sessions drawer when closed', () => {
+    render(<AppShell />);
+    // sessionsOpen is false in mock
+    expect(screen.queryByTestId('sessions-drawer')).toBeNull();
+  });
+
+  it('skip-to-content link has sr-only class', () => {
+    render(<AppShell />);
+    const link = screen.getByText('Skip to main content');
+    expect(link.className).toContain('sr-only');
+  });
+
+  it('shell uses flex column layout', () => {
+    render(<AppShell />);
+    const shell = screen.getByTestId('app-shell');
+    expect(shell.className).toContain('flex');
+    expect(shell.className).toContain('flex-col');
+  });
 });

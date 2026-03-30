@@ -452,4 +452,178 @@ describe('useChatSessions', () => {
     // Should restore 42 from localStorage
     expect(result.current.activeSessionId).toBe(42);
   });
+
+  // ─── Additional WS event coverage ───
+  it('handles session.created — sets active session when none active', async () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    // No active session
+    expect(result.current.activeSessionId).toBeNull();
+
+    // Simulate session.created
+    fireWS('session.created', { session: { id: 50, title: 'New' } });
+
+    expect(result.current.activeSessionId).toBe(50);
+  });
+
+  it('handles session.status_changed — updates status', async () => {
+    mockAuthFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        sessions: [{ id: 1, title: 'Test', status: 'running' }],
+      }),
+    });
+
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.sessions.length).toBe(1);
+    });
+
+    fireWS('session.status_changed', { session: { id: 1, status: 'idle' } });
+
+    expect(result.current.sessions[0]!.status).toBe('idle');
+  });
+
+  it('handles pm.notification — adds notification message', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.setActiveSessionId(1);
+    });
+
+    fireWS('pm.notification', {
+      severity: 'warning',
+      task_ids: [1, 2],
+      check: 'stale-tasks',
+      content: 'Tasks overdue',
+    }, 1);
+
+    const last = result.current.messages[result.current.messages.length - 1]!;
+    expect(last.role).toBe('assistant');
+    expect(last.pmNotification).toBeDefined();
+    expect(last.pmNotification!.severity).toBe('warning');
+    expect(last.pmNotification!.taskIds).toEqual([1, 2]);
+  });
+
+  it('handles chat.model — stores model for subsequent messages', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.setActiveSessionId(1);
+      result.current.sendMessage('Test');
+    });
+
+    fireWS('chat.model', { model: 'claude-3-opus' }, 1);
+    fireWS('chat.token', { token: 'Response' }, 1);
+
+    const assistantMsg = result.current.messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeTruthy();
+    expect(assistantMsg!.model).toBe('claude-3-opus');
+  });
+
+  it('handles chat.done without token data — preserves existing tokenUsage', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.setActiveSessionId(1);
+      result.current.sendMessage('Test');
+    });
+
+    // First done with usage
+    fireWS('chat.done', { input_tokens: 100, output_tokens: 50, context_pct: 5 }, 1);
+    expect(result.current.tokenUsage?.inputTokens).toBe(100);
+
+    // Start new stream
+    act(() => {
+      result.current.sendMessage('Again');
+    });
+
+    // Done without tokens — should preserve previous
+    fireWS('chat.done', {}, 1);
+    expect(result.current.tokenUsage?.inputTokens).toBe(100);
+  });
+
+  it('tool.call without prior assistant message creates new one', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.setActiveSessionId(1);
+      result.current.sendMessage('Test');
+    });
+
+    // Directly fire tool.call without a chat.token first
+    fireWS('tool.call', { id: 'tc-direct', name: 'analyze', input: {} }, 1);
+
+    const msgs = result.current.messages;
+    const lastAssistant = msgs[msgs.length - 1]!;
+    expect(lastAssistant.role).toBe('assistant');
+    expect(lastAssistant.toolCalls!.length).toBe(1);
+    expect(lastAssistant.toolCalls![0]!.name).toBe('analyze');
+  });
+
+  it('fetchSessions handles bare array format', async () => {
+    mockAuthFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([{ id: 1, title: 'Direct Array', status: 'idle' }]),
+    });
+
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.sessions.length).toBe(1);
+    });
+    expect(result.current.sessions[0]!.title).toBe('Direct Array');
+  });
+
+  it('fetchSessions silently handles non-ok response', async () => {
+    mockAuthFetch.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({}),
+    });
+
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    // Should not crash, sessions stay empty
+    await waitFor(() => {
+      expect(result.current.sessions).toEqual([]);
+    });
+  });
+
+  it('stopStreaming with target session id', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.stopStreaming(99);
+    });
+
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'chat.stop',
+      sessionId: '99',
+    }));
+  });
+
+  it('chat.thinking appends to existing thinking', () => {
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    act(() => {
+      result.current.setActiveSessionId(1);
+      result.current.sendMessage('Test');
+    });
+
+    fireWS('chat.thinking', { text: 'First ' }, 1);
+    fireWS('chat.thinking', { text: 'second' }, 1);
+
+    const last = result.current.messages[result.current.messages.length - 1]!;
+    expect(last.thinking).toBe('First second');
+  });
+
+  it('localStorage handles invalid values gracefully', () => {
+    localStorage.setItem('soul-active-session', 'not-a-number');
+
+    const { result } = renderHook(() => useChatSessions(), { wrapper });
+
+    // Invalid localStorage → null
+    expect(result.current.activeSessionId).toBeNull();
+  });
 });
