@@ -542,6 +542,202 @@ func TestHandleAuthorize_POST_WrongChallengeMethod(t *testing.T) {
 	}
 }
 
+func TestHandleToken_MethodNotAllowed(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	req := httptest.NewRequest("GET", "/token", nil)
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestHandleToken_UnsupportedGrantType(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rr.Body).Decode(&body)
+	if body["error"] != "unsupported_grant_type" {
+		t.Errorf("error = %q, want unsupported_grant_type", body["error"])
+	}
+}
+
+func TestHandleToken_RefreshGrant_EmptyToken(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	// Missing refresh_token.
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleToken_RefreshGrant_InvalidToken(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", "invalid.jwt.token")
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.HandleToken(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleToken_AuthCode_MissingVerifier(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+
+	// Create a valid auth code first.
+	verifier := "test-verifier-for-missing"
+	codeHash := sha256.Sum256([]byte(verifier))
+	challenge := base64URLEncode(codeHash[:])
+
+	form := url.Values{}
+	form.Set("password", testAdmin)
+	form.Set("client_id", "c1")
+	form.Set("redirect_uri", "http://localhost/cb")
+	form.Set("code_challenge", challenge)
+	form.Set("code_challenge_method", "S256")
+
+	authReq := httptest.NewRequest("POST", "/authorize", strings.NewReader(form.Encode()))
+	authReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	authRR := httptest.NewRecorder()
+	h.HandleAuthorize(authRR, authReq)
+
+	loc := authRR.Header().Get("Location")
+	locURL, _ := url.Parse(loc)
+	code := locURL.Query().Get("code")
+
+	// Exchange without code_verifier.
+	tokenForm := url.Values{}
+	tokenForm.Set("grant_type", "authorization_code")
+	tokenForm.Set("code", code)
+	// No code_verifier
+
+	tokenReq := httptest.NewRequest("POST", "/token", strings.NewReader(tokenForm.Encode()))
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenRR := httptest.NewRecorder()
+	h.HandleToken(tokenRR, tokenReq)
+	if tokenRR.Code == http.StatusOK {
+		t.Fatal("missing code_verifier should fail")
+	}
+}
+
+func TestHandleRegister_MethodNotAllowed(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	req := httptest.NewRequest("GET", "/register", nil)
+	rr := httptest.NewRecorder()
+	h.HandleRegister(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestHandleRegister_InvalidJSON(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	req := httptest.NewRequest("POST", "/register", strings.NewReader("not-json"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.HandleRegister(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestProtectedResource_MethodNotAllowed(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	req := httptest.NewRequest("POST", "/.well-known/oauth-protected-resource", nil)
+	rr := httptest.NewRecorder()
+	h.HandleProtectedResource(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestAuthorizationServer_MethodNotAllowed(t *testing.T) {
+	h := NewOAuthHandler(testSecret, testAdmin)
+	req := httptest.NewRequest("POST", "/.well-known/oauth-authorization-server", nil)
+	rr := httptest.NewRecorder()
+	h.HandleAuthorizationServer(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestOriginMiddleware_AllowedOrigin(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := OriginMiddleware([]string{"http://localhost:3002"})(inner)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("Origin", "http://localhost:3002")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestOriginMiddleware_BlockedOrigin(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := OriginMiddleware([]string{"http://localhost:3002"})(inner)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestOriginMiddleware_NoOrigin(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := OriginMiddleware([]string{"http://localhost:3002"})(inner)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for no origin, got %d", rr.Code)
+	}
+}
+
+func TestOriginMiddleware_OAuthPathBypass(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := OriginMiddleware([]string{"http://localhost:3002"})(inner)
+
+	// Even with wrong origin, OAuth paths should pass.
+	req := httptest.NewRequest("GET", "/authorize?client_id=test", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for OAuth path bypass, got %d", rr.Code)
+	}
+}
+
 func TestToken_WrongPKCEVerifier(t *testing.T) {
 	h := NewOAuthHandler(testSecret, testAdmin)
 

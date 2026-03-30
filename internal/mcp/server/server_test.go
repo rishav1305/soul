@@ -2,11 +2,14 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/rishav1305/soul/internal/mcp/auth"
 	"github.com/rishav1305/soul/internal/mcp/tools"
 )
 
@@ -461,5 +464,107 @@ func TestWithOptions(t *testing.T) {
 	}
 	if s.secret != "s3cret" {
 		t.Errorf("secret = %q, want s3cret", s.secret)
+	}
+}
+
+func TestWithOAuth(t *testing.T) {
+	h := auth.NewOAuthHandler("test-secret", "admin")
+	s := New(WithOAuth(h))
+	if s.oauth != h {
+		t.Error("expected oauth handler to be set")
+	}
+}
+
+func TestWithBaseURL_WithOAuth(t *testing.T) {
+	h := auth.NewOAuthHandler("test-secret", "admin")
+	s := New(WithOAuth(h), WithBaseURL("http://example.com"))
+	_ = s // Just exercising the option application path
+}
+
+func TestWithBaseURL_WithoutOAuth(t *testing.T) {
+	// WithBaseURL when oauth is nil should not panic.
+	s := New(WithBaseURL("http://example.com"))
+	_ = s
+}
+
+func TestStartShutdown(t *testing.T) {
+	s := New(WithHost("127.0.0.1"), WithPort(0))
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start() }()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown error: %v", err)
+	}
+}
+
+func TestRateLimitMiddleware_XForwardedFor(t *testing.T) {
+	counter := 0
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		counter++
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := rateLimitMiddleware(2)(inner)
+
+	// Two requests from same XFF IP should succeed.
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("POST", "/mcp", nil)
+		req.RemoteAddr = "127.0.0.1:5678"
+		req.Header.Set("X-Forwarded-For", "10.0.0.99")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("request %d: status = %d, want 200", i, w.Code)
+		}
+	}
+
+	// Third should be rate-limited.
+	req := httptest.NewRequest("POST", "/mcp", nil)
+	req.RemoteAddr = "127.0.0.1:5678"
+	req.Header.Set("X-Forwarded-For", "10.0.0.99")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("3rd request: status = %d, want 429", w.Code)
+	}
+}
+
+func TestRateLimitMiddleware_DifferentClients(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := rateLimitMiddleware(1)(inner)
+
+	// First client.
+	req := httptest.NewRequest("POST", "/mcp", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("client 1: status = %d, want 200", w.Code)
+	}
+
+	// Second client should also succeed (different IP).
+	req2 := httptest.NewRequest("POST", "/mcp", nil)
+	req2.RemoteAddr = "10.0.0.2:1234"
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Errorf("client 2: status = %d, want 200", w2.Code)
+	}
+}
+
+func TestHandleMCP_EmptyBody(t *testing.T) {
+	s := testServerWithRegistry(t)
+	r := httptest.NewRequest("POST", "/", bytes.NewReader(nil))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, r)
+
+	// Empty body should return parse error.
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
 	}
 }
