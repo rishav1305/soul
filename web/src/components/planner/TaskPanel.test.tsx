@@ -213,4 +213,69 @@ describe('TaskPanel', () => {
     const btn = screen.getByTestId('collapse-tasks');
     expect(btn.hasAttribute('disabled')).toBe(true);
   });
+
+  it('collapse button calls onCollapse', () => {
+    const onCollapse = vi.fn();
+    render(<TaskPanel {...defaultProps} canCollapse={true} onCollapse={onCollapse} />);
+    fireEvent.click(screen.getByTestId('collapse-tasks'));
+    expect(onCollapse).toHaveBeenCalled();
+  });
+
+  it('active view mode has active styling', () => {
+    render(<TaskPanel {...defaultProps} taskView="kanban" />);
+    const kanbanBtn = screen.getByTestId('view-mode-kanban');
+    // Active button has bg-overlay distinguishing it from non-active
+    expect(kanbanBtn.className).toContain('bg-overlay');
+  });
+
+  it('non-active view mode lacks active styling', () => {
+    render(<TaskPanel {...defaultProps} taskView="list" />);
+    const kanbanBtn = screen.getByTestId('view-mode-kanban');
+    expect(kanbanBtn.className).not.toContain('text-soul');
+  });
+
+  it('passes taskView to TaskContent', () => {
+    render(<TaskPanel {...defaultProps} taskView="kanban" />);
+    expect(screen.getByTestId('task-content').getAttribute('data-view')).toBe('kanban');
+  });
+
+  it('renders filter bar', () => {
+    render(<TaskPanel {...defaultProps} />);
+    expect(screen.getByTestId('filter-bar')).toBeTruthy();
+  });
+
+  it('filter change calls setFilters', () => {
+    const setFilters = vi.fn();
+    render(<TaskPanel {...defaultProps} setFilters={setFilters} />);
+    fireEvent.click(screen.getByTestId('filter-change'));
+    expect(setFilters).toHaveBeenCalledWith({ stage: 'active' });
+  });
+
+  it('reset width button calls setPanelWidth with null', () => {
+    const setPanelWidth = vi.fn();
+    render(<TaskPanel {...defaultProps} panelWidth={500} setPanelWidth={setPanelWidth} />);
+    fireEvent.click(screen.getByTestId('reset-panel-width'));
+    expect(setPanelWidth).toHaveBeenCalledWith(null);
+  });
+
+  it('closes new task form on form close button', () => {
+    render(<TaskPanel {...defaultProps} />);
+    fireEvent.click(screen.getByTestId('new-task-button'));
+    expect(screen.getByTestId('new-task-form')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('form-close'));
+    expect(screen.queryByTestId('new-task-form')).toBeNull();
+  });
+
+  it('shows correct task count in TaskContent', () => {
+    const filteredTasks = [makeTask({ id: 1 }), makeTask({ id: 2 })];
+    render(<TaskPanel {...defaultProps} filteredTasks={filteredTasks} />);
+    expect(screen.getByTestId('task-content').getAttribute('data-count')).toBe('2');
+  });
+
+  it('clears filters via TaskContent clear button', () => {
+    const setFilters = vi.fn();
+    render(<TaskPanel {...defaultProps} setFilters={setFilters} />);
+    fireEvent.click(screen.getByTestId('clear-filters'));
+    expect(setFilters).toHaveBeenCalledWith({ stage: 'all', priority: 'all', product: 'all' });
+  });
 });
