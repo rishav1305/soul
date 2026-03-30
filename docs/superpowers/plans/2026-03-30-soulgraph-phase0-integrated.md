@@ -49,6 +49,7 @@ Replace file-based agent memory (~109 files) and shared knowledge base (~28 file
 | Day 1 (Mar 31) | Write bulk indexer script (`scripts/index_memories.py`) | Script indexes all 109 agent memory files + 28 KB files |
 | Day 2 (Apr 1) | Run bulk index, validate counts and metadata | 137+ docs indexed, metadata correct |
 | Day 2 (Apr 1) | Write incremental indexer (for new/changed files) | `scripts/index_incremental.py` — diffing on file mtime |
+| Day 2 (Apr 1) | Set up systemd timer for incremental indexer every 30min | `soulgraph-reindex.timer` — no manual reindexing needed |
 | Day 3 (Apr 2) | Stress test: latency benchmarks, large query volumes | Benchmark report: p50/p95/p99 latency |
 
 **Collection Schema:**
@@ -102,9 +103,9 @@ Replace file-based agent memory (~109 files) and shared knowledge base (~28 file
 | Day | Task | Deliverable |
 |-----|------|-------------|
 | Day 1 (Mar 31) | Add memory query endpoints to SoulGraph API (`soulgraph/api.py`) | `POST /memory/query`, `POST /memory/upsert`, `GET /memory/health` |
-| Day 2 (Apr 1) | Agent integration: add `memory_search` curl command to 2 agents (Shuri, Pepper) | Agents query ChromaDB on session start |
+| Day 2 (Apr 1) | Agent integration: add `memory_search` skill to Xavier + Hawkeye (worst context overflow — pilot agents) | Pilot agents query ChromaDB on session start |
 | Day 2 (Apr 1) | Write integration tests | Tests for query, upsert, fallback |
-| Day 3 (Apr 2) | Rollback testing: stop ChromaDB, verify agents work without it | Documented fallback verification |
+| Day 3 (Apr 2) | Add Shuri + Pepper as Day 3 agents. Rollback testing: stop ChromaDB, verify all agents work without it | 4 agents integrated, documented fallback verification |
 
 **API Endpoints:**
 
@@ -175,9 +176,11 @@ ChromaDB is **additive only**. File-based system is untouched throughout:
 | 4 | Query latency <500ms | p95 measured on titan-pc | Banner |
 | 5 | API endpoints functional | /memory/query, /memory/upsert, /memory/health all 200 | Shuri |
 | 6 | Graceful fallback | Agents work unchanged when ChromaDB stopped | Shuri |
-| 7 | 2 agents use shared memory | Shuri + Pepper query ChromaDB in production session | Shuri |
+| 7 | 4 agents use shared memory | Xavier + Hawkeye (Day 2 pilots), Shuri + Pepper (Day 3 additions) | Shuri |
 | 8 | Frontend search works | Search component returns results matching file content | Happy |
 | 9 | No file-based regression | All existing agent workflows unchanged | All |
+| 10 | Auto-reindex every 30min | systemd timer running, incremental indexer verified | Banner |
+| 11 | Guardian monitors /memory/health | Alert on doc count drop or last_index >1hr stale | Shuri |
 
 ## 7. Daily Sync Schedule
 
@@ -194,7 +197,7 @@ ChromaDB is **additive only**. File-based system is untouched throughout:
 | ChromaDB embedding quality poor | Low | Medium | Default all-MiniLM-L6-v2 is well-tested; upgrade to OpenAI embeddings if recall <70% |
 | Large files (>8K tokens) | Medium | Low | Chunk on paragraph boundaries, preserve metadata per chunk |
 | sshfs latency on file reads during indexing | Medium | Low | Banner runs indexer on titan-pc (ChromaDB is local); only sshfs for reading source files |
-| Stale index after file edits | High | Low | Phase 0: manual re-index script. Phase 1: Redis pub/sub triggers auto-reindex |
+| Stale index after file edits | Medium | Low | systemd timer runs incremental indexer every 30min. Phase 1: Redis pub/sub triggers instant reindex |
 | Context window bloat | Medium | Medium | Limit to top 3 results, truncate to 500 tokens each |
 | CLI wrapper PoC blocks Phase 1 start | Low | High | Phase 0 is fully independent of CLI wrapper work |
 
