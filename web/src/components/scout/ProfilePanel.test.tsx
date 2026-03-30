@@ -94,4 +94,67 @@ describe('ProfilePanel', () => {
     fireEvent.click(screen.getByTestId('profile-section-projects'));
     expect(screen.getByText('https://example.com')).toBeTruthy();
   });
+
+  it('hides project URL when not present', () => {
+    render(<ProfilePanel profile={makeProfile({
+      projects: [{ name: 'No URL', description: 'A project', url: '' }],
+    })} />);
+    fireEvent.click(screen.getByTestId('profile-section-projects'));
+    expect(screen.getByText('No URL')).toBeTruthy();
+    expect(screen.getByText('A project')).toBeTruthy();
+  });
+
+  it('shows multiple experiences', () => {
+    render(<ProfilePanel profile={makeProfile({
+      experience: [
+        { title: 'Senior Engineer', company: 'Acme', duration: '2022-2024', description: 'Built systems' },
+        { title: 'Junior Engineer', company: 'Startup', duration: '2020-2022', description: 'Wrote code' },
+      ],
+    })} />);
+    expect(screen.getByText('Senior Engineer')).toBeTruthy();
+    expect(screen.getByText('Junior Engineer')).toBeTruthy();
+  });
+
+  it('shows experience description', () => {
+    render(<ProfilePanel profile={makeProfile()} />);
+    expect(screen.getByText('Built systems')).toBeTruthy();
+  });
+
+  it('shows multiple skills as badges', () => {
+    render(<ProfilePanel profile={makeProfile({
+      skills: ['Go', 'React', 'TypeScript', 'Python', 'Docker'],
+    })} />);
+    fireEvent.click(screen.getByTestId('profile-section-skills'));
+    expect(screen.getByText('Go')).toBeTruthy();
+    expect(screen.getByText('Docker')).toBeTruthy();
+    expect(screen.getByText('Python')).toBeTruthy();
+  });
+
+  it('shows Collapse/Expand text in toggle buttons', () => {
+    render(<ProfilePanel profile={makeProfile()} />);
+    // Experience is expanded → shows Collapse
+    expect(screen.getByTestId('profile-section-experience').textContent).toContain('Collapse');
+    // Projects is collapsed → shows Expand
+    expect(screen.getByTestId('profile-section-projects').textContent).toContain('Expand');
+  });
+
+  it('multiple sections can be expanded simultaneously', () => {
+    render(<ProfilePanel profile={makeProfile()} />);
+    // Experience already expanded
+    expect(screen.getByText('Senior Engineer')).toBeTruthy();
+    // Expand skills
+    fireEvent.click(screen.getByTestId('profile-section-skills'));
+    expect(screen.getByText('Go')).toBeTruthy();
+    // Experience should still be visible
+    expect(screen.getByText('Senior Engineer')).toBeTruthy();
+  });
+
+  it('shows empty count for sections with no items', () => {
+    render(<ProfilePanel profile={makeProfile({
+      certifications: [],
+      education: [],
+    })} />);
+    expect(screen.getByTestId('profile-section-certifications').textContent).toContain('Certifications (0)');
+    expect(screen.getByTestId('profile-section-education').textContent).toContain('Education (0)');
+  });
 });
