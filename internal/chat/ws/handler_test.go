@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"nhooyr.io/websocket"
 
+	"github.com/rishav1305/soul/internal/chat/metrics"
 	"github.com/rishav1305/soul/internal/chat/session"
 	"github.com/rishav1305/soul/internal/chat/stream"
 )
@@ -1410,6 +1412,610 @@ func TestWithStreamClient(t *testing.T) {
 	mh2 := NewMessageHandler(nil, nil, nil, WithStreamClient(sc))
 	if mh2.streamClient == nil {
 		t.Error("expected non-nil streamClient when set via option")
+	}
+}
+
+// --- handleSessionRename tests ---
+
+func TestHandleSessionRename_Success(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Original Title")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	renameMsg := `{"type":"session.rename","sessionId":"` + sess.ID + `","content":"New Title"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeSessionUpdated {
+		t.Errorf("expected session.updated, got %v", msg["type"])
+	}
+
+	// Verify title was updated in store.
+	updated, err := store.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if updated.Title != "New Title" {
+		t.Errorf("expected title 'New Title', got %q", updated.Title)
+	}
+}
+
+func TestHandleSessionRename_MissingSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	renameMsg := `{"type":"session.rename","content":"New Title"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "session ID required" {
+		t.Errorf("expected 'session ID required', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionRename_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	renameMsg := `{"type":"session.rename","sessionId":"not-a-uuid","content":"Title"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionRename_EmptyTitle(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Original")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	renameMsg := `{"type":"session.rename","sessionId":"` + sess.ID + `","content":""}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "title cannot be empty" {
+		t.Errorf("expected 'title cannot be empty', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionRename_SessionNotFound(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	renameMsg := `{"type":"session.rename","sessionId":"00000000-0000-0000-0000-000000000000","content":"Title"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "failed to rename session" {
+		t.Errorf("expected 'failed to rename session', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionRename_BroadcastsToAll(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Shared")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn1, cleanup1 := connectClient(t, ctx, hub)
+	defer cleanup1()
+	conn2, cleanup2 := connectClient(t, ctx, hub)
+	defer cleanup2()
+
+	_ = readMessage(t, ctx, conn1)
+	_ = readMessage(t, ctx, conn1)
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn2)
+
+	renameMsg := `{"type":"session.rename","sessionId":"` + sess.ID + `","content":"Renamed"}`
+	if err := conn1.Write(ctx, websocket.MessageText, []byte(renameMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg1 := readMessage(t, ctx, conn1)
+	if msg1["type"] != TypeSessionUpdated {
+		t.Errorf("client1: expected session.updated, got %v", msg1["type"])
+	}
+
+	msg2 := readMessage(t, ctx, conn2)
+	if msg2["type"] != TypeSessionUpdated {
+		t.Errorf("client2: expected session.updated, got %v", msg2["type"])
+	}
+}
+
+// --- handleSessionSetProduct tests ---
+
+func TestHandleSessionSetProduct_Success(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Product Test")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn) // connection.ready
+	_ = readMessage(t, ctx, conn) // session.list
+
+	setProductMsg := `{"type":"session.setProduct","sessionId":"` + sess.ID + `","product":"tasks"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(setProductMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeSessionProductSet {
+		t.Errorf("expected session.productSet, got %v", msg["type"])
+	}
+	if msg["sessionId"] != sess.ID {
+		t.Errorf("expected sessionId %s, got %v", sess.ID, msg["sessionId"])
+	}
+}
+
+func TestHandleSessionSetProduct_MissingSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	setProductMsg := `{"type":"session.setProduct","product":"tasks"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(setProductMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "session ID required" {
+		t.Errorf("expected 'session ID required', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionSetProduct_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	setProductMsg := `{"type":"session.setProduct","sessionId":"bad-id","product":"tasks"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(setProductMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	if data["error"] != "invalid session ID" {
+		t.Errorf("expected 'invalid session ID', got %v", data["error"])
+	}
+}
+
+func TestHandleSessionSetProduct_BroadcastsToAll(t *testing.T) {
+	hub, store, cancel := setupTestEnv(t)
+	defer cancel()
+
+	sess, err := store.CreateSession("Broadcast Product")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	ctx := context.Background()
+	conn1, cleanup1 := connectClient(t, ctx, hub)
+	defer cleanup1()
+	conn2, cleanup2 := connectClient(t, ctx, hub)
+	defer cleanup2()
+
+	_ = readMessage(t, ctx, conn1)
+	_ = readMessage(t, ctx, conn1)
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn2)
+
+	setProductMsg := `{"type":"session.setProduct","sessionId":"` + sess.ID + `","product":"tutor"}`
+	if err := conn1.Write(ctx, websocket.MessageText, []byte(setProductMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg1 := readMessage(t, ctx, conn1)
+	if msg1["type"] != TypeSessionProductSet {
+		t.Errorf("client1: expected session.productSet, got %v", msg1["type"])
+	}
+
+	msg2 := readMessage(t, ctx, conn2)
+	if msg2["type"] != TypeSessionProductSet {
+		t.Errorf("client2: expected session.productSet, got %v", msg2["type"])
+	}
+}
+
+// --- logAPIError tests ---
+
+func TestLogAPIError_NilMetrics(t *testing.T) {
+	// Should not panic with nil metrics.
+	hub := NewHub()
+	handler := NewMessageHandler(hub, nil, nil)
+	handler.logAPIError("test-session", errors.New("some error"))
+}
+
+func newMetricsHandler(t *testing.T) *MessageHandler {
+	t.Helper()
+	hub := NewHub()
+	mel, err := metrics.NewEventLogger(t.TempDir(), "test")
+	if err != nil {
+		t.Fatalf("NewEventLogger: %v", err)
+	}
+	return NewMessageHandler(hub, nil, mel)
+}
+
+func TestLogAPIError_AuthError(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", &stream.AuthError{Err: errors.New("bad token")})
+}
+
+func TestLogAPIError_RateLimitError(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", &stream.RateLimitError{
+		RetryAfter: 5 * time.Second,
+		Err:        errors.New("rate limited"),
+	})
+}
+
+func TestLogAPIError_ServerError(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", &stream.ServerError{
+		StatusCode: 503,
+		Err:        errors.New("service unavailable"),
+	})
+}
+
+func TestLogAPIError_DeadlineExceeded(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", context.DeadlineExceeded)
+}
+
+func TestLogAPIError_APIError(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", &stream.APIError{
+		Type:       "invalid_request",
+		Message:    "bad request",
+		StatusCode: 400,
+	})
+}
+
+func TestLogAPIError_GenericError(t *testing.T) {
+	h := newMetricsHandler(t)
+	h.logAPIError("test-session", errors.New("unknown error"))
+}
+
+// --- sendClassifiedError tests ---
+
+func TestSendClassifiedError_AuthError(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", &stream.AuthError{Err: errors.New("expired")})
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Fatalf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "re-authenticate") {
+		t.Errorf("expected auth error message, got %q", errMsg)
+	}
+}
+
+func TestSendClassifiedError_RateLimit(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", &stream.RateLimitError{
+		RetryAfter: 30 * time.Second,
+		Err:        errors.New("rate limited"),
+	})
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Fatalf("expected chat.error, got %v", msg["type"])
+	}
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "rate limited") {
+		t.Errorf("expected rate limit message, got %q", errMsg)
+	}
+}
+
+func TestSendClassifiedError_RateLimitNoRetryAfter(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", &stream.RateLimitError{
+		Err: errors.New("rate limited"),
+	})
+
+	msg := readMessage(t, ctx, conn)
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "rate limited") {
+		t.Errorf("expected rate limit message, got %q", errMsg)
+	}
+}
+
+func TestSendClassifiedError_ServerError(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", &stream.ServerError{
+		StatusCode: 503,
+		Err:        errors.New("unavailable"),
+	})
+
+	msg := readMessage(t, ctx, conn)
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "temporarily unavailable") {
+		t.Errorf("expected server error message, got %q", errMsg)
+	}
+}
+
+func TestSendClassifiedError_DeadlineExceeded(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", context.DeadlineExceeded)
+
+	msg := readMessage(t, ctx, conn)
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "timed out") {
+		t.Errorf("expected timeout message, got %q", errMsg)
+	}
+}
+
+func TestSendClassifiedError_GenericError(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	clients := hub.Clients()
+	if len(clients) == 0 {
+		t.Fatal("no clients")
+	}
+
+	hub.handler.sendClassifiedError(clients[0], "test-sess", errors.New("something broke"))
+
+	msg := readMessage(t, ctx, conn)
+	data := msg["data"].(map[string]interface{})
+	errMsg, _ := data["error"].(string)
+	if !strings.Contains(errMsg, "failed to start stream") {
+		t.Errorf("expected generic error message, got %q", errMsg)
+	}
+}
+
+// --- handleChatStop edge cases ---
+
+func TestHandleChatStop_MissingSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	stopMsg := `{"type":"chat.stop"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(stopMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+}
+
+func TestHandleChatStop_InvalidSessionID(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	stopMsg := `{"type":"chat.stop","sessionId":"not-uuid"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(stopMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	msg := readMessage(t, ctx, conn)
+	if msg["type"] != TypeChatError {
+		t.Errorf("expected chat.error, got %v", msg["type"])
+	}
+}
+
+func TestHandleChatStop_NoActiveAgent(t *testing.T) {
+	hub, _, cancel := setupTestEnv(t)
+	defer cancel()
+
+	ctx := context.Background()
+	conn, cleanup := connectClient(t, ctx, hub)
+	defer cleanup()
+
+	_ = readMessage(t, ctx, conn)
+	_ = readMessage(t, ctx, conn)
+
+	// Stop for a session that has no running agent — should be a no-op.
+	stopMsg := `{"type":"chat.stop","sessionId":"00000000-0000-0000-0000-000000000000"}`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(stopMsg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// No error should be sent — verify with short timeout.
+	msgs := drainMessages(t, conn, 150*time.Millisecond)
+	if len(msgs) > 0 {
+		t.Errorf("expected no messages for no-op stop, got %d", len(msgs))
 	}
 }
 
