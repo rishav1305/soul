@@ -460,6 +460,160 @@ func TestNewToolProgress_MessageStructure(t *testing.T) {
 	}
 }
 
+func TestNewSessionProductSet(t *testing.T) {
+	msg := NewSessionProductSet("sess-1", "scout")
+	if msg.Type != TypeSessionProductSet {
+		t.Errorf("type = %q, want %q", msg.Type, TypeSessionProductSet)
+	}
+	if msg.SessionID != "sess-1" {
+		t.Errorf("sessionID = %q, want sess-1", msg.SessionID)
+	}
+	data, ok := msg.Data.(map[string]string)
+	if !ok {
+		t.Fatal("data is not map[string]string")
+	}
+	if data["product"] != "scout" {
+		t.Errorf("product = %q, want scout", data["product"])
+	}
+}
+
+func TestNewToolCall(t *testing.T) {
+	input := json.RawMessage(`{"lead_id":42}`)
+	msg := NewToolCall("sess-1", "toolu_abc", "match_lead", input)
+	if msg.Type != TypeToolCall {
+		t.Errorf("type = %q, want %q", msg.Type, TypeToolCall)
+	}
+	if msg.SessionID != "sess-1" {
+		t.Errorf("sessionID = %q, want sess-1", msg.SessionID)
+	}
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not map[string]interface{}")
+	}
+	if data["toolId"] != "toolu_abc" {
+		t.Errorf("toolId = %v, want toolu_abc", data["toolId"])
+	}
+	if data["toolName"] != "match_lead" {
+		t.Errorf("toolName = %v, want match_lead", data["toolName"])
+	}
+
+	// Verify input is the raw JSON.
+	raw, ok := data["input"].(json.RawMessage)
+	if !ok {
+		t.Fatalf("input is not json.RawMessage, got %T", data["input"])
+	}
+	if string(raw) != `{"lead_id":42}` {
+		t.Errorf("input = %s, want {\"lead_id\":42}", string(raw))
+	}
+}
+
+func TestNewToolComplete(t *testing.T) {
+	msg := NewToolComplete("sess-1", "toolu_xyz", "match_lead", "Match score: 85%")
+	if msg.Type != TypeToolComplete {
+		t.Errorf("type = %q, want %q", msg.Type, TypeToolComplete)
+	}
+	if msg.SessionID != "sess-1" {
+		t.Errorf("sessionID = %q, want sess-1", msg.SessionID)
+	}
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not map[string]interface{}")
+	}
+	if data["toolId"] != "toolu_xyz" {
+		t.Errorf("toolId = %v, want toolu_xyz", data["toolId"])
+	}
+	if data["toolName"] != "match_lead" {
+		t.Errorf("toolName = %v, want match_lead", data["toolName"])
+	}
+	if data["result"] != "Match score: 85%" {
+		t.Errorf("result = %v, want 'Match score: 85%%'", data["result"])
+	}
+}
+
+func TestNewToolProgress_WithPositiveProgress(t *testing.T) {
+	msg := NewToolProgress("sess-1", "toolu_abc", "progress", "50% done", 0.5, 1710600000000)
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not map[string]interface{}")
+	}
+	if data["progress"] != 0.5 {
+		t.Errorf("progress = %v, want 0.5", data["progress"])
+	}
+	if data["detail"] != "50% done" {
+		t.Errorf("detail = %v, want '50%% done'", data["detail"])
+	}
+}
+
+func TestNewToolProgress_NoDetail(t *testing.T) {
+	msg := NewToolProgress("sess-1", "toolu_abc", "step", "", 0.0, 1710600000000)
+	data, ok := msg.Data.(map[string]interface{})
+	if !ok {
+		t.Fatal("data is not map[string]interface{}")
+	}
+	if _, hasDetail := data["detail"]; hasDetail {
+		t.Error("detail should be omitted when empty")
+	}
+	// progress=0.0 is >= 0, so it SHOULD be present.
+	if _, hasProgress := data["progress"]; !hasProgress {
+		t.Error("progress=0.0 should be present (only negative omitted)")
+	}
+}
+
+func TestMarshalOutbound_SessionProductSet(t *testing.T) {
+	msg := NewSessionProductSet("sess-prod", "tutor")
+	data, err := MarshalOutbound(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["type"] != TypeSessionProductSet {
+		t.Errorf("type = %v, want %v", result["type"], TypeSessionProductSet)
+	}
+	if result["sessionId"] != "sess-prod" {
+		t.Errorf("sessionId = %v, want sess-prod", result["sessionId"])
+	}
+	dataMap := result["data"].(map[string]interface{})
+	if dataMap["product"] != "tutor" {
+		t.Errorf("product = %v, want tutor", dataMap["product"])
+	}
+}
+
+func TestMarshalOutbound_ToolCall(t *testing.T) {
+	msg := NewToolCall("sess-tc", "toolu_123", "search", json.RawMessage(`{"q":"test"}`))
+	data, err := MarshalOutbound(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["type"] != TypeToolCall {
+		t.Errorf("type = %v, want %v", result["type"], TypeToolCall)
+	}
+}
+
+func TestMarshalOutbound_ToolComplete(t *testing.T) {
+	msg := NewToolComplete("sess-tc", "toolu_123", "search", "found 5 results")
+	data, err := MarshalOutbound(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["type"] != TypeToolComplete {
+		t.Errorf("type = %v, want %v", result["type"], TypeToolComplete)
+	}
+}
+
 func TestMarshalOutbound_RoundTrip(t *testing.T) {
 	original := &OutboundMessage{
 		Type:      TypeChatToken,

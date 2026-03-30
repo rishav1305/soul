@@ -81,3 +81,77 @@ func TestReplayBuffer_SessionEviction(t *testing.T) {
 		t.Fatal("expected found=false (session evicted)")
 	}
 }
+
+func TestReplayBuffer_Clear(t *testing.T) {
+	rb := NewReplayBuffer(100, 50)
+
+	rb.Store("s1", "m1", []byte("data1"))
+	rb.Store("s1", "m2", []byte("data2"))
+	rb.Store("s2", "m1", []byte("other"))
+
+	// Verify s1 exists before clear.
+	msgs, found := rb.Replay("s1", "m1")
+	if !found {
+		t.Fatal("expected s1 to exist before Clear")
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 msg, got %d", len(msgs))
+	}
+
+	// Clear s1.
+	rb.Clear("s1")
+
+	// Verify s1 is gone.
+	_, found = rb.Replay("s1", "m1")
+	if found {
+		t.Fatal("expected s1 to be gone after Clear")
+	}
+
+	// Verify s2 still exists.
+	_, found = rb.Replay("s2", "m1")
+	if !found {
+		t.Fatal("expected s2 to still exist after clearing s1")
+	}
+}
+
+func TestReplayBuffer_ClearNonexistent(t *testing.T) {
+	rb := NewReplayBuffer(100, 50)
+	// Clearing a session that doesn't exist should not panic.
+	rb.Clear("nonexistent")
+}
+
+func TestReplayBuffer_ReplayEmptyAnchor(t *testing.T) {
+	rb := NewReplayBuffer(100, 50)
+	rb.Store("s1", "m1", []byte("data"))
+
+	// Empty afterMessageID should return found=false.
+	_, found := rb.Replay("s1", "")
+	if found {
+		t.Fatal("expected found=false for empty afterMessageID")
+	}
+}
+
+func TestReplayBuffer_StoreUpdatesLRU(t *testing.T) {
+	rb := NewReplayBuffer(10, 2)
+
+	rb.Store("s1", "m1", []byte("1"))
+	rb.Store("s2", "m1", []byte("2"))
+
+	// Touch s1 again — should move it to end of LRU.
+	rb.Store("s1", "m2", []byte("3"))
+
+	// Adding s3 should now evict s2 (oldest), not s1.
+	rb.Store("s3", "m1", []byte("4"))
+
+	// s1 should still exist.
+	_, found := rb.Replay("s1", "m1")
+	if !found {
+		t.Fatal("expected s1 to survive LRU (was recently touched)")
+	}
+
+	// s2 should be evicted.
+	_, found = rb.Replay("s2", "m1")
+	if found {
+		t.Fatal("expected s2 to be evicted (oldest in LRU)")
+	}
+}

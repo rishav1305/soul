@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rishav1305/soul/internal/chat/session"
@@ -257,5 +258,173 @@ func TestBuiltinExecutor_Subagent(t *testing.T) {
 	}
 	if err.Error() != "subagent not available: no sender configured" {
 		t.Errorf("error = %q, want %q", err.Error(), "subagent not available: no sender configured")
+	}
+}
+
+func TestBuiltinExecutor_WithSender(t *testing.T) {
+	store := openTestStore(t)
+	// Use a nil sender — just verify option is applied.
+	be := NewBuiltinExecutor(store, WithSender(nil))
+	if be.sender != nil {
+		t.Error("expected sender to be nil (we passed nil)")
+	}
+}
+
+func TestBuiltinExecutor_WithProjectRoot(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store, WithProjectRoot("/tmp/testroot"))
+	if be.projectRoot != "/tmp/testroot" {
+		t.Errorf("projectRoot = %q, want /tmp/testroot", be.projectRoot)
+	}
+}
+
+func TestBuiltinExecutor_WithMultipleOptions(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store, WithProjectRoot("/srv"), WithSender(nil))
+	if be.projectRoot != "/srv" {
+		t.Errorf("projectRoot = %q, want /srv", be.projectRoot)
+	}
+}
+
+func TestBuiltinExecutor_ExecuteCustom(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	// Create a custom tool that echoes a greeting.
+	_, err := store.CreateCustomTool("greet", "Echo greeting", "{}", "echo Hello from custom tool")
+	if err != nil {
+		t.Fatalf("create tool: %v", err)
+	}
+
+	result, err := be.Execute(context.Background(), "custom_greet", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("custom_greet: %v", err)
+	}
+	if !strings.Contains(result, "Hello from custom tool") {
+		t.Errorf("result = %q, expected to contain 'Hello from custom tool'", result)
+	}
+}
+
+func TestBuiltinExecutor_ExecuteCustomWithParams(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	// Create a tool that uses env var param.
+	_, err := store.CreateCustomTool("paramtool", "Use param", "{}", "echo $PARAM_NAME")
+	if err != nil {
+		t.Fatalf("create tool: %v", err)
+	}
+
+	input, _ := json.Marshal(map[string]string{"name": "World"})
+	result, err := be.Execute(context.Background(), "custom_paramtool", input)
+	if err != nil {
+		t.Fatalf("custom_paramtool: %v", err)
+	}
+	if !strings.Contains(result, "World") {
+		t.Errorf("result = %q, expected to contain 'World'", result)
+	}
+}
+
+func TestBuiltinExecutor_ExecuteCustomNotFound(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "custom_nonexistent", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for nonexistent custom tool")
+	}
+	if !strings.Contains(err.Error(), "custom tool not found") {
+		t.Errorf("error = %q, expected to contain 'custom tool not found'", err.Error())
+	}
+}
+
+func TestBuiltinExecutor_ExecuteCustomInvalidJSON(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := store.CreateCustomTool("badinput", "test", "{}", "echo ok")
+	if err != nil {
+		t.Fatalf("create tool: %v", err)
+	}
+
+	_, err = be.Execute(context.Background(), "custom_badinput", []byte(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON input")
+	}
+}
+
+func TestBuiltinExecutor_MemoryStoreMissingKey(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	input, _ := json.Marshal(map[string]string{"content": "no key provided"})
+	_, err := be.Execute(context.Background(), "memory_store", input)
+	if err == nil {
+		t.Fatal("expected error when key is missing")
+	}
+}
+
+func TestBuiltinExecutor_MemorySearchMissingQuery(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "memory_search", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error when query is missing")
+	}
+}
+
+func TestBuiltinExecutor_MemoryDeleteMissingKey(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "memory_delete", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error when key is missing")
+	}
+}
+
+func TestBuiltinExecutor_ToolCreateMissingFields(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	// Missing command_template.
+	input, _ := json.Marshal(map[string]string{
+		"name":        "incomplete",
+		"description": "missing cmd",
+	})
+	_, err := be.Execute(context.Background(), "tool_create", input)
+	if err == nil {
+		t.Fatal("expected error when command_template is missing")
+	}
+}
+
+func TestBuiltinExecutor_ToolDeleteMissingName(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "tool_delete", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error when name is missing")
+	}
+}
+
+func TestBuiltinExecutor_InvalidInputJSON(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "memory_store", []byte(`not valid json`))
+	if err == nil {
+		t.Fatal("expected error for invalid input JSON")
+	}
+}
+
+func TestBuiltinExecutor_UnknownToolMgmt(t *testing.T) {
+	store := openTestStore(t)
+	be := NewBuiltinExecutor(store)
+
+	_, err := be.Execute(context.Background(), "tool_unknown", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for unknown tool_* tool")
 	}
 }
