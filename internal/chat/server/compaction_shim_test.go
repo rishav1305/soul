@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResponsesCompact_ReturnsCompactionMarker(t *testing.T) {
@@ -381,6 +382,416 @@ func TestCompactionShim_GetNotFound(t *testing.T) {
 	_, ok := shim.get("nonexistent-token")
 	if ok {
 		t.Error("expected false for nonexistent token")
+	}
+}
+
+// --- Additional coverage tests ---
+
+func TestExtractInputMessages_StringInput(t *testing.T) {
+	msgs := extractInputMessages("hello world")
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Role != "user" {
+		t.Errorf("role = %q, want user", msgs[0].Role)
+	}
+	if msgs[0].Text != "hello world" {
+		t.Errorf("text = %q, want 'hello world'", msgs[0].Text)
+	}
+}
+
+func TestExtractInputMessages_EmptyString(t *testing.T) {
+	msgs := extractInputMessages("   ")
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for whitespace-only string, got %d", len(msgs))
+	}
+}
+
+func TestExtractInputMessages_SingleMap(t *testing.T) {
+	msgs := extractInputMessages(map[string]interface{}{
+		"role":    "assistant",
+		"content": "I can help.",
+	})
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Role != "assistant" {
+		t.Errorf("role = %q, want assistant", msgs[0].Role)
+	}
+	if msgs[0].Text != "I can help." {
+		t.Errorf("text = %q", msgs[0].Text)
+	}
+}
+
+func TestExtractInputMessages_NilInput(t *testing.T) {
+	msgs := extractInputMessages(nil)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for nil, got %d", len(msgs))
+	}
+}
+
+func TestExtractInputMessages_IntInput(t *testing.T) {
+	msgs := extractInputMessages(42)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for int, got %d", len(msgs))
+	}
+}
+
+func TestExtractInputMessages_ArrayOfStrings(t *testing.T) {
+	msgs := extractInputMessages([]interface{}{"hello", "world"})
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Text != "hello" || msgs[1].Text != "world" {
+		t.Errorf("texts = %q, %q", msgs[0].Text, msgs[1].Text)
+	}
+}
+
+func TestExtractInputMessages_ArrayWithEmptyStrings(t *testing.T) {
+	msgs := extractInputMessages([]interface{}{"hello", "   ", "world"})
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (skip empty), got %d", len(msgs))
+	}
+}
+
+func TestExtractInputMessages_ArrayMixed(t *testing.T) {
+	msgs := extractInputMessages([]interface{}{
+		"direct string",
+		map[string]interface{}{"role": "assistant", "content": "map message"},
+		42, // non-string/non-map items are silently skipped
+	})
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+}
+
+func TestExtractInputMessages_MapCompactionSkipped(t *testing.T) {
+	msgs := extractInputMessages(map[string]interface{}{
+		"type":              "compaction",
+		"encrypted_content": "tok_123",
+	})
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for compaction map, got %d", len(msgs))
+	}
+}
+
+func TestParseInputMessage_CompactionType(t *testing.T) {
+	_, ok := parseInputMessage(map[string]interface{}{
+		"type":              "compaction",
+		"encrypted_content": "tok_123",
+	})
+	if ok {
+		t.Error("expected false for compaction type")
+	}
+}
+
+func TestParseInputMessage_EmptyContent(t *testing.T) {
+	_, ok := parseInputMessage(map[string]interface{}{
+		"role":    "user",
+		"content": "",
+	})
+	if ok {
+		t.Error("expected false for empty content")
+	}
+}
+
+func TestParseInputMessage_TextFallback(t *testing.T) {
+	msg, ok := parseInputMessage(map[string]interface{}{
+		"role": "developer",
+		"text": "fallback text",
+	})
+	if !ok {
+		t.Fatal("expected true")
+	}
+	if msg.Role != "developer" {
+		t.Errorf("role = %q, want developer", msg.Role)
+	}
+	if msg.Text != "fallback text" {
+		t.Errorf("text = %q", msg.Text)
+	}
+}
+
+func TestParseInputMessage_NoRole(t *testing.T) {
+	msg, ok := parseInputMessage(map[string]interface{}{
+		"content": "no role specified",
+	})
+	if !ok {
+		t.Fatal("expected true")
+	}
+	if msg.Role != "user" {
+		t.Errorf("role = %q, want user (default)", msg.Role)
+	}
+}
+
+func TestCopyForwardHeaders(t *testing.T) {
+	src := http.Header{}
+	src.Set("Authorization", "Bearer tok123")
+	src.Set("Content-Type", "application/json")
+	src.Set("Content-Length", "42")
+	src.Set("Host", "example.com")
+	src.Set("X-Custom", "keep-me")
+
+	dst := http.Header{}
+	copyForwardHeaders(dst, src)
+
+	if dst.Get("Authorization") != "Bearer tok123" {
+		t.Error("expected Authorization header to be forwarded")
+	}
+	if dst.Get("X-Custom") != "keep-me" {
+		t.Error("expected X-Custom header to be forwarded")
+	}
+	if dst.Get("Content-Length") != "" {
+		t.Error("expected Content-Length to be skipped")
+	}
+	if dst.Get("Host") != "" {
+		t.Error("expected Host to be skipped")
+	}
+}
+
+func TestCopyForwardHeaders_Empty(t *testing.T) {
+	dst := http.Header{}
+	copyForwardHeaders(dst, http.Header{})
+	if len(dst) != 0 {
+		t.Errorf("expected empty dst, got %d headers", len(dst))
+	}
+}
+
+func TestCompactionShim_GetExpired(t *testing.T) {
+	shim := newCompactionShim("")
+	shim.ttl = 1 * time.Millisecond
+
+	token := shim.put("expiring summary")
+
+	// Wait for TTL to expire.
+	time.Sleep(5 * time.Millisecond)
+
+	_, ok := shim.get(token)
+	if ok {
+		t.Error("expected false for expired record")
+	}
+}
+
+func TestCompactionShim_CleanupRemovesExpired(t *testing.T) {
+	shim := newCompactionShim("")
+	shim.ttl = 1 * time.Millisecond
+
+	shim.put("old1")
+	shim.put("old2")
+
+	// Wait for TTL to expire, then put a new record which triggers cleanup.
+	time.Sleep(5 * time.Millisecond)
+	shim.put("new")
+
+	shim.mu.RLock()
+	count := len(shim.store)
+	shim.mu.RUnlock()
+
+	if count != 1 {
+		t.Errorf("expected 1 record after cleanup, got %d", count)
+	}
+}
+
+func TestCompactionShim_NilPutGet(t *testing.T) {
+	var shim *compactionShim
+	token := shim.put("test")
+	if token != "" {
+		t.Errorf("expected empty token from nil shim, got %q", token)
+	}
+	_, ok := shim.get("any")
+	if ok {
+		t.Error("expected false from nil shim get")
+	}
+}
+
+func TestCompactionShim_NilCleanup(t *testing.T) {
+	var shim *compactionShim
+	// Should not panic.
+	shim.cleanupLocked(time.Now())
+}
+
+func TestExpandInput_NonArray(t *testing.T) {
+	shim := newCompactionShim("")
+	result, changed := shim.expandInput("not an array")
+	if changed {
+		t.Error("expected changed=false for non-array")
+	}
+	if result != "not an array" {
+		t.Errorf("expected original value returned")
+	}
+}
+
+func TestExpandInput_EmptyArray(t *testing.T) {
+	shim := newCompactionShim("")
+	result, changed := shim.expandInput([]interface{}{})
+	if changed {
+		t.Error("expected changed=false for empty array")
+	}
+	_ = result
+}
+
+func TestExpandInput_CompactionNotFound(t *testing.T) {
+	shim := newCompactionShim("")
+	input := []interface{}{
+		map[string]interface{}{
+			"type":              "compaction",
+			"encrypted_content": "nonexistent_token",
+		},
+		map[string]interface{}{
+			"type": "message",
+			"role": "user",
+		},
+	}
+	result, changed := shim.expandInput(input)
+	// When compaction token is not found, item is silently dropped but changed stays false.
+	if changed {
+		t.Error("expected changed=false when compaction not found")
+	}
+	expanded := result.([]interface{})
+	// Compaction item was dropped, only message remains.
+	if len(expanded) != 1 {
+		t.Errorf("expected 1 item after dropping unfound compaction, got %d", len(expanded))
+	}
+}
+
+func TestExpandInput_NonObjectItems(t *testing.T) {
+	shim := newCompactionShim("")
+	input := []interface{}{"string item", 42, true}
+	result, changed := shim.expandInput(input)
+	if changed {
+		t.Error("expected changed=false for non-object items")
+	}
+	expanded := result.([]interface{})
+	if len(expanded) != 3 {
+		t.Errorf("expected 3 items, got %d", len(expanded))
+	}
+}
+
+func TestHandleResponsesCompact_InvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses/compact", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleResponsesCompact_EmptyInput(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses/compact",
+		strings.NewReader(`{"model":"test","input":[]}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty input, got %d", rec.Code)
+	}
+}
+
+func TestHandleResponses_InvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleResponses_NoUpstream(t *testing.T) {
+	// newTestServer creates a server without upstream configured.
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses",
+		strings.NewReader(`{"model":"test","input":"hello"}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for no upstream, got %d", rec.Code)
+	}
+}
+
+func TestHandleResponses_QueryParams(t *testing.T) {
+	var capturedURL string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer upstream.Close()
+
+	t.Setenv("SOUL_LITELLM_UPSTREAM_URL", upstream.URL)
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses?beta=v2",
+		strings.NewReader(`{"model":"test","input":"hello"}`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(capturedURL, "beta=v2") {
+		t.Errorf("expected query param forwarded, captured URL: %q", capturedURL)
+	}
+}
+
+func TestExtractText_MapWithContentKey(t *testing.T) {
+	got := extractText(map[string]interface{}{
+		"content": "content value",
+	})
+	if got != "content value" {
+		t.Errorf("extractText map content = %q, want 'content value'", got)
+	}
+}
+
+func TestExtractText_ArrayWithContentFallback(t *testing.T) {
+	got := extractText([]interface{}{
+		map[string]interface{}{"content": "fallback content"},
+	})
+	if got != "fallback content" {
+		t.Errorf("extractText = %q, want 'fallback content'", got)
+	}
+}
+
+func TestHandleResponsesCompact_WithStringInput(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := `{"model":"test","input":"What is the meaning of life?"}`
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses/compact", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	output, _ := resp["output"].([]interface{})
+	if len(output) == 0 {
+		t.Fatal("expected non-empty output")
+	}
+}
+
+func TestHandleResponsesCompact_FallbackToMessages(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Uses "messages" key instead of "input" — compact should fall back.
+	body := `{"model":"test","messages":[{"role":"user","content":"test message"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/litellm/v1/responses/compact", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
