@@ -3,6 +3,7 @@ package store
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -636,5 +637,72 @@ func TestCascadeDelete(t *testing.T) {
 	projKW, _ = s.ListProjectKeywords(pidInt)
 	if len(projKW) != 0 {
 		t.Fatalf("expected 0 project keywords after cascade, got %d", len(projKW))
+	}
+}
+
+func TestUpsertDailyActivity(t *testing.T) {
+	s := openTestStore(t)
+	err := s.UpsertDailyActivity("2026-03-30", 300, 2, 1)
+	if err != nil {
+		t.Fatalf("UpsertDailyActivity: %v", err)
+	}
+	// Upsert again — should accumulate time_spent and milestones.
+	err = s.UpsertDailyActivity("2026-03-30", 200, 3, 2)
+	if err != nil {
+		t.Fatalf("UpsertDailyActivity (upsert): %v", err)
+	}
+
+	activities, err := s.GetActivity(7)
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if len(activities) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(activities))
+	}
+	// time_spent should be accumulated: 300 + 200 = 500
+	if activities[0].TimeSpentSeconds != 500 {
+		t.Errorf("TimeSpentSeconds = %d, want 500", activities[0].TimeSpentSeconds)
+	}
+	// milestones should be accumulated: 1 + 2 = 3
+	if activities[0].MilestonesCompleted != 3 {
+		t.Errorf("MilestonesCompleted = %d, want 3", activities[0].MilestonesCompleted)
+	}
+}
+
+func TestGetActivity_Empty(t *testing.T) {
+	s := openTestStore(t)
+	activities, err := s.GetActivity(30)
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if activities != nil && len(activities) != 0 {
+		t.Errorf("expected empty activities, got %d", len(activities))
+	}
+}
+
+func TestGetActivity_RespectsDays(t *testing.T) {
+	s := openTestStore(t)
+	// Insert activity for today and 10 days ago.
+	today := time.Now().Format("2006-01-02")
+	tenDaysAgo := time.Now().AddDate(0, 0, -10).Format("2006-01-02")
+	s.UpsertDailyActivity(today, 100, 1, 1)
+	s.UpsertDailyActivity(tenDaysAgo, 50, 1, 0)
+
+	// Query last 5 days — should only get today.
+	activities, err := s.GetActivity(5)
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if len(activities) != 1 {
+		t.Errorf("expected 1 activity in last 5 days, got %d", len(activities))
+	}
+
+	// Query last 15 days — should get both.
+	all, err := s.GetActivity(15)
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2 activities in last 15 days, got %d", len(all))
 	}
 }

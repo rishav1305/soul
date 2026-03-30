@@ -513,3 +513,84 @@ func TestConfidenceGaps(t *testing.T) {
 		t.Fatalf("expected 0 gaps above 5.0, got %d", len(noGaps))
 	}
 }
+
+func TestGetTodayActivity(t *testing.T) {
+	s := openTestStore(t)
+	today := time.Now().Format("2006-01-02")
+
+	// Seed activity for today.
+	s.UpsertDailyActivity(today, "dsa", 300, 1, 5, 80)
+	s.UpsertDailyActivity(today, "ai", 200, 1, 3, 70)
+	// Activity for yesterday — should NOT appear.
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	s.UpsertDailyActivity(yesterday, "dsa", 100, 1, 2, 60)
+
+	results, err := s.GetTodayActivity()
+	if err != nil {
+		t.Fatalf("GetTodayActivity: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 today activities, got %d", len(results))
+	}
+}
+
+func TestGetTodayActivity_Empty(t *testing.T) {
+	s := openTestStore(t)
+	results, err := s.GetTodayActivity()
+	if err != nil {
+		t.Fatalf("GetTodayActivity: %v", err)
+	}
+	if results != nil && len(results) != 0 {
+		t.Errorf("expected empty results, got %d", len(results))
+	}
+}
+
+func TestUpsertStarStory(t *testing.T) {
+	s := openTestStore(t)
+	ss, err := s.UpsertStarStory("leadership", "Led team of 5", "Deliver feature", "Coordinated sprints", "Shipped on time", "soul-v2", )
+	if err != nil {
+		t.Fatalf("UpsertStarStory: %v", err)
+	}
+	if ss.Competency != "leadership" {
+		t.Errorf("Competency = %q, want leadership", ss.Competency)
+	}
+	if ss.Version != 1 {
+		t.Errorf("Version = %d, want 1", ss.Version)
+	}
+}
+
+func TestUpsertStarStory_Versioning(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertStarStory("teamwork", "v1 sit", "v1 task", "v1 act", "v1 res", "proj1")
+	ss2, err := s.UpsertStarStory("teamwork", "v2 sit", "v2 task", "v2 act", "v2 res", "proj2")
+	if err != nil {
+		t.Fatalf("UpsertStarStory v2: %v", err)
+	}
+	if ss2.Version != 2 {
+		t.Errorf("Version = %d, want 2", ss2.Version)
+	}
+	if ss2.Situation != "v2 sit" {
+		t.Errorf("Situation = %q, want 'v2 sit'", ss2.Situation)
+	}
+}
+
+func TestGetStarStory(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertStarStory("problem-solving", "Debugged prod issue", "Find root cause", "Used tracing", "Fixed in 2h", "soul-v2")
+
+	ss, err := s.GetStarStory("problem-solving")
+	if err != nil {
+		t.Fatalf("GetStarStory: %v", err)
+	}
+	if ss.Competency != "problem-solving" {
+		t.Errorf("Competency = %q, want problem-solving", ss.Competency)
+	}
+}
+
+func TestGetStarStory_NotFound(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.GetStarStory("nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent competency")
+	}
+}
