@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,5 +111,85 @@ func TestExecutorRunningCount(t *testing.T) {
 
 	if got := e.RunningCount(); got != 1 {
 		t.Fatalf("expected RunningCount 1, got %d", got)
+	}
+}
+
+func TestBuildSystemPrompt_Micro(t *testing.T) {
+	task := &store.Task{Title: "Fix typo", Description: "Correct spelling in README"}
+	prompt := buildSystemPrompt(task, "micro")
+	if !strings.Contains(prompt, "Fix typo") {
+		t.Error("expected task title in prompt")
+	}
+	if !strings.Contains(prompt, "Correct spelling in README") {
+		t.Error("expected description in prompt")
+	}
+	if !strings.Contains(prompt, "trivial change") {
+		t.Error("expected micro workflow guidance")
+	}
+	if !strings.Contains(prompt, "file_read") {
+		t.Error("expected tool listing")
+	}
+}
+
+func TestBuildSystemPrompt_Quick(t *testing.T) {
+	task := &store.Task{Title: "Add endpoint"}
+	prompt := buildSystemPrompt(task, "quick")
+	if !strings.Contains(prompt, "straightforward change") {
+		t.Error("expected quick workflow guidance")
+	}
+}
+
+func TestBuildSystemPrompt_Complex(t *testing.T) {
+	task := &store.Task{Title: "Refactor auth", Description: "Major overhaul"}
+	prompt := buildSystemPrompt(task, "full")
+	if !strings.Contains(prompt, "complex task") {
+		t.Error("expected complex workflow guidance")
+	}
+}
+
+func TestBuildSystemPrompt_NoDescription(t *testing.T) {
+	task := &store.Task{Title: "Quick fix"}
+	prompt := buildSystemPrompt(task, "micro")
+	if strings.Contains(prompt, "Description:") {
+		t.Error("expected no Description line when description is empty")
+	}
+}
+
+func TestBuildUserPrompt_WithDescription(t *testing.T) {
+	task := &store.Task{Title: "Add tests", Description: "Cover the auth module"}
+	prompt := buildUserPrompt(task)
+	if !strings.Contains(prompt, "Add tests") {
+		t.Error("expected title in user prompt")
+	}
+	if !strings.Contains(prompt, "Cover the auth module") {
+		t.Error("expected description in user prompt")
+	}
+}
+
+func TestBuildUserPrompt_NoDescription(t *testing.T) {
+	task := &store.Task{Title: "Fix bug"}
+	prompt := buildUserPrompt(task)
+	if prompt != "Implement: Fix bug" {
+		t.Errorf("prompt = %q, want 'Implement: Fix bug'", prompt)
+	}
+}
+
+func TestMarkBlocked(t *testing.T) {
+	s := openTestStore(t)
+	e := New(Config{Store: s})
+
+	task, err := s.Create("block me", "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	e.markBlocked(task.ID, "dependency missing")
+
+	got, err := s.Get(task.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Stage != "blocked" {
+		t.Errorf("stage = %q, want blocked", got.Stage)
 	}
 }

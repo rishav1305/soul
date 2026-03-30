@@ -186,3 +186,108 @@ func TestToolDefinitions(t *testing.T) {
 		}
 	}
 }
+
+func TestToolListFiles(t *testing.T) {
+	ts := newTestToolSet(t)
+	// Create some files in the root dir.
+	os.WriteFile(filepath.Join(ts.rootDir, "a.go"), []byte("package a"), 0644)
+	os.WriteFile(filepath.Join(ts.rootDir, "b.go"), []byte("package b"), 0644)
+
+	got, err := ts.Execute("list_files", mustMarshal(t, map[string]string{"path": "."}))
+	if err != nil {
+		t.Fatalf("list_files: %v", err)
+	}
+	if !strings.Contains(got, "a.go") {
+		t.Errorf("expected a.go in output, got: %q", got)
+	}
+	if !strings.Contains(got, "b.go") {
+		t.Errorf("expected b.go in output, got: %q", got)
+	}
+}
+
+func TestToolListFiles_Recursive(t *testing.T) {
+	ts := newTestToolSet(t)
+	subDir := filepath.Join(ts.rootDir, "sub")
+	os.MkdirAll(subDir, 0755)
+	os.WriteFile(filepath.Join(subDir, "nested.go"), []byte("package sub"), 0644)
+
+	got, err := ts.Execute("list_files", mustMarshal(t, map[string]interface{}{
+		"path":      ".",
+		"recursive": true,
+	}))
+	if err != nil {
+		t.Fatalf("list_files recursive: %v", err)
+	}
+	if !strings.Contains(got, "nested.go") {
+		t.Errorf("expected nested.go in recursive listing, got: %q", got)
+	}
+}
+
+func TestToolListFiles_Empty(t *testing.T) {
+	ts := newTestToolSet(t)
+	emptyDir := filepath.Join(ts.rootDir, "empty")
+	os.MkdirAll(emptyDir, 0755)
+
+	got, err := ts.Execute("list_files", mustMarshal(t, map[string]string{"path": "empty"}))
+	if err != nil {
+		t.Fatalf("list_files empty: %v", err)
+	}
+	if got != "(empty directory)" {
+		t.Errorf("expected '(empty directory)', got: %q", got)
+	}
+}
+
+func TestToolListFiles_EmptyInput(t *testing.T) {
+	ts := newTestToolSet(t)
+	os.WriteFile(filepath.Join(ts.rootDir, "file.txt"), []byte("test"), 0644)
+
+	got, err := ts.Execute("list_files", "{}")
+	if err != nil {
+		t.Fatalf("list_files empty input: %v", err)
+	}
+	if !strings.Contains(got, "file.txt") {
+		t.Errorf("expected file.txt in output, got: %q", got)
+	}
+}
+
+func TestToolTaskUpdate(t *testing.T) {
+	ts := newTestToolSet(t)
+
+	got, err := ts.Execute("task_update", mustMarshal(t, map[string]string{
+		"stage": "active",
+		"note":  "starting work",
+	}))
+	if err != nil {
+		t.Fatalf("task_update: %v", err)
+	}
+	if !strings.Contains(got, "stage=active") {
+		t.Errorf("expected 'stage=active' in output, got: %q", got)
+	}
+	if !strings.Contains(got, "starting work") {
+		t.Errorf("expected note in output, got: %q", got)
+	}
+}
+
+func TestToolTaskUpdate_StageOnly(t *testing.T) {
+	ts := newTestToolSet(t)
+
+	got, err := ts.Execute("task_update", mustMarshal(t, map[string]string{"stage": "validation"}))
+	if err != nil {
+		t.Fatalf("task_update: %v", err)
+	}
+	if !strings.Contains(got, "stage=validation") {
+		t.Errorf("expected 'stage=validation' in output, got: %q", got)
+	}
+}
+
+func TestToolTaskUpdate_EmptyInput(t *testing.T) {
+	ts := newTestToolSet(t)
+
+	got, err := ts.Execute("task_update", "{}")
+	if err != nil {
+		t.Fatalf("task_update empty: %v", err)
+	}
+	if !strings.Contains(got, "no changes") {
+		t.Errorf("expected 'no changes' in output, got: %q", got)
+	}
+}
