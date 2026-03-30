@@ -1375,3 +1375,41 @@ func TestRunStream_CanceledContext_SilentReturn(t *testing.T) {
 	}
 }
 
+// --- MessageHandler option tests ---
+
+func TestWithDispatcher(t *testing.T) {
+	mh := NewMessageHandler(nil, nil, nil)
+	if mh.dispatcher != nil {
+		t.Error("expected nil dispatcher by default")
+	}
+	// WithDispatcher(nil) should not panic
+	mh2 := NewMessageHandler(nil, nil, nil, WithDispatcher(nil))
+	if mh2.dispatcher != nil {
+		t.Error("expected nil dispatcher when passed nil")
+	}
+}
+
+func TestWithBuiltinExecutor(t *testing.T) {
+	mh := NewMessageHandler(nil, nil, nil)
+	if mh.builtin != nil {
+		t.Error("expected nil builtin by default")
+	}
+	be := NewBuiltinExecutor(nil)
+	mh2 := NewMessageHandler(nil, nil, nil, WithBuiltinExecutor(be))
+	if mh2.builtin == nil {
+		t.Error("expected non-nil builtin when set via option")
+	}
+}
+
+func TestWithStreamClient(t *testing.T) {
+	mh := NewMessageHandler(nil, nil, nil)
+	if mh.streamClient != nil {
+		t.Error("expected nil streamClient by default")
+	}
+	sc := &stream.Client{}
+	mh2 := NewMessageHandler(nil, nil, nil, WithStreamClient(sc))
+	if mh2.streamClient == nil {
+		t.Error("expected non-nil streamClient when set via option")
+	}
+}
+

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -429,6 +430,89 @@ func TestGenerateClientID(t *testing.T) {
 	}
 	if len(id1) < 10 {
 		t.Errorf("expected client ID length >= 10, got %d", len(id1))
+	}
+}
+
+func TestNewHub_WithMessageHandler(t *testing.T) {
+	mh := NewMessageHandler(nil, nil, nil)
+	h := NewHub(WithMessageHandler(mh))
+	if h.handler == nil {
+		t.Fatal("expected handler to be set")
+	}
+}
+
+func TestNewHub_WithConnectionHealth(t *testing.T) {
+	ch := metrics.NewConnectionHealth(time.Minute)
+	h := NewHub(WithConnectionHealth(ch))
+	if h.ConnectionHealth() != ch {
+		t.Error("expected ConnectionHealth to return the same instance")
+	}
+}
+
+func TestNewHub_WithReplayBuffer(t *testing.T) {
+	rb := NewReplayBuffer(100, 10)
+	h := NewHub(WithReplayBuffer(rb))
+	if h.ReplayBuffer() != rb {
+		t.Error("expected ReplayBuffer to return the same instance")
+	}
+}
+
+func TestConnectionHealth_NilByDefault(t *testing.T) {
+	h := NewHub()
+	if h.ConnectionHealth() != nil {
+		t.Error("expected nil connection health by default")
+	}
+}
+
+func TestReplayBuffer_NilByDefault(t *testing.T) {
+	h := NewHub()
+	if h.ReplayBuffer() != nil {
+		t.Error("expected nil replay buffer by default")
+	}
+}
+
+func TestBroadcastJSON(t *testing.T) {
+	h := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go h.Run(ctx)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.HandleUpgrade(w, r)
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + srv.URL[len("http"):]
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain the connection.ready message that's sent on connect
+	readCtx, readCancel := context.WithTimeout(ctx, 2*time.Second)
+	_, _, _ = conn.Read(readCtx)
+	readCancel()
+
+	// Broadcast a JSON message
+	h.BroadcastJSON("test.event", map[string]string{"key": "value"})
+
+	// Read the broadcast from the client
+	readCtx2, readCancel2 := context.WithTimeout(ctx, 2*time.Second)
+	defer readCancel2()
+	_, msg, err := conn.Read(readCtx2)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if !strings.Contains(string(msg), `"type":"test.event"`) {
+		t.Errorf("expected type test.event in message, got %s", msg)
+	}
+	if !strings.Contains(string(msg), `"key":"value"`) {
+		t.Errorf("expected key:value in message, got %s", msg)
 	}
 }
 
