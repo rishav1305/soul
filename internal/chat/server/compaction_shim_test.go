@@ -134,6 +134,256 @@ func TestResponses_ExpandsCompactionBeforeForwarding(t *testing.T) {
 	}
 }
 
+// --- Compaction shim internal function tests ---
+
+func TestCanonicalRole(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"assistant", "assistant"},
+		{"ASSISTANT", "assistant"},
+		{" assistant ", "assistant"},
+		{"developer", "developer"},
+		{"system", "system"},
+		{"user", "user"},
+		{"anything_else", "user"},
+		{"", "user"},
+	}
+	for _, tt := range tests {
+		got := canonicalRole(tt.input)
+		if got != tt.want {
+			t.Errorf("canonicalRole(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeWhitespace(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"  hello   world  ", "hello world"},
+		{"no extra spaces", "no extra spaces"},
+		{"\n\ttabs and\nnewlines\n", "tabs and newlines"},
+		{"", ""},
+		{"   ", ""},
+	}
+	for _, tt := range tests {
+		got := normalizeWhitespace(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeWhitespace(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestClipText(t *testing.T) {
+	tests := []struct {
+		input string
+		max   int
+		want  string
+	}{
+		{"hello", 10, "hello"},
+		{"hello world", 5, "he..."},
+		{"", 10, ""},
+		{"abc", 3, "abc"},
+		{"abcd", 3, "abc"},
+		{"hello", 0, "hello"}, // max <= 0 returns as-is
+		{"hello world this is long", 15, "hello world ..."},
+	}
+	for _, tt := range tests {
+		got := clipText(tt.input, tt.max)
+		if got != tt.want {
+			t.Errorf("clipText(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.want)
+		}
+	}
+}
+
+func TestTailStrings(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []string
+		n     int
+		want  int
+	}{
+		{"nil items", nil, 3, 0},
+		{"empty items", []string{}, 3, 0},
+		{"fewer than n", []string{"a", "b"}, 5, 2},
+		{"exact n", []string{"a", "b", "c"}, 3, 3},
+		{"more than n", []string{"a", "b", "c", "d", "e"}, 3, 3},
+		{"n=0", []string{"a"}, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tailStrings(tt.items, tt.n)
+			if len(got) != tt.want {
+				t.Errorf("tailStrings(..., %d) returned %d items, want %d", tt.n, len(got), tt.want)
+			}
+		})
+	}
+
+	// Verify tail semantics: returns last n items
+	result := tailStrings([]string{"a", "b", "c", "d"}, 2)
+	if result[0] != "c" || result[1] != "d" {
+		t.Errorf("tailStrings should return last items, got %v", result)
+	}
+}
+
+func TestStringField(t *testing.T) {
+	tests := []struct {
+		name  string
+		m     map[string]interface{}
+		key   string
+		want  string
+	}{
+		{"string value", map[string]interface{}{"k": "v"}, "k", "v"},
+		{"missing key", map[string]interface{}{"k": "v"}, "missing", ""},
+		{"nil map", nil, "k", ""},
+		{"nil value", map[string]interface{}{"k": nil}, "k", ""},
+		{"int value", map[string]interface{}{"k": 42}, "k", "42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stringField(tt.m, tt.key)
+			if got != tt.want {
+				t.Errorf("stringField(..., %q) = %q, want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  string
+	}{
+		{"string", "hello world", "hello world"},
+		{"string with whitespace", "  hello   world  ", "hello world"},
+		{"map with text", map[string]interface{}{"text": "from map"}, "from map"},
+		{"map with content", map[string]interface{}{"content": "from content"}, "from content"},
+		{"empty map", map[string]interface{}{}, ""},
+		{"nil", nil, ""},
+		{"array of strings", []interface{}{"part1", "part2"}, "part1 part2"},
+		{"array of maps", []interface{}{
+			map[string]interface{}{"type": "input_text", "text": "first"},
+			map[string]interface{}{"type": "input_text", "text": "second"},
+		}, "first second"},
+		{"array skips compaction", []interface{}{
+			map[string]interface{}{"type": "compaction", "text": "skip"},
+			map[string]interface{}{"type": "input_text", "text": "keep"},
+		}, "keep"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractText(tt.input)
+			if got != tt.want {
+				t.Errorf("extractText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildCompactionSummary_Empty(t *testing.T) {
+	result := buildCompactionSummary(nil)
+	if result != "No prior context." {
+		t.Errorf("expected 'No prior context.', got %q", result)
+	}
+}
+
+func TestBuildCompactionSummary_WithMessages(t *testing.T) {
+	msgs := []inputMessage{
+		{Role: "user", Text: "How do I deploy?"},
+		{Role: "assistant", Text: "You can deploy using make deploy."},
+		{Role: "user", Text: "What about rollback?"},
+	}
+
+	result := buildCompactionSummary(msgs)
+	if !strings.Contains(result, "Conversation Summary") {
+		t.Error("expected summary header")
+	}
+	if !strings.Contains(result, "User intents:") {
+		t.Error("expected User intents section")
+	}
+	if !strings.Contains(result, "Assistant progress:") {
+		t.Error("expected Assistant progress section")
+	}
+	if !strings.Contains(result, "deploy") {
+		t.Error("expected deploy keyword in summary")
+	}
+	if !strings.Contains(result, "Open questions:") {
+		t.Error("expected open questions for messages with '?'")
+	}
+}
+
+func TestBuildRetainedOutput_Empty(t *testing.T) {
+	result := buildRetainedOutput(nil, 3)
+	if result != nil {
+		t.Errorf("expected nil for empty messages, got %v", result)
+	}
+
+	result = buildRetainedOutput([]inputMessage{{Role: "user", Text: "hi"}}, 0)
+	if result != nil {
+		t.Errorf("expected nil for n=0, got %v", result)
+	}
+}
+
+func TestBuildRetainedOutput_KeepsLastN(t *testing.T) {
+	msgs := []inputMessage{
+		{Role: "user", Text: "first"},
+		{Role: "assistant", Text: "second"},
+		{Role: "user", Text: "third"},
+	}
+
+	result := buildRetainedOutput(msgs, 2)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 retained messages, got %d", len(result))
+	}
+
+	// Should be the last 2 messages
+	if result[0]["role"] != "assistant" {
+		t.Errorf("expected first retained role=assistant, got %v", result[0]["role"])
+	}
+	if result[1]["role"] != "user" {
+		t.Errorf("expected second retained role=user, got %v", result[1]["role"])
+	}
+}
+
+func TestNewRandomID(t *testing.T) {
+	id1 := newRandomID("test")
+	id2 := newRandomID("test")
+	if id1 == id2 {
+		t.Error("expected unique IDs")
+	}
+	if !strings.HasPrefix(id1, "test_") {
+		t.Errorf("expected prefix 'test_', got %q", id1)
+	}
+}
+
+func TestCompactionShim_PutGet(t *testing.T) {
+	shim := newCompactionShim("")
+	token := shim.put("test summary content")
+	if token == "" {
+		t.Fatal("expected non-empty token")
+	}
+
+	record, ok := shim.get(token)
+	if !ok {
+		t.Fatal("expected to find record")
+	}
+	if record.Summary != "test summary content" {
+		t.Errorf("expected summary 'test summary content', got %q", record.Summary)
+	}
+}
+
+func TestCompactionShim_GetNotFound(t *testing.T) {
+	shim := newCompactionShim("")
+	_, ok := shim.get("nonexistent-token")
+	if ok {
+		t.Error("expected false for nonexistent token")
+	}
+}
+
 func TestAuthMiddleware_ProtectsLiteLLMRoutes(t *testing.T) {
 	srv := New(WithAuthToken("secret123"))
 	ts := httptest.NewServer(srv.Handler())

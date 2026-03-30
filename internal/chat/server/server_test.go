@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1426,5 +1427,410 @@ func TestHandleTelemetry_BatchedPayload_SkipsInvalidType(t *testing.T) {
 	s.handleTelemetry(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Errorf("expected 204 (partial ingestion), got %d", w.Code)
+	}
+}
+
+// --- handleTelemetry additional tests ---
+
+func TestHandleTelemetry_SingleEvent_Returns204(t *testing.T) {
+	s := newTestServerWithMetrics(t)
+	body := `{"type":"frontend.error","data":{"message":"test error"}}`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTelemetry_SingleEvent_UnknownType_Returns400(t *testing.T) {
+	s := newTestServerWithMetrics(t)
+	body := `{"type":"bad.type","data":{}}`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unknown type, got %d", w.Code)
+	}
+}
+
+func TestHandleTelemetry_NoMetrics_Returns503(t *testing.T) {
+	s := newTestServer(t) // no metrics configured
+	body := `{"type":"frontend.error","data":{}}`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when metrics nil, got %d", w.Code)
+	}
+}
+
+func TestHandleTelemetry_InvalidJSON_Returns400(t *testing.T) {
+	s := newTestServerWithMetrics(t)
+	body := `not json at all`
+	req := httptest.NewRequest("POST", "/api/telemetry", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	s.handleTelemetry(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+}
+
+// --- handleCACert tests ---
+
+func TestHandleCACert_TLSNotConfigured(t *testing.T) {
+	srv := newTestServer(t) // no TLS
+	req := httptest.NewRequest("GET", "/api/ca.crt", nil)
+	rec := httptest.NewRecorder()
+	srv.handleCACert(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "TLS not configured" {
+		t.Errorf("expected 'TLS not configured', got %q", body["error"])
+	}
+}
+
+func TestHandleCACert_CertFileExists(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "server.crt")
+	caPath := filepath.Join(dir, "ca.crt")
+
+	os.WriteFile(certPath, []byte("server cert"), 0600)
+	os.WriteFile(caPath, []byte("CA CERT CONTENT"), 0600)
+
+	srv := newTestServer(t, WithTLS(certPath, filepath.Join(dir, "server.key")))
+	req := httptest.NewRequest("GET", "/api/ca.crt", nil)
+	rec := httptest.NewRecorder()
+	srv.handleCACert(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/x-x509-ca-cert" {
+		t.Errorf("expected x509 content type, got %q", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "soul-v2-ca.crt") {
+		t.Errorf("expected disposition with filename, got %q", cd)
+	}
+	if rec.Body.String() != "CA CERT CONTENT" {
+		t.Errorf("expected CA cert content, got %q", rec.Body.String())
+	}
+}
+
+func TestHandleCACert_CACertMissing(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "server.crt")
+	os.WriteFile(certPath, []byte("server cert"), 0600)
+	// intentionally no ca.crt
+
+	srv := newTestServer(t, WithTLS(certPath, filepath.Join(dir, "server.key")))
+	req := httptest.NewRequest("GET", "/api/ca.crt", nil)
+	rec := httptest.NewRecorder()
+	srv.handleCACert(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["error"] != "CA certificate not found" {
+		t.Errorf("expected 'CA certificate not found', got %q", body["error"])
+	}
+}
+
+// --- bodyLimitMiddleware tests ---
+
+func TestBodyLimitMiddleware_RejectsOversizedPOST(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := bodyLimitMiddleware(100)(inner)
+
+	// Oversized body (200 bytes > 100 limit)
+	bigBody := strings.Repeat("x", 200)
+	req := httptest.NewRequest("POST", "/api/test", strings.NewReader(bigBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d", rec.Code)
+	}
+}
+
+func TestBodyLimitMiddleware_AllowsGET(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := bodyLimitMiddleware(10)(inner)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for GET, got %d", rec.Code)
+	}
+}
+
+func TestBodyLimitMiddleware_AllowsSmallPOST(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "error", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := bodyLimitMiddleware(1024)(inner)
+
+	req := httptest.NewRequest("POST", "/api/test", strings.NewReader("small"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for small body, got %d", rec.Code)
+	}
+}
+
+// --- isValidUUID tests ---
+
+func TestIsValidUUID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"00000000-0000-4000-8000-000000000000", true},
+		{"a1b2c3d4-e5f6-7890-abcd-ef1234567890", true},
+		{"A1B2C3D4-E5F6-7890-ABCD-EF1234567890", true},
+		{"", false},
+		{"not-a-uuid", false},
+		{"00000000-0000-4000-8000-00000000000", false},  // too short
+		{"00000000-0000-4000-8000-0000000000000", false}, // too long
+		{"0000000000004000800000000000000000000", false},  // no dashes
+		{"00000000-0000-4000-8000-00000000000g", false},  // invalid char 'g'
+		{"00000000 0000-4000-8000-000000000000", false},  // space instead of dash
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isValidUUID(tt.input); got != tt.want {
+				t.Errorf("isValidUUID(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- generateRequestID tests ---
+
+func TestGenerateRequestID_Unique(t *testing.T) {
+	var counter uint64
+	ids := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		id := generateRequestID(&counter)
+		if ids[id] {
+			t.Fatalf("duplicate request ID: %s", id)
+		}
+		ids[id] = true
+	}
+}
+
+func TestGenerateRequestID_Format(t *testing.T) {
+	var counter uint64
+	id := generateRequestID(&counter)
+	if !strings.Contains(id, "-") {
+		t.Errorf("expected request ID to contain '-', got %q", id)
+	}
+	if len(id) < 10 {
+		t.Errorf("request ID too short: %q", id)
+	}
+}
+
+// --- StaticDirExists tests ---
+
+func TestStaticDirExists(t *testing.T) {
+	dir := t.TempDir()
+	if !StaticDirExists(dir) {
+		t.Error("expected true for existing directory")
+	}
+	if StaticDirExists("/nonexistent/path/that/should/not/exist") {
+		t.Error("expected false for nonexistent path")
+	}
+
+	// File, not directory
+	f := filepath.Join(dir, "file.txt")
+	os.WriteFile(f, []byte("x"), 0644)
+	if StaticDirExists(f) {
+		t.Error("expected false for file (not directory)")
+	}
+}
+
+// --- EnsureStaticDir tests ---
+
+func TestEnsureStaticDir_Valid(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html></html>"), 0644)
+	if err := EnsureStaticDir(dir); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
+func TestEnsureStaticDir_NotExist(t *testing.T) {
+	err := EnsureStaticDir("/nonexistent/path/xyz")
+	if err == nil {
+		t.Error("expected error for nonexistent dir")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("expected 'does not exist' in error, got %q", err)
+	}
+}
+
+func TestEnsureStaticDir_NotADir(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "file.txt")
+	os.WriteFile(f, []byte("x"), 0644)
+	err := EnsureStaticDir(f)
+	if err == nil {
+		t.Error("expected error for file (not dir)")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("expected 'not a directory' in error, got %q", err)
+	}
+}
+
+func TestEnsureStaticDir_MissingIndex(t *testing.T) {
+	dir := t.TempDir()
+	err := EnsureStaticDir(dir)
+	if err == nil {
+		t.Error("expected error for missing index.html")
+	}
+	if !strings.Contains(err.Error(), "index.html not found") {
+		t.Errorf("expected 'index.html not found' in error, got %q", err)
+	}
+}
+
+// --- FileExistsInDir tests ---
+
+func TestFileExistsInDir_Exists(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0644)
+
+	exists, info, err := FileExistsInDir(dir, "test.txt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected file to exist")
+	}
+	if info == nil {
+		t.Error("expected non-nil FileInfo")
+	}
+}
+
+func TestFileExistsInDir_NotExists(t *testing.T) {
+	dir := t.TempDir()
+	exists, info, err := FileExistsInDir(dir, "missing.txt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected file to not exist")
+	}
+	if info != nil {
+		t.Error("expected nil FileInfo")
+	}
+}
+
+func TestFileExistsInDir_Directory(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "subdir")
+	os.Mkdir(subdir, 0755)
+
+	exists, info, err := FileExistsInDir(dir, "subdir")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected false for directory")
+	}
+	if info != nil {
+		t.Error("expected nil FileInfo for directory")
+	}
+}
+
+func TestFileExistsInDir_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := FileExistsInDir(dir, "../../etc/passwd")
+	if err == nil {
+		t.Error("expected error for path traversal")
+	}
+	if !strings.Contains(err.Error(), "path traversal") {
+		t.Errorf("expected 'path traversal' in error, got %q", err)
+	}
+}
+
+// --- Server Shutdown test ---
+
+func TestServerShutdown(t *testing.T) {
+	srv := newTestServer(t)
+	srv.startTime = time.Now()
+
+	ctx := context.Background()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown: %v", err)
+	}
+}
+
+// --- Server Handler and ServeHTTP ---
+
+func TestServerHandler_ReturnsHandler(t *testing.T) {
+	srv := New(WithPort(0))
+	h := srv.Handler()
+	if h == nil {
+		t.Fatal("Handler() returned nil")
+	}
+}
+
+func TestServerServeHTTP_DelegatesToHandler(t *testing.T) {
+	srv := New(WithPort(0))
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+// --- handleWSTicket via HTTP ---
+
+func TestHandleWSTicket_ReturnsTicket(t *testing.T) {
+	srv := New(WithAuthToken("secret"))
+	req := httptest.NewRequest("GET", "/api/ws-ticket", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWSTicket(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["ticket"] == "" {
+		t.Error("expected non-empty ticket")
+	}
+	if len(body["ticket"]) < 16 {
+		t.Errorf("ticket too short: %q", body["ticket"])
 	}
 }
