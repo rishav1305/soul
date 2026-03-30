@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import KanbanBoard from './KanbanBoard';
 import type { PlannerTask, TaskStage } from '../../lib/types';
 
@@ -150,5 +150,140 @@ describe('KanbanBoard', () => {
     render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
     fireEvent.click(screen.getByTestId('kanban-batch-mode'));
     expect(screen.getByText('Select all (3)')).toBeTruthy();
+  });
+
+  it('select all marks all tasks as selected', () => {
+    const tasks = [
+      makeTask({ id: 1, stage: 'active' }),
+      makeTask({ id: 2, stage: 'backlog' }),
+    ];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('kanban-select-all'));
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    expect(screen.getByTestId('mock-task-1').getAttribute('data-selected')).toBe('true');
+    expect(screen.getByTestId('mock-task-2').getAttribute('data-selected')).toBe('true');
+  });
+
+  it('toggling task selection updates selected count', () => {
+    const tasks = [
+      makeTask({ id: 1, stage: 'active' }),
+      makeTask({ id: 2, stage: 'active' }),
+    ];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    // Select first task
+    fireEvent.click(screen.getByTestId('mock-task-1'));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    // Select second
+    fireEvent.click(screen.getByTestId('mock-task-2'));
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    // Deselect first
+    fireEvent.click(screen.getByTestId('mock-task-1'));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+  });
+
+  it('batch move calls authFetch with correct endpoint', async () => {
+    const { authFetch } = await import('../../lib/api.ts') as { authFetch: ReturnType<typeof vi.fn> };
+    authFetch.mockClear();
+    const tasks = [makeTask({ id: 10, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-10'));
+    // Find the Move to select and pick "done"
+    const moveSelect = screen.getByDisplayValue('Move to...');
+    await act(async () => {
+      fireEvent.change(moveSelect, { target: { value: 'done' } });
+    });
+    expect(authFetch).toHaveBeenCalledWith('/api/tasks/10/move', expect.objectContaining({
+      method: 'POST',
+    }));
+  });
+
+  it('batch delete calls authFetch with DELETE method', async () => {
+    const { authFetch } = await import('../../lib/api.ts') as { authFetch: ReturnType<typeof vi.fn> };
+    authFetch.mockClear();
+    const tasks = [makeTask({ id: 5, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-5'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Delete'));
+    });
+    expect(authFetch).toHaveBeenCalledWith('/api/tasks/5', { method: 'DELETE' });
+  });
+
+  it('batch priority calls authFetch with PATCH and priority value', async () => {
+    const { authFetch } = await import('../../lib/api.ts') as { authFetch: ReturnType<typeof vi.fn> };
+    authFetch.mockClear();
+    const tasks = [makeTask({ id: 7, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-7'));
+    const prioritySelect = screen.getByDisplayValue('Priority...');
+    await act(async () => {
+      fireEvent.change(prioritySelect, { target: { value: '3' } });
+    });
+    expect(authFetch).toHaveBeenCalledWith('/api/tasks/7', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ priority: 3 }),
+    }));
+  });
+
+  it('batch product calls authFetch with PATCH and product value', async () => {
+    const { authFetch } = await import('../../lib/api.ts') as { authFetch: ReturnType<typeof vi.fn> };
+    authFetch.mockClear();
+    const tasks = [makeTask({ id: 8, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} products={['chat', 'tasks']} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-8'));
+    const productSelect = screen.getByDisplayValue('Product...');
+    await act(async () => {
+      fireEvent.change(productSelect, { target: { value: 'tasks' } });
+    });
+    expect(authFetch).toHaveBeenCalledWith('/api/tasks/8', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ product: 'tasks' }),
+    }));
+  });
+
+  it('exits batch mode after successful batch operation', async () => {
+    const tasks = [makeTask({ id: 1, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-1'));
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Delete'));
+    });
+    // Should exit batch mode after successful delete
+    expect(screen.getByTestId('kanban-batch-mode')).toBeTruthy();
+    expect(screen.queryByText('0 selected')).toBeNull();
+  });
+
+  it('does not pass onTaskClick to StageColumn in batch mode', () => {
+    const onTaskClick = vi.fn();
+    const tasks = [makeTask({ id: 1, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={onTaskClick} />);
+    // Normal mode: clicking task should call onTaskClick via mock
+    fireEvent.click(screen.getByTestId('mock-task-1'));
+    expect(onTaskClick).toHaveBeenCalled();
+    onTaskClick.mockClear();
+    // Enter batch mode: clicking task should toggle select, not call onTaskClick
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('mock-task-1'));
+    expect(onTaskClick).not.toHaveBeenCalled();
+  });
+
+  it('clears selection when exiting batch mode', () => {
+    const tasks = [makeTask({ id: 1, stage: 'active' }), makeTask({ id: 2, stage: 'active' })];
+    render(<KanbanBoard tasksByStage={makeTasksByStage(tasks)} onTaskClick={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    fireEvent.click(screen.getByTestId('kanban-select-all'));
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('kanban-exit-batch'));
+    // Re-enter batch mode — should start fresh
+    fireEvent.click(screen.getByTestId('kanban-batch-mode'));
+    expect(screen.getByText('0 selected')).toBeTruthy();
   });
 });
