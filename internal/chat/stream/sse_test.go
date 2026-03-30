@@ -435,3 +435,168 @@ func TestParseError_Unwrap(t *testing.T) {
 		t.Fatal("expected wrapped error")
 	}
 }
+
+func TestParseError_ErrorFormat(t *testing.T) {
+	pe := &ParseError{
+		EventType: "content_block_start",
+		RawData:   "bad data",
+		Err:       io.ErrUnexpectedEOF,
+	}
+	got := pe.Error()
+	if !strings.Contains(got, "content_block_start") {
+		t.Errorf("expected event type in message, got %q", got)
+	}
+	if !strings.Contains(got, "unexpected EOF") {
+		t.Errorf("expected inner error in message, got %q", got)
+	}
+}
+
+func TestParseSSEData_EmptyData(t *testing.T) {
+	// Empty data string returns event with type only.
+	input := "event: message_stop\ndata: \n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	evt, err := p.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.Type != "message_stop" {
+		t.Errorf("expected message_stop, got %q", evt.Type)
+	}
+}
+
+func TestParseSSEData_UnknownEventInvalidJSON(t *testing.T) {
+	// Unknown event with unparseable data — should return event without error.
+	input := "event: custom_weird\ndata: not-json-at-all\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	evt, err := p.Next()
+	if err != nil {
+		t.Fatalf("unexpected error for unknown event: %v", err)
+	}
+	if evt.Type != "custom_weird" {
+		t.Errorf("expected custom_weird, got %q", evt.Type)
+	}
+}
+
+func TestSSEParser_ToolUseContentBlock(t *testing.T) {
+	input := `event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_abc","name":"read_file"}}
+
+`
+	p := NewSSEParser(strings.NewReader(input))
+
+	evt, err := p.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.ContentBlock == nil {
+		t.Fatal("expected ContentBlock non-nil")
+	}
+	if evt.ContentBlock.Type != "tool_use" {
+		t.Errorf("expected tool_use, got %q", evt.ContentBlock.Type)
+	}
+	if evt.ContentBlock.Name != "read_file" {
+		t.Errorf("expected read_file, got %q", evt.ContentBlock.Name)
+	}
+	if evt.Index != 1 {
+		t.Errorf("expected index 1, got %d", evt.Index)
+	}
+}
+
+func TestSSEParser_MessageDeltaMaxTokens(t *testing.T) {
+	input := `event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}
+
+`
+	p := NewSSEParser(strings.NewReader(input))
+
+	evt, err := p.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.StopReason != "max_tokens" {
+		t.Errorf("expected max_tokens, got %q", evt.StopReason)
+	}
+	if evt.Usage == nil || evt.Usage.OutputTokens != 4096 {
+		t.Errorf("expected 4096 output tokens, got %+v", evt.Usage)
+	}
+}
+
+func TestSSEParser_ErrorEventInvalidJSON(t *testing.T) {
+	input := "event: error\ndata: {not valid json\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	_, err := p.Next()
+	if err == nil {
+		t.Fatal("expected error for invalid JSON in error event")
+	}
+	pe, ok := err.(*ParseError)
+	if !ok {
+		t.Fatalf("expected *ParseError, got %T", err)
+	}
+	if pe.EventType != "error" {
+		t.Errorf("expected event type 'error', got %q", pe.EventType)
+	}
+}
+
+func TestSSEParser_ContentBlockDeltaInvalidJSON(t *testing.T) {
+	input := "event: content_block_delta\ndata: {broken\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	_, err := p.Next()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	pe, ok := err.(*ParseError)
+	if !ok {
+		t.Fatalf("expected *ParseError, got %T", err)
+	}
+	if pe.EventType != "content_block_delta" {
+		t.Errorf("expected content_block_delta, got %q", pe.EventType)
+	}
+}
+
+func TestSSEParser_ContentBlockStopInvalidJSON(t *testing.T) {
+	input := "event: content_block_stop\ndata: not-json\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	_, err := p.Next()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestSSEParser_MessageDeltaInvalidJSON(t *testing.T) {
+	input := "event: message_delta\ndata: {invalid\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	_, err := p.Next()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestSSEParser_OnlyRetryFields(t *testing.T) {
+	input := "retry: 1000\nretry: 2000\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	_, err := p.Next()
+	if err != io.EOF {
+		t.Fatalf("expected io.EOF, got %v", err)
+	}
+}
+
+func TestSSEParser_UnknownFields(t *testing.T) {
+	// Unknown field lines should be silently skipped.
+	input := "id: 12345\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	p := NewSSEParser(strings.NewReader(input))
+
+	evt, err := p.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.Type != "message_stop" {
+		t.Errorf("expected message_stop, got %q", evt.Type)
+	}
+}

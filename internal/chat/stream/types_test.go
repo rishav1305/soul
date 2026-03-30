@@ -2,8 +2,10 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRequestValidate_EmptyMessages(t *testing.T) {
@@ -345,5 +347,181 @@ func TestContentBlockTextExtraction(t *testing.T) {
 	want := "Part 1. Part 2."
 	if got := m.TextContent(); got != want {
 		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+// --- Error type .Error() method coverage ---
+
+func TestAuthError_Error(t *testing.T) {
+	inner := errors.New("bad token")
+	e := &AuthError{Err: inner}
+	got := e.Error()
+	if !strings.Contains(got, "authentication failed") {
+		t.Errorf("expected 'authentication failed', got %q", got)
+	}
+	if !strings.Contains(got, "bad token") {
+		t.Errorf("expected inner error message, got %q", got)
+	}
+}
+
+func TestRateLimitError_Error(t *testing.T) {
+	inner := errors.New("too many requests")
+	e := &RateLimitError{RetryAfter: 30 * time.Second, Err: inner}
+	got := e.Error()
+	if !strings.Contains(got, "rate limited") {
+		t.Errorf("expected 'rate limited', got %q", got)
+	}
+	if !strings.Contains(got, "30s") {
+		t.Errorf("expected retry duration in message, got %q", got)
+	}
+	if !strings.Contains(got, "too many requests") {
+		t.Errorf("expected inner error, got %q", got)
+	}
+}
+
+func TestServerError_Error(t *testing.T) {
+	inner := errors.New("internal failure")
+	e := &ServerError{StatusCode: 503, Err: inner}
+	got := e.Error()
+	if !strings.Contains(got, "server error") {
+		t.Errorf("expected 'server error', got %q", got)
+	}
+	if !strings.Contains(got, "503") {
+		t.Errorf("expected status code, got %q", got)
+	}
+	if !strings.Contains(got, "internal failure") {
+		t.Errorf("expected inner error, got %q", got)
+	}
+}
+
+func TestIncompleteStreamError_WithLastEvent(t *testing.T) {
+	e := &IncompleteStreamError{LastEvent: &SSEEvent{Type: "content_block_delta"}}
+	got := e.Error()
+	if !strings.Contains(got, "stream ended without message_stop") {
+		t.Errorf("expected base message, got %q", got)
+	}
+	if !strings.Contains(got, "content_block_delta") {
+		t.Errorf("expected last event type, got %q", got)
+	}
+}
+
+func TestIncompleteStreamError_NilLastEvent(t *testing.T) {
+	e := &IncompleteStreamError{}
+	got := e.Error()
+	if got != "stream ended without message_stop" {
+		t.Errorf("expected plain message, got %q", got)
+	}
+}
+
+func TestTruncateBody_Short(t *testing.T) {
+	got := truncateBody([]byte("short"), 100)
+	if got != "short" {
+		t.Errorf("expected 'short', got %q", got)
+	}
+}
+
+func TestTruncateBody_ExactLen(t *testing.T) {
+	data := []byte("12345")
+	got := truncateBody(data, 5)
+	if got != "12345" {
+		t.Errorf("expected '12345', got %q", got)
+	}
+}
+
+func TestTruncateBody_Long(t *testing.T) {
+	data := []byte("abcdefghij") // 10 bytes
+	got := truncateBody(data, 5)
+	if got != "abcde...(truncated)" {
+		t.Errorf("expected truncated, got %q", got)
+	}
+}
+
+func TestTruncateBody_Empty(t *testing.T) {
+	got := truncateBody(nil, 100)
+	if got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestRequestValidate_SkipValidation(t *testing.T) {
+	// With SkipValidation, non-alternating roles and invalid roles (after user) should be OK.
+	r := &Request{
+		MaxTokens:      100,
+		SkipValidation: true,
+		Messages: []Message{
+			{Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}},
+			{Role: "user", Content: []ContentBlock{{Type: "text", Text: "tool result"}}},
+		},
+	}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("expected skip to allow non-alternating, got: %v", err)
+	}
+}
+
+func TestThinkingParam_JSON(t *testing.T) {
+	tp := &ThinkingParam{Type: "enabled", BudgetTokens: 1000}
+	data, err := json.Marshal(tp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ThinkingParam
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Type != "enabled" || decoded.BudgetTokens != 1000 {
+		t.Errorf("round-trip mismatch: %+v", decoded)
+	}
+}
+
+func TestImageSource_JSON(t *testing.T) {
+	src := &ImageSource{Type: "base64", MediaType: "image/png", Data: "abc123"}
+	data, err := json.Marshal(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ImageSource
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Type != "base64" || decoded.MediaType != "image/png" || decoded.Data != "abc123" {
+		t.Errorf("round-trip mismatch: %+v", decoded)
+	}
+}
+
+func TestContentBlock_ToolUseJSON(t *testing.T) {
+	cb := ContentBlock{
+		Type:      "tool_use",
+		ID:        "tu_123",
+		Name:      "read_file",
+		Input:     json.RawMessage(`{"path":"test.go"}`),
+	}
+	data, err := json.Marshal(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "tool_use") {
+		t.Error("expected tool_use in JSON")
+	}
+	if !strings.Contains(string(data), "tu_123") {
+		t.Error("expected tool use ID in JSON")
+	}
+}
+
+func TestContentBlock_ToolResultJSON(t *testing.T) {
+	cb := ContentBlock{
+		Type:      "tool_result",
+		ToolUseID: "tu_123",
+		Content:   "file contents here",
+	}
+	data, err := json.Marshal(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ContentBlock
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ToolUseID != "tu_123" || decoded.Content != "file contents here" {
+		t.Errorf("round-trip mismatch: %+v", decoded)
 	}
 }

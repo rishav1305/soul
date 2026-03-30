@@ -104,6 +104,246 @@ func TestNewClient_MultipleOptions(t *testing.T) {
 	}
 }
 
+func TestNewClient_WithBetaHeader(t *testing.T) {
+	ts := &mockTokenSource{token: "test-token"}
+	c := NewClient(ts, WithBetaHeader("oauth-2025-04-20,prompt-caching-2024-07-31"))
+
+	if c.betaHeader != "oauth-2025-04-20,prompt-caching-2024-07-31" {
+		t.Fatalf("expected custom beta header, got %q", c.betaHeader)
+	}
+}
+
+func TestNewClient_DefaultBetaHeader(t *testing.T) {
+	ts := &mockTokenSource{token: "test-token"}
+	c := NewClient(ts)
+	if c.betaHeader != "prompt-caching-2024-07-31" {
+		t.Fatalf("expected default beta header, got %q", c.betaHeader)
+	}
+}
+
+func TestStream_BetaHeaderSent(t *testing.T) {
+	var capturedBeta string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBeta = r.Header.Get("anthropic-beta")
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_b\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test\",\"content\":[]}}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test-token"}
+	c := NewClient(ts, WithBaseURL(srv.URL), WithBetaHeader("custom-beta-header"))
+
+	ch, err := c.Stream(context.Background(), validRequest())
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+	for range ch {
+	}
+
+	if capturedBeta != "custom-beta-header" {
+		t.Errorf("expected custom beta header, got %q", capturedBeta)
+	}
+}
+
+func TestSend_TokenSourceError(t *testing.T) {
+	ts := &mockTokenSource{err: errors.New("token revoked")}
+	c := NewClient(ts)
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error when token source fails")
+	}
+	if !containsStr(err.Error(), "get token") {
+		t.Errorf("expected 'get token' in error, got %q", err.Error())
+	}
+}
+
+func TestSend_Handles401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "bad"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 401")
+	}
+	var authErr *AuthError
+	if !errors.As(err, &authErr) {
+		t.Errorf("expected AuthError, got %T: %v", err, err)
+	}
+}
+
+func TestSend_Handles429(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "15")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 429")
+	}
+	var rlErr *RateLimitError
+	if !errors.As(err, &rlErr) {
+		t.Errorf("expected RateLimitError, got %T: %v", err, err)
+	}
+	if rlErr.RetryAfter != 15*time.Second {
+		t.Errorf("expected 15s retry, got %v", rlErr.RetryAfter)
+	}
+}
+
+func TestSend_Handles502(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":"bad gateway"}}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 502")
+	}
+	var srvErr *ServerError
+	if !errors.As(err, &srvErr) {
+		t.Errorf("expected ServerError, got %T: %v", err, err)
+	}
+	if srvErr.StatusCode != 502 {
+		t.Errorf("expected status 502, got %d", srvErr.StatusCode)
+	}
+}
+
+func TestSend_Handles503(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `not json`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 503")
+	}
+	var srvErr *ServerError
+	if !errors.As(err, &srvErr) {
+		t.Errorf("expected ServerError, got %T: %v", err, err)
+	}
+}
+
+func TestHandleErrorResponse_NoErrorDetail(t *testing.T) {
+	// When response JSON has type but no nested error object.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"type":"invalid_request_error"}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Errorf("expected APIError, got %T: %v", err, err)
+	}
+}
+
+func TestHandleErrorResponse_InvalidJSON(t *testing.T) {
+	// Totally invalid JSON body.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `this is not json`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Errorf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Type != "unknown" {
+		t.Errorf("expected type 'unknown', got %q", apiErr.Type)
+	}
+}
+
+func TestHandleErrorResponse_429NoRetryAfter(t *testing.T) {
+	// 429 without Retry-After header.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var rlErr *RateLimitError
+	if !errors.As(err, &rlErr) {
+		t.Errorf("expected RateLimitError, got %T", err)
+	}
+	if rlErr.RetryAfter != 0 {
+		t.Errorf("expected zero RetryAfter, got %v", rlErr.RetryAfter)
+	}
+}
+
+func TestHandleErrorResponse_429InvalidRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "not-a-number")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow"}}`)
+	}))
+	defer srv.Close()
+
+	ts := &mockTokenSource{token: "test"}
+	c := NewClient(ts, WithBaseURL(srv.URL))
+
+	_, err := c.Send(context.Background(), validRequest())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var rlErr *RateLimitError
+	if !errors.As(err, &rlErr) {
+		t.Errorf("expected RateLimitError, got %T", err)
+	}
+	if rlErr.RetryAfter != 0 {
+		t.Errorf("expected zero RetryAfter for invalid header, got %v", rlErr.RetryAfter)
+	}
+}
+
 func TestTokenSourceInterface(t *testing.T) {
 	// Verify that mockTokenSource satisfies the TokenSource interface.
 	var _ TokenSource = (*mockTokenSource)(nil)
