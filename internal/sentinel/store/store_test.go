@@ -309,3 +309,59 @@ func TestSaveGuardrail(t *testing.T) {
 		t.Errorf("expected 'rate-limit' first, got %q", guardrails[0].Name)
 	}
 }
+
+func TestSaveScanResult(t *testing.T) {
+	s := testStore(t)
+	id, err := s.SaveScanResult("chat", `[{"id":"sec-1","severity":"high"}]`, "1 high")
+	if err != nil {
+		t.Fatalf("SaveScanResult: %v", err)
+	}
+	if id <= 0 {
+		t.Errorf("expected positive id, got %d", id)
+	}
+}
+
+func TestListScanResults(t *testing.T) {
+	s := testStore(t)
+	s.SaveScanResult("chat", `[{"id":"sec-1"}]`, "1 high")
+	s.SaveScanResult("chat", `[{"id":"sec-2"}]`, "1 medium")
+	s.SaveScanResult("tasks", `[{"id":"sec-3"}]`, "1 low")
+
+	results, err := s.ListScanResults("chat", 10)
+	if err != nil {
+		t.Fatalf("ListScanResults: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 chat results, got %d", len(results))
+	}
+	// Both chat results should be returned (order depends on scanned_at).
+	if results[0].ProductName != "chat" || results[1].ProductName != "chat" {
+		t.Error("expected both results to be for 'chat' product")
+	}
+}
+
+func TestListScanResults_DefaultLimit(t *testing.T) {
+	s := testStore(t)
+	for i := 0; i < 15; i++ {
+		s.SaveScanResult("chat", `[]`, "none")
+	}
+
+	results, err := s.ListScanResults("chat", 0) // 0 should default to 10
+	if err != nil {
+		t.Fatalf("ListScanResults: %v", err)
+	}
+	if len(results) != 10 {
+		t.Errorf("expected 10 (default limit), got %d", len(results))
+	}
+}
+
+func TestListScanResults_Empty(t *testing.T) {
+	s := testStore(t)
+	results, err := s.ListScanResults("nonexistent", 10)
+	if err != nil {
+		t.Fatalf("ListScanResults: %v", err)
+	}
+	if results != nil && len(results) != 0 {
+		t.Errorf("expected empty results, got %d", len(results))
+	}
+}
