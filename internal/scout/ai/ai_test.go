@@ -159,6 +159,75 @@ func TestCoverLetter_NoProfileDB(t *testing.T) {
 	}
 }
 
+func TestHasProfileDB(t *testing.T) {
+	st := newTestStore(t)
+	sender := &mockSender{response: "ok"}
+
+	svcNoPDB := New(st, nil, sender, t.TempDir())
+	if svcNoPDB.HasProfileDB() {
+		t.Error("HasProfileDB should be false when profileDB is nil")
+	}
+}
+
+func TestFetchProfile_NilProfileDB(t *testing.T) {
+	st := newTestStore(t)
+	sender := &mockSender{response: "ok"}
+	svc := New(st, nil, sender, t.TempDir())
+
+	_, err := svc.fetchProfile()
+	if err == nil {
+		t.Fatal("expected error when profiledb is nil")
+	}
+}
+
+func TestExtractJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "plain JSON",
+			input:    `{"key": "value"}`,
+			expected: `{"key": "value"}`,
+		},
+		{
+			name:     "json code fence",
+			input:    "```json\n{\"key\": \"value\"}\n```",
+			expected: "\n{\"key\": \"value\"}\n",
+		},
+		{
+			name:     "plain code fence",
+			input:    "```\n{\"key\": \"value\"}\n```",
+			expected: "\n{\"key\": \"value\"}\n",
+		},
+		{
+			name:     "json fence no closing",
+			input:    "```json\n{\"key\": \"value\"}",
+			expected: "\n{\"key\": \"value\"}",
+		},
+		{
+			name:     "plain fence no closing",
+			input:    "```\n{\"key\": \"value\"}",
+			expected: "\n{\"key\": \"value\"}",
+		},
+		{
+			name:     "text before fence",
+			input:    "Here is the JSON:\n```json\n{\"a\":1}\n```\nDone.",
+			expected: "\n{\"a\":1}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractJSON(tt.input)
+			if got != tt.expected {
+				t.Errorf("extractJSON(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestColdOutreach(t *testing.T) {
 	st := newTestStore(t)
 	lead := makeTestLead()
