@@ -70,6 +70,56 @@ func TestLoadAll_EmptyFilter(t *testing.T) {
 	}
 }
 
+func TestLoadAll_CaseInsensitiveFilter(t *testing.T) {
+	rules, err := LoadAll([]string{"SOC2"})
+	if err != nil {
+		t.Fatalf("LoadAll(SOC2) error: %v", err)
+	}
+	if len(rules) != 10 {
+		t.Errorf("LoadAll(SOC2) returned %d rules, expected 10 (case-insensitive match)", len(rules))
+	}
+}
+
+func TestLoadAll_MultiFrameworkFilter(t *testing.T) {
+	rules, err := LoadAll([]string{"soc2", "hipaa"})
+	if err != nil {
+		t.Fatalf("LoadAll(soc2,hipaa) error: %v", err)
+	}
+	if len(rules) != 15 {
+		t.Errorf("LoadAll(soc2,hipaa) returned %d rules, expected 15", len(rules))
+	}
+}
+
+func TestLoadAll_UnknownFramework(t *testing.T) {
+	rules, err := LoadAll([]string{"nonexistent"})
+	if err != nil {
+		t.Fatalf("LoadAll(nonexistent) error: %v", err)
+	}
+	if len(rules) != 0 {
+		t.Errorf("LoadAll(nonexistent) returned %d rules, expected 0", len(rules))
+	}
+}
+
+func TestLoadAll_MixedCaseMultiFramework(t *testing.T) {
+	rules, err := LoadAll([]string{"HIPAA", "Gdpr"})
+	if err != nil {
+		t.Fatalf("LoadAll(HIPAA,Gdpr) error: %v", err)
+	}
+	if len(rules) != 10 {
+		t.Errorf("LoadAll(HIPAA,Gdpr) returned %d rules, expected 10", len(rules))
+	}
+}
+
+func TestLoadAll_AllFrameworks(t *testing.T) {
+	rules, err := LoadAll([]string{"soc2", "hipaa", "gdpr"})
+	if err != nil {
+		t.Fatalf("LoadAll(all) error: %v", err)
+	}
+	if len(rules) != 20 {
+		t.Errorf("LoadAll(all) returned %d rules, expected 20", len(rules))
+	}
+}
+
 func TestLoadAll_RuleFields(t *testing.T) {
 	rules, err := LoadAll(nil)
 	if err != nil {
