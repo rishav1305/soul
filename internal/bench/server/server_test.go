@@ -450,6 +450,140 @@ func TestCorsMiddleware_NonOptions(t *testing.T) {
 	}
 }
 
+// mockModelEndpoint returns a httptest.Server that simulates a model inference endpoint.
+func mockModelEndpoint(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Return a plausible response for any prompt.
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"response":          "The answer is 42. This is a test response.",
+			"tokens_per_second": 100.0,
+			"peak_ram_mb":       512.0,
+			"peak_vram_mb":      0.0,
+		})
+	}))
+}
+
+func TestHandleRunBenchmark_WithMockEndpoint(t *testing.T) {
+	model := mockModelEndpoint(t)
+	defer model.Close()
+
+	s := testServer(t)
+	body, _ := json.Marshal(runRequest{
+		ModelEndpoint: model.URL,
+		Categories:    []string{"smoke-test"},
+		MaxTokens:     100,
+	})
+	req := httptest.NewRequest("POST", "/api/bench/run", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var result map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result["model"] == nil {
+		t.Error("expected 'model' field in result")
+	}
+}
+
+func TestHandleSmoke_WithMockEndpoint(t *testing.T) {
+	model := mockModelEndpoint(t)
+	defer model.Close()
+
+	s := testServer(t)
+	body, _ := json.Marshal(runRequest{
+		ModelEndpoint: model.URL,
+		MaxTokens:     100,
+	})
+	req := httptest.NewRequest("POST", "/api/bench/smoke", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestHandleRunBenchmark_EndpointError(t *testing.T) {
+	// Endpoint that always returns 500.
+	badModel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "model error", http.StatusInternalServerError)
+	}))
+	defer badModel.Close()
+
+	s := testServer(t)
+	body, _ := json.Marshal(runRequest{
+		ModelEndpoint: badModel.URL,
+		Categories:    []string{"smoke-test"},
+		MaxTokens:     100,
+	})
+	req := httptest.NewRequest("POST", "/api/bench/run", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	// RunBenchmark returns endpoint-unreachable results (accuracy=0) but still succeeds.
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestHandleToolExecute_RunSmokeWithMock(t *testing.T) {
+	model := mockModelEndpoint(t)
+	defer model.Close()
+
+	s := testServer(t)
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	body, _ := json.Marshal(toolRequest{Input: map[string]interface{}{
+		"model_endpoint": model.URL,
+	}})
+	resp, err := http.Post(ts.URL+"/api/tools/bench_run_smoke/execute", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestHandleGetResult_WithSavedResult(t *testing.T) {
+	s := testServer(t)
+
+	// Save a result and then fetch it by ID.
+	r := &harness.BenchResult{
+		Model:            "test-model",
+		Timestamp:        "2026-03-30T12:00:00Z",
+		Results:          []harness.PromptResult{},
+		CategoryAccuracy: map[string]float64{"smoke-test": 0.9},
+	}
+	results.SaveResult(s.dataDir, r)
+
+	// List results to get the saved ID.
+	list, _ := results.ListResults(s.dataDir)
+	if len(list) == 0 {
+		t.Fatal("no results saved")
+	}
+
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/bench/results/" + list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
 func TestHandleListResults_WithSavedResult(t *testing.T) {
 	s := testServer(t)
 
