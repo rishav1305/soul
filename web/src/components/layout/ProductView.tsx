@@ -12,6 +12,7 @@ import type {
 import { reportError } from '../../lib/telemetry.ts';
 import TaskPanel from '../planner/TaskPanel.tsx';
 import PlaceholderPanel from '../panels/PlaceholderPanel.tsx';
+import ObservePanel from '../panels/ObservePanel.tsx';
 
 /** Lightweight error boundary for product panels — avoids taking down the entire AppShell. */
 class PanelErrorBoundary extends Component<
@@ -83,6 +84,11 @@ interface ProductViewProps {
   addComment: (id: number, body: string) => Promise<TaskComment>;
 }
 
+/**
+ * Renders the content area for the currently selected product.
+ * Products with a dedicated panel (non-PlaceholderPanel) get a custom header + panel.
+ * All other products (stubs, placeholders, unknown) fall through to the shared TaskPanel.
+ */
 export default function ProductView({
   activeProduct,
   productMetadata,
@@ -122,7 +128,7 @@ export default function ProductView({
     // Placeholders — replace each with a real panel when ready
     soul:            PlaceholderPanel,
     qa:              PlaceholderPanel,
-    observe:         PlaceholderPanel,
+    observe:         ObservePanel,
     viz:             PlaceholderPanel,
     bench:           PlaceholderPanel,
     migrate:         PlaceholderPanel,

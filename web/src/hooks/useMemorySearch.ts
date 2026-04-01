@@ -5,7 +5,8 @@ import { reportError, reportUsage } from '../lib/telemetry';
 
 /**
  * SoulGraph memory API base URL.
- * Banner's API on titan-pc. Per Shuri's confirmed contract (Mar 30).
+ * Banner's API on titan-pc (:3030). Per Shuri's confirmed contract (Mar 30).
+ * Endpoints: POST /query, GET /health, GET /status
  */
 const SOULGRAPH_API = 'http://192.168.0.196:3030';
 
@@ -32,10 +33,19 @@ export function useMemorySearch(): UseMemorySearchReturn {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${SOULGRAPH_API}/memory/query`, {
+      // Map internal MemoryQuery fields to actual API schema (query_text, not query).
+      const apiBody: Record<string, unknown> = {
+        collection: query.collection,
+        query_text: query.query,
+        top_k: query.top_k,
+      };
+      if (query.agent_filter) apiBody.agent_filter = query.agent_filter;
+      if (query.type_filter) apiBody.type_filter = query.type_filter;
+
+      const res = await fetch(`${SOULGRAPH_API}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(query),
+        body: JSON.stringify(apiBody),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: res.statusText }));
@@ -64,11 +74,17 @@ export function useMemorySearch(): UseMemorySearchReturn {
     setHealthLoading(true);
     setHealthError(null);
     try {
-      const res = await fetch(`${SOULGRAPH_API}/memory/health`);
+      const res = await fetch(`${SOULGRAPH_API}/health`);
       if (!res.ok) {
         throw new Error(`Health check failed: HTTP ${res.status}`);
       }
-      const data: MemoryHealthData = await res.json();
+      // Map actual API response (HealthResponse) to our MemoryHealthData shape.
+      const raw = await res.json();
+      const data: MemoryHealthData = {
+        chromadb: raw.status === 'healthy' ? 'up' : 'down',
+        collections: raw.collections ?? {},
+        last_index: raw.timestamp ?? '',
+      };
       setHealth(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
