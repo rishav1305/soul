@@ -72,7 +72,7 @@ describe('CodeBlock', () => {
   it('copy button shows Copied! on click', async () => {
     // Mock clipboard API
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, writable: true, configurable: true });
 
     render(<CodeBlock language="go" code="test code" />);
     const btn = screen.getByTestId('code-copy-button');
@@ -145,7 +145,7 @@ describe('CodeBlock', () => {
   it('copy button reverts from Copied! after timeout', async () => {
     vi.useFakeTimers();
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, writable: true, configurable: true });
 
     render(<CodeBlock language="go" code="test" />);
     const btn = screen.getByTestId('code-copy-button');

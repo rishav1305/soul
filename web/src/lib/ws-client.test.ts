@@ -28,7 +28,8 @@ class MockWebSocket {
   close(): void {
     this.closed = true;
     this.readyState = MockWebSocket.CLOSED;
-    setTimeout(() => this.onclose?.(), 0);
+    // Fire onclose synchronously to avoid pending fake timers that block afterEach cleanup
+    this.onclose?.();
   }
 
   // Test helpers
@@ -55,7 +56,10 @@ describe('WSClient', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    // Clear pending timers but don't restore real timers in afterEach —
+    // vi.useRealTimers() hangs when pending fake timer callbacks exist.
+    // Vitest restores timer state automatically between test files.
+    vi.clearAllTimers();
     // @ts-expect-error — cleanup
     delete globalThis.WebSocket;
   });
@@ -203,8 +207,8 @@ describe('WSClient', () => {
 
     client.disconnect();
 
-    // Wait well past any reconnect timer
-    await vi.advanceTimersByTimeAsync(60000);
+    // Wait past the reconnect delay (1s initial backoff)
+    await vi.advanceTimersByTimeAsync(3000);
     // Should only have the initial connection
     expect(MockWebSocket.instances).toHaveLength(1);
   });

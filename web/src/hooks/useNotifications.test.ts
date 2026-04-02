@@ -48,10 +48,8 @@ describe('useNotifications', () => {
   beforeEach(() => {
     wsHandler = null;
     mockUnsubscribe.mockClear();
-    vi.useFakeTimers();
   });
   afterEach(() => {
-    vi.useRealTimers();
     cleanup();
   });
 
@@ -121,18 +119,24 @@ describe('useNotifications', () => {
   });
 
   it('auto-dismisses after 4s', () => {
-    const { result } = renderHook(() => useNotifications(makeTasks(), true));
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useNotifications(makeTasks(), true));
 
-    act(() => {
-      wsHandler!(makeStageChangeMsg(1, 'backlog', 'active'));
-    });
-    expect(result.current.toasts.length).toBe(1);
+      act(() => {
+        wsHandler!(makeStageChangeMsg(1, 'backlog', 'active'));
+      });
+      expect(result.current.toasts.length).toBe(1);
 
-    act(() => {
-      vi.advanceTimersByTime(4000);
-    });
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
 
-    expect(result.current.toasts.length).toBe(0);
+      expect(result.current.toasts.length).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('dismiss removes specific toast', () => {
