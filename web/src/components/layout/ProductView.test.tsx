@@ -16,6 +16,11 @@ vi.mock('../panels/PlaceholderPanel.tsx', () => ({
   default: () => null,
 }));
 
+// Mock ObservePanel — registered as a dedicated (non-placeholder) panel since Phase 0 Day 1.
+vi.mock('../panels/ObservePanel.tsx', () => ({
+  default: () => <div data-testid="observe-panel-mock">ObservePanel</div>,
+}));
+
 // Mock telemetry
 vi.mock('../../lib/telemetry.ts', () => ({
   reportError: vi.fn(),
@@ -113,7 +118,7 @@ describe('ProductView', () => {
 
   it('falls through to TaskPanel for all registered placeholder products', () => {
     const placeholders = [
-      'compliance', 'scout', 'tutor', 'projects', 'soul', 'qa', 'observe',
+      'compliance', 'scout', 'tutor', 'projects', 'soul', 'qa',
       'viz', 'bench', 'migrate', 'devops', 'analytics', 'docs', 'api',
       'dba', 'costops', 'mesh', 'dataeng', 'stocks',
     ];
@@ -139,9 +144,10 @@ describe('ProductView', () => {
     expect(screen.getByTestId('task-panel').getAttribute('data-view')).toBe('grid');
   });
 
-  it('renders TaskPanel for placeholder product with active product set', () => {
+  it('renders ObservePanel for observe product (dedicated panel since Phase 0)', () => {
     render(<ProductView {...defaultProps} activeProduct="observe" />);
-    expect(screen.getByTestId('task-panel')).toBeTruthy();
+    expect(screen.getByTestId('observe-panel-mock')).toBeTruthy();
+    expect(screen.queryByTestId('task-panel')).toBeNull();
   });
 
   it('renders TaskPanel when activeProduct is empty string', () => {
@@ -178,7 +184,8 @@ describe('ProductView', () => {
   });
 
   it('renders TaskPanel for every known placeholder', () => {
-    const known = ['compliance-go', 'qa', 'observe', 'viz', 'bench', 'migrate', 'devops', 'analytics', 'docs', 'api', 'dba', 'costops', 'mesh', 'dataeng', 'stocks'];
+    // 'observe' is excluded — it now has a dedicated ObservePanel (Phase 0 Day 1).
+    const known = ['compliance-go', 'qa', 'viz', 'bench', 'migrate', 'devops', 'analytics', 'docs', 'api', 'dba', 'costops', 'mesh', 'dataeng', 'stocks'];
     for (const product of known) {
       const { unmount } = render(<ProductView {...defaultProps} activeProduct={product} />);
       expect(screen.getByTestId('task-panel')).toBeTruthy();

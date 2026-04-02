@@ -100,21 +100,30 @@ describe('CodeBlock', () => {
   });
 
   it('changes to Copied! after click', () => {
-    // Mock navigator.clipboard
-    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    // happy-dom's navigator.clipboard is read-only — use Object.defineProperty.
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
     render(<CodeBlock language="typescript" code="const x = 1;" />);
     fireEvent.click(screen.getByTestId('code-copy-button'));
     expect(screen.getByText('Copied!')).toBeTruthy();
   });
 
   it('uses fallback copy when clipboard API unavailable', () => {
-    // Remove clipboard API
-    Object.assign(navigator, { clipboard: undefined });
-    // jsdom doesn't define execCommand — add it
-    document.execCommand = vi.fn().mockReturnValue(true);
+    // Remove clipboard API via defineProperty (happy-dom: navigator props are read-only).
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    // happy-dom doesn't define execCommand — add it.
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(true),
+    });
     render(<CodeBlock language="go" code="package main" />);
     fireEvent.click(screen.getByTestId('code-copy-button'));
-    expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect((document.execCommand as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('copy');
     expect(screen.getByText('Copied!')).toBeTruthy();
   });
 
