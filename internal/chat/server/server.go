@@ -948,6 +948,14 @@ func authMiddleware(token string, ticketValid func(string) bool, onWSRejected fu
 				return
 			}
 
+			// Exempt health, auth-status, and CA cert probes from authentication.
+			// These are called by monitoring systems and must always respond.
+			switch path {
+			case "/api/health", "/api/auth/status", "/api/ca.crt":
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Check Authorization header (all routes).
 			if r.Header.Get("Authorization") == "Bearer "+token {
 				next.ServeHTTP(w, r)

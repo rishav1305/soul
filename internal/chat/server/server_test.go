@@ -588,12 +588,32 @@ func TestAuthMiddleware_RejectsWithoutToken(t *testing.T) {
 	ts := httptest.NewServer(srv.httpServer.Handler)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/health")
+	// Protected API routes should require auth
+	resp, err := http.Get(ts.URL + "/api/sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != 401 {
-		t.Errorf("expected 401, got %d", resp.StatusCode)
+		t.Errorf("expected 401 for /api/sessions without token, got %d", resp.StatusCode)
+	}
+}
+
+func TestAuthMiddleware_ExemptsHealthEndpoint(t *testing.T) {
+	srv := New(WithAuthToken("secret123"))
+	ts := httptest.NewServer(srv.httpServer.Handler)
+	defer ts.Close()
+
+	// /api/health must be accessible without authentication
+	// (monitoring systems, load balancers, Banner collector)
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode == 401 {
+		t.Error("/api/health should not require authentication")
+	}
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 for /api/health, got %d", resp.StatusCode)
 	}
 }
 
