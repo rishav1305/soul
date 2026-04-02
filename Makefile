@@ -46,8 +46,8 @@ types:
 	go run ./tools/specgen.go
 
 # Verify (full stack)
-verify: verify-static verify-unit verify-integ
-verify-static: verify-static-go verify-static-ts check-secrets check-deps
+verify: verify-static verify-unit verify-integ verify-web-tests
+verify-static: verify-static-go verify-static-ts check-secrets check-deps check-web-install
 verify-static-go:
 	go vet ./...
 	go build ./...
@@ -57,6 +57,14 @@ verify-unit:
 	go test -race -count=1 ./internal/... ./pkg/...
 verify-integ:
 	go test -race -count=1 ./tests/integration/...
+verify-web-tests:
+	cd web && npx vitest run
+# check-web-install: fast check that testing packages are installed.
+# Fails if @testing-library/react or happy-dom are missing from node_modules.
+check-web-install:
+	@test -d web/node_modules/@testing-library/react || (echo "ERROR: web/node_modules/@testing-library/react missing — run: cd web && npm install" && exit 1)
+	@test -d web/node_modules/happy-dom || (echo "ERROR: web/node_modules/happy-dom missing — run: cd web && npm install" && exit 1)
+	@echo "PASS: web test packages installed"
 
 # Individual checks
 check-bundle:
