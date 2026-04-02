@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { renderHook, cleanup, act, waitFor } from '@testing-library/react';
 import { useMemorySearch } from './useMemorySearch';
@@ -30,7 +30,7 @@ describe('useMemorySearch', () => {
     expect(result.current.healthError).toBeNull();
   });
 
-  it('search calls /memory/query with correct body', async () => {
+  it('search calls /query with correct body', async () => {
     const mockResponse = {
       results: [{ doc_id: 'test', content: 'data', metadata: {}, score: 0.9 }],
       query: 'test query',
@@ -54,13 +54,13 @@ describe('useMemorySearch', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://192.168.0.196:3030/memory/query',
+      'http://192.168.0.196:3030/query',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           collection: 'soul_agent_memory',
-          query: 'test query',
+          query_text: 'test query',
           top_k: 5,
         }),
       }),
@@ -169,15 +169,17 @@ describe('useMemorySearch', () => {
     expect(body.top_k).toBe(3);
   });
 
-  it('fetchHealth calls /memory/health', async () => {
-    const healthData = {
-      chromadb: 'up',
+  it('fetchHealth calls /health', async () => {
+    // Mock returns the raw API response shape (status + timestamp).
+    // The hook maps: status:'healthy' → chromadb:'up', timestamp → last_index.
+    const rawApiResponse = {
+      status: 'healthy',
       collections: { soul_agent_memory: 109, soul_shared_kb: 28 },
-      last_index: '2026-03-30T16:00:00',
+      timestamp: '2026-03-30T16:00:00',
     };
     mockFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(healthData),
+      json: () => Promise.resolve(rawApiResponse),
     });
 
     const { result } = renderHook(() => useMemorySearch());
@@ -186,8 +188,12 @@ describe('useMemorySearch', () => {
       await result.current.fetchHealth();
     });
 
-    expect(mockFetch).toHaveBeenCalledWith('http://192.168.0.196:3030/memory/health');
-    expect(result.current.health).toEqual(healthData);
+    expect(mockFetch).toHaveBeenCalledWith('http://192.168.0.196:3030/health');
+    expect(result.current.health).toEqual({
+      chromadb: 'up',
+      collections: { soul_agent_memory: 109, soul_shared_kb: 28 },
+      last_index: '2026-03-30T16:00:00',
+    });
     expect(result.current.healthLoading).toBe(false);
   });
 

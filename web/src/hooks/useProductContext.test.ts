@@ -2,7 +2,7 @@
  * Tests for useProductContext hook.
  * Tests pure utility logic + hook-level integration through renderHook.
  */
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 
