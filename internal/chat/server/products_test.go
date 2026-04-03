@@ -33,8 +33,10 @@ func TestRegisteredProducts_AllHaveRequiredFields(t *testing.T) {
 		if p.Label == "" {
 			t.Errorf("product %q has empty label", p.Name)
 		}
-		if p.Tools <= 0 {
-			t.Errorf("product %q has %d tools (should be > 0)", p.Name, p.Tools)
+		// UI-only products (e.g. team dashboard) have 0 tools — they don't
+		// use chat tool dispatch, just proxy to their own server.
+		if p.Tools < 0 {
+			t.Errorf("product %q has negative tools count: %d", p.Name, p.Tools)
 		}
 		if p.Icon == "" {
 			t.Errorf("product %q has no icon", p.Name)
