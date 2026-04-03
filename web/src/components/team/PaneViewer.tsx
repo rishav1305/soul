@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react';
 
-/** PaneViewer — read-only terminal output pane with virtual scrolling and 500-line ring buffer. */
+/**
+ * PaneViewer — read-only terminal output pane with ring-buffer capping.
+ *
+ * Retains the last 500 lines in the DOM (ring-buffer cap, not true windowed
+ * virtual scrolling). For typical 9-agent usage (9 × 500 = 4,500 DOM nodes)
+ * this is acceptable. If performance degrades at higher line counts, upgrade
+ * to windowed virtualisation (useRef + scroll-position math or react-virtual).
+ */
 
 interface PaneViewerProps {
   lines: string[];
@@ -43,7 +50,7 @@ export function PaneViewer({ lines, autoScroll = true, className = '' }: PaneVie
       aria-atomic={false}
     >
       {visible.map((line, idx) => (
-        <div key={idx} className="whitespace-pre-wrap break-all">
+        <div key={`${idx}-${line.slice(0, 12)}`} className="whitespace-pre-wrap break-all">
           {line || '\u00A0'}
         </div>
       ))}
