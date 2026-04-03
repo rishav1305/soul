@@ -58,9 +58,9 @@ func (a *AgentStateAggregator) Refresh() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build state for every known agent (from panes map), excluding team-lead.
+	// Build state for every agent from panes.json, excluding only team-lead (CEO pane).
+	// All other agents are shown — config-driven, not hardcoded.
 	for agent, paneID := range a.panes {
-		// Filter out the CEO/team-lead -- not an agent.
 		if agent == "team-lead" {
 			continue
 		}

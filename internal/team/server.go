@@ -173,14 +173,26 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 
+	// Read live system resources from /proc and /sys.
+	resources := ReadSystemResources()
+
+	// Read token usage from guardian.db.
+	tokenUsage := ReadTokenUsage()
+	if tokenUsage == nil {
+		tokenUsage = []AgentTokenUsage{}
+	}
+
 	status := HealthStatus{
-		Status:    "ok",
-		Agents:    len(agents),
-		AgentsUp:  agentsUp,
-		Uptime:    time.Since(s.startTime).Truncate(time.Second).String(),
-		StartedAt: s.startTime,
-		Services:  map[string]string{"team-server": "ok", "pane-poller": "ok", "ws-hub": "ok"},
-		MemoryMB:  int(memStats.Alloc / 1024 / 1024),
+		Status:     "ok",
+		Agents:     len(agents),
+		AgentsUp:   agentsUp,
+		Uptime:     time.Since(s.startTime).Truncate(time.Second).String(),
+		StartedAt:  s.startTime,
+		Services:   map[string]string{"team-server": "ok", "pane-poller": "ok", "ws-hub": "ok"},
+		MemoryMB:   int(memStats.Alloc / 1024 / 1024),
+		SystemLoad: resources.LoadAvg1,
+		Resources:  resources,
+		TokenUsage: tokenUsage,
 	}
 
 	if agentsUp == 0 {
@@ -197,6 +209,33 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	if agents == nil {
 		agents = []AgentState{}
 	}
+
+	// Support ?preview=N to include last N lines of pane output per agent.
+	previewStr := r.URL.Query().Get("preview")
+	if previewStr != "" {
+		previewN, _ := strconv.Atoi(previewStr)
+		if previewN > 0 && previewN <= 10 {
+			type agentWithPreview struct {
+				AgentState
+				PanePreview []string `json:"pane_preview"`
+			}
+			result := make([]agentWithPreview, 0, len(agents))
+			for _, a := range agents {
+				ap := agentWithPreview{AgentState: a}
+				if buf, ok := s.poller.GetBuffer(a.Name); ok && len(buf) > 0 {
+					start := len(buf) - previewN
+					if start < 0 {
+						start = 0
+					}
+					ap.PanePreview = buf[start:]
+				}
+				result = append(result, ap)
+			}
+			writeJSON(w, http.StatusOK, result)
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, agents)
 }
 

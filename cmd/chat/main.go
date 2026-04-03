@@ -132,6 +132,7 @@ func runServe() {
 		server.WithSessionStore(store),
 		server.WithHub(hub),
 		server.WithStaticDir("web/dist"),
+		server.WithTeamProxy(),
 	}
 
 	// Require bearer token auth. Even on loopback, reverse proxies
@@ -189,12 +190,11 @@ func runServe() {
 	serverOpts = append(serverOpts, server.WithDataProxy())
 	serverOpts = append(serverOpts, server.WithDocsProxy())
 
-	// Enable scout, sentinel, mesh, bench, team server proxies.
+	// Enable scout, sentinel, mesh, bench server proxies.
 	serverOpts = append(serverOpts, server.WithScoutProxy())
 	serverOpts = append(serverOpts, server.WithSentinelProxy())
 	serverOpts = append(serverOpts, server.WithMeshProxy())
 	serverOpts = append(serverOpts, server.WithBenchProxy())
-	serverOpts = append(serverOpts, server.WithTeamProxy())
 
 	srv := server.New(serverOpts...)
 

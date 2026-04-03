@@ -118,11 +118,11 @@ func (p *PanePoller) computeAndStore(agent string, newLines []string) {
 // capturePaneOutput runs tmux capture-pane and returns the output lines.
 func capturePaneOutput(ctx context.Context, session, paneID string, maxLines int) ([]string, error) {
 	// Use -S to limit scroll history. Negative means lines from bottom.
-	target := fmt.Sprintf("%s:%s", session, paneID)
-	cmd := exec.CommandContext(ctx, "tmux", "capture-pane", "-p", "-S", fmt.Sprintf("-%d", maxLines), "-t", target)
+	// Pane IDs (%N) are globally unique in tmux — no session prefix needed.
+	cmd := exec.CommandContext(ctx, "tmux", "capture-pane", "-p", "-S", fmt.Sprintf("-%d", maxLines), "-t", paneID)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("capture pane %s: %w", target, err)
+		return nil, fmt.Errorf("capture pane %s: %w", paneID, err)
 	}
 
 	lines := strings.Split(string(out), "\n")
