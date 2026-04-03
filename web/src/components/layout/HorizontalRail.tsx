@@ -336,6 +336,7 @@ export default function HorizontalRail({
           <select
             value={railModel}
             onChange={(e) => setRailModel(e.target.value)}
+            aria-label="Select AI model"
             className="soul-select text-[10px] h-7 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer max-w-[90px]"
             title="Model"
           >
@@ -349,6 +350,7 @@ export default function HorizontalRail({
         <select
           value={railChatType}
           onChange={(e) => setRailChatType(e.target.value)}
+          aria-label="Select chat mode"
           className="soul-select text-[10px] h-7 px-1 rounded shrink-0 bg-elevated border border-border-default cursor-pointer"
           title="Chat mode"
         >
@@ -385,6 +387,7 @@ export default function HorizontalRail({
             <button
               type="submit"
               disabled={isStreaming}
+              aria-label="Send message"
               className="w-6 h-6 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
               title="Send"
             >
@@ -396,6 +399,7 @@ export default function HorizontalRail({
             <button
               type="button"
               onClick={isListening ? stopListening : startListening}
+              aria-label={isListening ? 'Stop listening' : 'Voice input'}
               className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors cursor-pointer shrink-0 ${
                 isListening
                   ? 'bg-stage-blocked text-white animate-pulse'
@@ -432,6 +436,7 @@ export default function HorizontalRail({
       <button
         type="button"
         onClick={() => setShowNewForm(true)}
+        aria-label="New task"
         className="w-6 h-6 flex items-center justify-center rounded bg-soul/10 text-soul hover:bg-soul/20 transition-colors cursor-pointer shrink-0"
         title="New task"
       >
@@ -442,6 +447,7 @@ export default function HorizontalRail({
       <button
         type="button"
         onClick={onSyncProductFilterToggle}
+        aria-label={syncProductFilter ? 'Sync filter on: showing active product tasks' : 'Sync filter off: showing all tasks'}
         title={syncProductFilter ? 'Sync ON — showing active product tasks' : 'Sync OFF — showing all tasks'}
         className={`w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors shrink-0 ${
           syncProductFilter ? 'bg-soul/15 text-soul' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
@@ -463,6 +469,8 @@ export default function HorizontalRail({
     <button
       type="button"
       onClick={onToggleExpand}
+      aria-label={expanded ? 'Collapse drawer' : 'Expand drawer'}
+      aria-expanded={expanded}
       className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm"
       title={expanded ? 'Collapse drawer' : 'Expand drawer'}
     >
@@ -506,7 +514,7 @@ export default function HorizontalRail({
       {showChat && (
         <div className={`flex items-stretch h-12 ${showTasks ? 'border-b border-border-subtle' : ''}`}>
           {chatRailContent}
-          <button type="button" onClick={toggleChat} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
+          <button type="button" onClick={toggleChat} aria-label="Expand chat" aria-expanded={chatOpen} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
             {upChevron}
           </button>
         </div>
@@ -514,7 +522,7 @@ export default function HorizontalRail({
       {showTasks && (
         <div className="flex items-stretch h-12">
           {taskRailContent}
-          <button type="button" onClick={toggleTasks} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
+          <button type="button" onClick={toggleTasks} aria-label="Expand tasks" aria-expanded={tasksOpen} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
             {upChevron}
           </button>
         </div>
@@ -583,6 +591,7 @@ export default function HorizontalRail({
               }
               setTimeout(() => setReauthStatus('idle'), 2000);
             }}
+            aria-label="Refresh AI credentials"
             className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
               reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'
             }`}
@@ -624,6 +633,8 @@ export default function HorizontalRail({
           <button
             type="button"
             onClick={() => setHistoryOpen((o) => !o)}
+            aria-label="Chat history"
+            aria-expanded={historyOpen}
             className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer ${
               historyOpen
                 ? 'bg-soul/15 text-soul'
@@ -640,6 +651,7 @@ export default function HorizontalRail({
           <button
             type="button"
             onClick={() => { onNewSession(); setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="Message"]'); ta?.focus(); }, 100); }}
+            aria-label="New chat"
             className="w-7 h-7 flex items-center justify-center rounded bg-soul/10 hover:bg-soul/20 text-soul transition-colors cursor-pointer"
             title="New chat (Ctrl+Shift+N)"
           >
@@ -649,6 +661,7 @@ export default function HorizontalRail({
           <button
             type="button"
             onClick={() => { setHistoryOpen(false); onToggleExpand(); }}
+            aria-label="Collapse panel"
             className="w-7 h-7 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer"
             title="Collapse"
           >
@@ -894,7 +907,7 @@ export default function HorizontalRail({
   const chatCollapsedBar = (
     <div className="flex items-stretch h-12 bg-surface border-b border-border-subtle shrink-0">
       {chatRailContent}
-      <button type="button" onClick={toggleChat} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
+      <button type="button" onClick={toggleChat} aria-label="Expand chat" aria-expanded={chatOpen} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand chat">
         {upChevron}
       </button>
     </div>
@@ -903,7 +916,7 @@ export default function HorizontalRail({
   const tasksCollapsedBar = (
     <div className="flex items-stretch h-12 bg-surface shrink-0">
       {taskRailContent}
-      <button type="button" onClick={toggleTasks} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
+      <button type="button" onClick={toggleTasks} aria-label="Expand tasks" aria-expanded={tasksOpen} className="w-8 h-8 flex items-center justify-center rounded-full bg-soul text-deep hover:bg-soul/85 transition-colors cursor-pointer shrink-0 self-center mx-1 shadow-sm" title="Expand tasks">
         {upChevron}
       </button>
     </div>
@@ -938,6 +951,7 @@ export default function HorizontalRail({
                 try { const res = await authFetch('/api/reauth', { method: 'POST' }); setReauthStatus(res.ok ? 'ok' : 'error'); } catch { setReauthStatus('error'); }
                 setTimeout(() => setReauthStatus('idle'), 2000);
               }}
+              aria-label="Refresh AI credentials"
               className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${reauthStatus === 'ok' ? 'text-green-400' : reauthStatus === 'error' ? 'text-red-400' : 'text-fg-secondary hover:text-fg hover:bg-elevated'}`}
               title="Refresh AI credentials"
             >
@@ -958,11 +972,11 @@ export default function HorizontalRail({
                 {unreadSessions.length}
               </button>
             )}
-            <button type="button" onClick={() => setHistoryOpen((o) => !o)} className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
+            <button type="button" onClick={() => setHistoryOpen((o) => !o)} aria-label="Chat history" aria-expanded={historyOpen} className={`flex items-center gap-1 px-1.5 h-7 rounded text-[10px] font-display transition-colors cursor-pointer ${historyOpen ? 'bg-soul/15 text-soul' : 'hover:bg-elevated text-fg-secondary hover:text-fg'}`} title="Chat history">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.5 2" /></svg>
               History
             </button>
-            <button type="button" onClick={() => { setHistoryOpen(false); toggleChat(); }} className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse chat">
+            <button type="button" onClick={() => { setHistoryOpen(false); toggleChat(); }} aria-label="Collapse chat" className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse chat">
               {downChevron} Collapse
             </button>
           </div>
@@ -1024,7 +1038,7 @@ export default function HorizontalRail({
             <div className="flex-1" />
             <button type="button" onClick={() => setShowNewForm(true)} className="text-xs bg-soul/10 hover:bg-soul/20 text-soul px-2 py-0.5 rounded font-display font-semibold transition-colors cursor-pointer shrink-0 whitespace-nowrap">+ New</button>
             <div className="w-2 shrink-0" />
-            <button type="button" onClick={toggleTasks} className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse tasks">
+            <button type="button" onClick={toggleTasks} aria-label="Collapse tasks" className="flex items-center gap-1 px-1.5 h-7 rounded-full bg-soul text-deep hover:bg-soul/85 text-[10px] font-display transition-colors cursor-pointer" title="Collapse tasks">
               {downChevron} Collapse
             </button>
           </div>

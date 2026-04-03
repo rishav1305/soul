@@ -10,6 +10,11 @@ interface ConnectionBannerProps {
   onReauth?: () => Promise<void>;
 }
 
+/**
+ * Alert banner shown when WebSocket connection drops.
+ * Shows reconnection status (with attempt count), or auth failure with re-auth button.
+ * Auto-dismisses when connection recovers. Uses role="alert" for screen reader announcement.
+ */
 export function ConnectionBanner({
   status,
   reconnectAttempt = 0,

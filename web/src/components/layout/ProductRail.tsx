@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { authFetch } from '../../lib/api.ts';
 import type { PlannerTask, PanelPosition, DrawerLayout, ProductInfo } from '../../lib/types.ts';
 
+/** Derive a 2-char abbreviation from a product name (e.g., "compliance-go" → "CG"). */
 function productAbbr(name: string): string {
   const parts = name.replace(/[-_]/g, ' ').split(' ').filter(Boolean);
   if (parts.length === 1) return (parts[0] ?? '').slice(0, 2).toUpperCase();
@@ -75,7 +76,7 @@ function AuthSection() {
         disabled={status === 'loading'}
         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border-subtle text-sm font-display text-fg-secondary hover:border-border-default hover:text-fg transition-colors cursor-pointer disabled:opacity-50"
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M1 7a6 6 0 0111.196-3M13 7A6 6 0 011.804 10" />
           <path d="M1 1v3h3M13 13v-3h-3" />
         </svg>
@@ -89,7 +90,7 @@ function AuthSection() {
 
 // ── Gear icon SVG ──
 const GearIcon = ({ size = 18 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="8" cy="8" r="2.5" />
     <path d="M6.8 1.5h2.4l.3 1.7a5.2 5.2 0 0 1 1.3.7l1.6-.6.9 1.5-1.3 1.1a5 5 0 0 1 0 1.5l1.3 1.1-.9 1.5-1.6-.6a5.2 5.2 0 0 1-1.3.7l-.3 1.7H6.8l-.3-1.7a5.2 5.2 0 0 1-1.3-.7l-1.6.6-.9-1.5 1.3-1.1a5 5 0 0 1 0-1.5L2.7 4.8l.9-1.5 1.6.6a5.2 5.2 0 0 1 1.3-.7z" />
   </svg>
@@ -97,7 +98,7 @@ const GearIcon = ({ size = 18 }: { size?: number }) => (
 
 // ── Panel toggle icon ──
 const PanelIcon = ({ expanded }: { expanded: boolean }) => (
-  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
     <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
     <path d="M5.5 2v12" />
     {expanded ? (
@@ -178,12 +179,13 @@ function SettingsContent({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 h-12 border-b border-border-subtle shrink-0">
         <button
+          data-testid="product-rail-settings-back"
           type="button"
           onClick={onBack}
           aria-label="Back to products"
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M9 2L3 7l6 5" />
           </svg>
         </button>
@@ -302,6 +304,12 @@ const PANEL_WIDTH = 220;
 
 export { RAIL_WIDTH, PANEL_WIDTH };
 
+/**
+ * Left sidebar navigation showing all registered products.
+ * Supports collapsed (icon-only) and expanded (icon + label) modes.
+ * When expanded with settings open, renders the SettingsContent overlay.
+ * Product buttons show active task counts as badges.
+ */
 export default function ProductRail({
   products,
   activeProduct,
@@ -409,6 +417,7 @@ export default function ProductRail({
               <button
                 key={product}
                 ref={isActive ? activeRef : null}
+                data-testid={`product-${product}`}
                 type="button"
                 onClick={() => onProductSelect(product)}
                 title={displayLabel}
@@ -435,6 +444,7 @@ export default function ProductRail({
             <button
               key={product}
               ref={isActive ? activeRef : null}
+              data-testid={`product-${product}`}
               type="button"
               onClick={() => onProductSelect(product)}
               title={displayLabel}
@@ -459,6 +469,7 @@ export default function ProductRail({
 
       {/* Panel toggle */}
       <button
+        data-testid="product-rail-toggle"
         type="button"
         onClick={onToggleExpanded}
         aria-label={expanded ? 'Collapse product navigation' : 'Expand product navigation'}

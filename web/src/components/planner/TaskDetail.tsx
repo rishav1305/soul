@@ -426,12 +426,12 @@ export default function TaskDetail({ task, onClose, onMove, onUpdate, onDelete, 
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-soul/10 border border-soul/20 text-sm">
                   <span className="text-fg-secondary">Changes are live on the dev server:</span>
                   <a
-                    href="http://localhost:3001"
+                    href={window.location.origin}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-soul hover:underline font-mono text-xs"
                   >
-                    localhost:3001
+                    {window.location.host}
                   </a>
                   <span className="text-[10px] text-fg-muted ml-auto">Move to Done to merge to production</span>
                 </div>

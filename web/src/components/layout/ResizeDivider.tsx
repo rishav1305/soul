@@ -48,6 +48,7 @@ export default function ResizeDivider({ onResize }: ResizeDividerProps) {
   return (
     <div
       onMouseDown={onMouseDown}
+      data-testid="resize-divider"
       className="w-[3px] hover:w-1.5 bg-border-subtle hover:bg-soul/40 cursor-col-resize shrink-0 transition-all"
     />
   );

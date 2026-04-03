@@ -28,6 +28,7 @@ function Toggle({ checked, onChange, label, description }: {
     <button
       type="button"
       onClick={() => onChange(!checked)}
+      data-testid={`settings-toggle-${label.toLowerCase().replace(/\s+/g, '-')}`}
       className="flex items-start gap-3 w-full text-left cursor-pointer group"
     >
       {/* Toggle pill */}
@@ -65,6 +66,7 @@ function PositionSwitch({ value, onChange, label }: {
             key={pos}
             type="button"
             onClick={() => onChange(pos)}
+            data-testid={`settings-position-${label.toLowerCase()}-${pos}`}
             className={`flex-1 px-2 py-1.5 text-xs font-display capitalize transition-colors cursor-pointer ${
               value === pos
                 ? 'bg-soul/15 text-soul'
@@ -97,9 +99,9 @@ export default function SettingsPanel({
   setInlineBadgesEnabled,
 }: SettingsPanelProps) {
   return (
-    <div className="absolute inset-0 z-50 flex">
+    <div data-testid="settings-panel" className="absolute inset-0 z-50 flex">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div data-testid="settings-backdrop" className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Panel — slides in from left rail */}
       <div className="relative z-10 w-72 h-full bg-surface border-r border-border-default flex flex-col shadow-2xl animate-slide-left ml-14">
@@ -110,9 +112,11 @@ export default function SettingsPanel({
           <button
             type="button"
             onClick={onClose}
+            data-testid="settings-close-btn"
+            aria-label="Close settings"
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
               <path d="M1 1l12 12M13 1L1 13" />
             </svg>
           </button>
@@ -143,6 +147,7 @@ export default function SettingsPanel({
                 step={5}
                 value={chatSplitPct}
                 onChange={(e) => setChatSplitPct(Number(e.target.value))}
+                data-testid="settings-chat-split-slider"
                 className="w-full accent-soul cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-fg-muted font-mono">

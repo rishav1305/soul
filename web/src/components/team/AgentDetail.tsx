@@ -13,7 +13,7 @@ interface AgentDetailProps {
 }
 
 /**
- * AgentDetail — split panel: left pane output, right sidebar with tasks/messages/memory.
+ * AgentDetail -- full-width pane viewer with compact info bar above.
  * Route: /team/:agent (managed by TeamShell internal router)
  */
 export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps) {
@@ -24,6 +24,7 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
   const [sentMessages, setSentMessages] = useState<string[]>([]);
   const [showMessageInput, setShowMessageInput] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showBacklog, setShowBacklog] = useState(false);
 
   const agent = agents.find((a) => a.name === agentName);
 
@@ -34,8 +35,6 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
       const stagePriority: Record<string, number> = { 'in-progress': 0, blocked: 1, backlog: 2 };
       return (stagePriority[a.stage] ?? 3) - (stagePriority[b.stage] ?? 3);
     });
-  const visibleTasks = agentTasks.slice(0, 5);
-  const hiddenCount = agentTasks.length - visibleTasks.length;
 
   const handleSend = useCallback(() => {
     const trimmed = messageInput.trim();
@@ -43,7 +42,6 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
 
     setSending(true);
 
-    // Send via the real API (POST /api/team/chat with { to, body, from, priority })
     authFetch('/api/team/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,7 +56,6 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
         setSentMessages((prev) => [...prev, trimmed]);
       })
       .catch(() => {
-        // Optimistic: still show locally on failure
         setSentMessages((prev) => [...prev, trimmed]);
       })
       .finally(() => {
@@ -76,7 +73,7 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
 
   return (
     <div data-testid={`agent-detail-${agentName}`} className="flex flex-col h-full bg-deep overflow-hidden">
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <header className="flex items-center gap-3 px-6 py-3 border-b border-border-subtle shrink-0">
         <button
           type="button"
@@ -112,7 +109,7 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
         </button>
       </header>
 
-      {/* ── Inline message input ── */}
+      {/* -- Inline message input -- */}
       {showMessageInput && (
         <div className="flex items-center gap-2 px-6 py-2 border-b border-border-subtle bg-surface/60 shrink-0">
           <input
@@ -145,145 +142,134 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
         </div>
       )}
 
-      {/* ── Main split layout ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left: Pane viewer */}
-        <div className="flex-1 min-w-0 flex flex-col border-r border-border-subtle">
-          <div className="px-4 py-2 border-b border-border-subtle shrink-0 flex items-center gap-2">
-            <span className="text-[11px] text-fg-muted font-medium uppercase tracking-wider">Live Output</span>
-            {paneLoading && (
-              <span className="text-[10px] text-fg-muted italic">Loading...</span>
-            )}
-            <span className="text-[10px] text-fg-muted ml-auto">{lines.length} lines</span>
-          </div>
-          <PaneViewer
-            lines={lines}
-            autoScroll={true}
-            className="flex-1"
-          />
+      {/* -- Compact info bar (replaces sidebar) -- */}
+      <div className="flex items-center gap-4 px-6 py-2 border-b border-border-subtle bg-surface/30 shrink-0 text-xs overflow-x-auto">
+        {/* Current task */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-fg-muted font-medium uppercase text-[10px] tracking-wider shrink-0">Task</span>
+          {agent?.task ? (
+            <span data-testid="agent-info-task" className="text-fg-secondary truncate">{agent.task}</span>
+          ) : (
+            <span className="text-fg-muted italic">None</span>
+          )}
         </div>
 
-        {/* Right: Sidebar */}
-        <aside
-          data-testid="agent-detail-sidebar"
-          className="w-72 shrink-0 flex flex-col overflow-hidden"
-          aria-label="Agent details sidebar"
-        >
-          {/* Current task */}
-          <section className="px-4 py-3 border-b border-border-subtle">
-            <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">Current Task</h2>
-            {agent?.task ? (
-              <p className="text-sm text-fg-secondary leading-relaxed">{agent.task}</p>
-            ) : (
-              <p className="text-sm text-fg-muted italic">No active task</p>
-            )}
-          </section>
-
-          {/* Memory usage */}
-          <section className="px-4 py-3 border-b border-border-subtle">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider">Context</h2>
-              <span className="text-[10px] text-fg-muted">{agent?.contextPct ?? 0}%</span>
-            </div>
-            <div
-              className="w-full h-1.5 bg-overlay rounded-full overflow-hidden"
-              role="progressbar"
-              aria-valuenow={agent?.contextPct ?? 0}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`Context usage: ${agent?.contextPct ?? 0}%`}
-            >
-              <div
-                data-testid="agent-context-bar"
-                className={`h-full rounded-full transition-all ${
-                  (agent?.contextPct ?? 0) >= 80 ? 'bg-red-500' :
-                  (agent?.contextPct ?? 0) >= 60 ? 'bg-yellow-500' :
-                  'bg-green-500'
-                }`}
-                style={{ width: `${agent?.contextPct ?? 0}%` }}
-              />
-            </div>
-          </section>
-
-          {/* Agent backlog — tasks assigned to this agent */}
-          <section
-            data-testid="agent-backlog"
-            className="px-4 py-3 border-b border-border-subtle flex-1 overflow-y-auto"
-            aria-label={`Task backlog for ${agentName}`}
+        {/* Context usage */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-fg-muted font-medium uppercase text-[10px] tracking-wider">Context</span>
+          <div
+            className="w-16 h-1.5 bg-overlay rounded-full overflow-hidden"
+            role="progressbar"
+            aria-valuenow={agent?.contextPct ?? 0}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Context usage: ${agent?.contextPct ?? 0}%`}
           >
-            <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">
-              Backlog
-              {agentTasks.length > 0 && (
-                <span className="ml-1.5 text-fg-secondary">{agentTasks.length}</span>
-              )}
-            </h2>
+            <div
+              data-testid="agent-context-bar"
+              className={`h-full rounded-full transition-all ${
+                (agent?.contextPct ?? 0) >= 80 ? 'bg-red-500' :
+                (agent?.contextPct ?? 0) >= 60 ? 'bg-yellow-500' :
+                'bg-green-500'
+              }`}
+              style={{ width: `${agent?.contextPct ?? 0}%` }}
+            />
+          </div>
+          <span className="text-fg-muted text-[10px]">{agent?.contextPct ?? 0}%</span>
+        </div>
 
-            {visibleTasks.length === 0 ? (
-              <p className="text-xs text-fg-muted italic">No active tasks</p>
-            ) : (
-              <ul className="space-y-1.5" aria-label="Agent tasks">
-                {visibleTasks.map((task) => (
-                  <li
-                    key={task.id}
-                    data-testid={`agent-task-${task.id}`}
-                    className="flex items-start gap-2 rounded px-2 py-1.5 bg-surface/40 hover:bg-surface/70 transition-colors"
-                  >
-                    {/* Priority indicator dot */}
-                    <span
-                      aria-label={`Priority: ${task.priority}`}
-                      className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
-                        task.priority === 'critical' ? 'bg-red-500' :
-                        task.priority === 'high'     ? 'bg-orange-400' :
-                        task.priority === 'medium'   ? 'bg-yellow-400' :
-                        'bg-zinc-500'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-fg leading-tight line-clamp-2">{task.title}</p>
-                      <span
-                        className={`text-[10px] font-medium ${
-                          task.stage === 'in-progress' ? 'text-green-400' :
-                          task.stage === 'blocked'     ? 'text-yellow-400' :
-                          'text-fg-muted'
-                        }`}
-                      >
-                        {task.stage === 'in-progress' ? 'active' : task.stage}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+        {/* Machine */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-fg-muted font-medium uppercase text-[10px] tracking-wider">Machine</span>
+          <span className="text-fg-secondary">{agent?.machine ?? 'unknown'}</span>
+        </div>
 
-            {hiddenCount > 0 && (
-              <p className="text-[10px] text-fg-muted mt-2 text-right">
-                +{hiddenCount} more — see Task Board
-              </p>
-            )}
-          </section>
+        {/* Backlog toggle */}
+        {agentTasks.length > 0 && (
+          <button
+            type="button"
+            data-testid="agent-backlog-toggle"
+            onClick={() => setShowBacklog(!showBacklog)}
+            className="flex items-center gap-1 text-fg-muted hover:text-fg transition-colors cursor-pointer shrink-0"
+          >
+            <span className="font-medium uppercase text-[10px] tracking-wider">Backlog</span>
+            <span className="text-soul text-[10px] font-bold">{agentTasks.length}</span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className={`transition-transform ${showBacklog ? 'rotate-180' : ''}`}
+            >
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+        )}
 
-          {/* Sent messages */}
-          {sentMessages.length > 0 && (
-            <section className="px-4 py-3 border-t border-border-subtle">
-              <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">Sent</h2>
-              <div className="space-y-1">
-                {sentMessages.map((m, i) => (
-                  <div key={`sent-${i}-${m.slice(0, 16)}`} className="text-xs text-fg-secondary bg-surface/60 rounded px-2 py-1 line-clamp-2">
-                    {m}
-                  </div>
-                ))}
-              </div>
-            </section>
+        {/* Sent messages count */}
+        {sentMessages.length > 0 && (
+          <span className="text-[10px] text-fg-muted shrink-0">
+            {sentMessages.length} sent
+          </span>
+        )}
+      </div>
+
+      {/* -- Collapsible backlog panel -- */}
+      {showBacklog && (
+        <div
+          data-testid="agent-backlog"
+          className="px-6 py-2 border-b border-border-subtle bg-surface/20 shrink-0 max-h-40 overflow-y-auto"
+          aria-label={`Task backlog for ${agentName}`}
+        >
+          <ul className="space-y-1" aria-label="Agent tasks">
+            {agentTasks.map((task) => (
+              <li
+                key={task.id}
+                data-testid={`agent-task-${task.id}`}
+                className="flex items-center gap-2 rounded px-2 py-1 bg-surface/40 hover:bg-surface/70 transition-colors text-xs"
+              >
+                <span
+                  aria-label={`Priority: ${task.priority}`}
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    task.priority === 'critical' ? 'bg-red-500' :
+                    task.priority === 'high'     ? 'bg-orange-400' :
+                    task.priority === 'medium'   ? 'bg-yellow-400' :
+                    'bg-zinc-500'
+                  }`}
+                />
+                <span className="text-fg flex-1 min-w-0 truncate">{task.title}</span>
+                <span
+                  className={`text-[10px] font-medium shrink-0 ${
+                    task.stage === 'in-progress' ? 'text-green-400' :
+                    task.stage === 'blocked'     ? 'text-yellow-400' :
+                    'text-fg-muted'
+                  }`}
+                >
+                  {task.stage === 'in-progress' ? 'active' : task.stage}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* -- Full-width pane viewer (takes remaining space) -- */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="px-4 py-2 border-b border-border-subtle shrink-0 flex items-center gap-2">
+          <span className="text-[11px] text-fg-muted font-medium uppercase tracking-wider">Live Output</span>
+          {paneLoading && (
+            <span className="text-[10px] text-fg-muted italic">Loading...</span>
           )}
-
-          {/* Machine */}
-          <section className="px-4 py-3 border-t border-border-subtle shrink-0">
-            <div className="flex items-center justify-between text-[10px] text-fg-muted">
-              <span>Machine</span>
-              <span className="text-fg-secondary">{agent?.machine ?? 'unknown'}</span>
-            </div>
-          </section>
-        </aside>
+          <span className="text-[10px] text-fg-muted ml-auto">{lines.length} lines</span>
+        </div>
+        <PaneViewer
+          lines={lines}
+          autoScroll={true}
+          className="flex-1"
+        />
       </div>
     </div>
   );

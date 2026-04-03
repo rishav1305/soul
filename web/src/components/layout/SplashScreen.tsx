@@ -19,6 +19,7 @@ export default function SplashScreen({ ready }: SplashScreenProps) {
 
   return (
     <div
+      data-testid="splash-screen"
       className={`fixed inset-0 z-50 bg-deep noise flex flex-col items-center justify-center ${
         ready ? 'animate-fade-out' : ''
       }`}

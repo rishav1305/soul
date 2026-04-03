@@ -142,7 +142,7 @@ export default function TeamHealth() {
           {/* ── System resources ── */}
           <section aria-labelledby="health-resources-heading">
             <h2 id="health-resources-heading" className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-3">
-              System Resources (titan-pi)
+              System Resources{health.resources.hostname ? ` (${health.resources.hostname})` : ''}
             </h2>
             <div className="bg-surface border border-border-subtle rounded-xl p-4 space-y-4">
               {/* CPU temp */}

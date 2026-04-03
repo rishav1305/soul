@@ -18,7 +18,7 @@ export default function SoulPanel({
   connected,
 }: SoulPanelProps) {
   return (
-    <div className="w-72 h-full bg-surface border-r border-border-subtle flex flex-col shrink-0">
+    <div data-testid="soul-panel" className="w-72 h-full bg-surface border-r border-border-subtle flex flex-col shrink-0">
       {/* Header */}
       <div className="glass flex items-center gap-2 h-14 px-4 shrink-0">
         <span className="relative">
@@ -30,6 +30,7 @@ export default function SoulPanel({
         <button
           type="button"
           onClick={onCollapse}
+          data-testid="soul-panel-collapse-btn"
           className="w-9 h-9 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           title="Collapse sidebar"
         >
@@ -45,6 +46,7 @@ export default function SoulPanel({
         <button
           type="button"
           onClick={onNewChat}
+          data-testid="soul-panel-new-chat-btn"
           className="w-full bg-soul/10 hover:bg-soul/20 text-soul font-display font-semibold text-sm rounded-lg px-4 py-2.5 flex items-center gap-2 transition-colors cursor-pointer"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -64,6 +66,7 @@ export default function SoulPanel({
             key={s.id}
             type="button"
             onClick={() => onSessionSelect(s.id)}
+            data-testid={`soul-panel-session-${s.id}`}
             className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate cursor-pointer transition-colors ${
               s.id === activeSessionId
                 ? 'bg-elevated text-fg'
@@ -78,7 +81,7 @@ export default function SoulPanel({
       {/* Footer */}
       <div className="px-3 py-3 border-t border-border-subtle">
         <div className="flex items-center gap-2 text-xs text-fg-muted">
-          <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-stage-done' : 'bg-stage-blocked'}`} />
+          <span data-testid="soul-panel-connection-indicator" className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-stage-done' : 'bg-stage-blocked'}`} />
           <span>{connected ? 'Connected' : 'Disconnected'}</span>
         </div>
       </div>

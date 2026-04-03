@@ -1,3 +1,4 @@
+/** Format an ISO date string as a human-readable relative time (e.g. "5m ago", "3d ago"). */
 export function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
@@ -12,11 +13,13 @@ export function formatRelativeTime(dateStr: string): string {
   return new Date(dateStr).toISOString().split('T')[0] ?? dateStr;
 }
 
+/** Format a token count for display (e.g. 1500 → "1.5k"). */
 export function formatTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
 
+/** Format the duration between two ISO timestamps as a compact string (e.g. "1h30m"). */
 export function formatDuration(startStr: string, endStr: string): string {
   const diffMs = new Date(endStr).getTime() - new Date(startStr).getTime();
   if (diffMs < 60000) return '<1m';
@@ -29,6 +32,7 @@ export function formatDuration(startStr: string, endStr: string): string {
 
 export type TimeGroup = 'Today' | 'Yesterday' | 'Older';
 
+/** Bucket a date into Today, Yesterday, or Older for session grouping. */
 export function getTimeGroup(dateStr: string): TimeGroup {
   const now = new Date();
   const then = new Date(dateStr);

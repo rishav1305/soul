@@ -13,6 +13,7 @@ import { reportError } from '../../lib/telemetry.ts';
 import TaskPanel from '../planner/TaskPanel.tsx';
 import PlaceholderPanel from '../panels/PlaceholderPanel.tsx';
 import ObservePanel from '../panels/ObservePanel.tsx';
+import TeamShell from '../team/TeamShell.tsx';
 
 /** Lightweight error boundary for product panels — avoids taking down the entire AppShell. */
 class PanelErrorBoundary extends Component<
@@ -125,6 +126,8 @@ export default function ProductView({
     scout:           PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
     tutor:           PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
     projects:        PlaceholderPanel,  // stub — falls through to TaskPanel until dashboard built
+    // Real dashboards
+    team:            TeamShell,
     // Placeholders — replace each with a real panel when ready
     soul:            PlaceholderPanel,
     qa:              PlaceholderPanel,

@@ -4,7 +4,7 @@ interface SoulRailProps {
 
 export default function SoulRail({ onExpand }: SoulRailProps) {
   return (
-    <div className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-4 gap-4 shrink-0">
+    <div data-testid="soul-rail" className="w-14 h-full bg-surface border-r border-border-subtle flex flex-col items-center py-4 gap-4 shrink-0">
       {/* Soul logo */}
       <span className="relative">
         <span className="absolute inset-0 -m-1 bg-soul/10 rounded-full blur-sm animate-soul-pulse" />
@@ -14,15 +14,15 @@ export default function SoulRail({ onExpand }: SoulRailProps) {
       <div className="w-6 border-t border-border-subtle" />
 
       {/* Chat indicator */}
-      <button type="button" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Chat">
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <button type="button" data-testid="soul-rail-chat-btn" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Chat">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M2 3h12v8H5l-3 3V3z" />
         </svg>
       </button>
 
       {/* Tasks shortcut */}
-      <button type="button" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Tasks">
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <button type="button" data-testid="soul-rail-tasks-btn" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Tasks">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 4l2 2 4-4" />
           <path d="M3 10l2 2 4-4" />
         </svg>
@@ -31,8 +31,8 @@ export default function SoulRail({ onExpand }: SoulRailProps) {
       <div className="flex-1" />
 
       {/* Settings */}
-      <button type="button" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Settings">
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <button type="button" data-testid="soul-rail-settings-btn" className="w-9 h-9 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-elevated transition-colors cursor-pointer" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="8" cy="8" r="2" />
           <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
         </svg>
@@ -42,10 +42,11 @@ export default function SoulRail({ onExpand }: SoulRailProps) {
       <button
         type="button"
         onClick={onExpand}
+        data-testid="soul-rail-expand-btn"
         className="w-9 h-9 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
         title="Expand sidebar"
       >
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
           <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
           <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
         </svg>

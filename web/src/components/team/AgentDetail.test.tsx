@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import AgentDetail from './AgentDetail';
 import type { TeamTask } from '../../hooks/useTeamTasks.ts';
 
@@ -72,6 +72,12 @@ function renderDetail(agentName = 'happy') {
   );
 }
 
+/** Click the backlog toggle to reveal task list. */
+function openBacklog() {
+  const toggle = screen.getByTestId('agent-backlog-toggle');
+  fireEvent.click(toggle);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('AgentDetail', () => {
@@ -97,58 +103,51 @@ describe('AgentDetail', () => {
     expect(screen.getByTestId('mock-pane-viewer')).toBeTruthy();
   });
 
-  it('renders the sidebar', () => {
+  it('renders the compact info bar with context usage', () => {
     renderDetail('happy');
-    expect(screen.getByTestId('agent-detail-sidebar')).toBeTruthy();
+    expect(screen.getByTestId('agent-context-bar')).toBeTruthy();
+  });
+
+  it('shows current task in info bar', () => {
+    renderDetail('happy');
+    expect(screen.getByTestId('agent-info-task')).toBeTruthy();
+    expect(screen.getByText('Running tests')).toBeTruthy();
   });
 
   // ── Backlog: empty state ────────────────────────────────────────────────────
 
-  it('shows "No active tasks" when no tasks assigned to agent', () => {
+  it('does not show backlog toggle when no tasks assigned', () => {
     mockTasks = [];
     renderDetail('happy');
-    expect(screen.getByText('No active tasks')).toBeTruthy();
+    expect(screen.queryByTestId('agent-backlog-toggle')).toBeNull();
   });
 
-  it('shows "No active tasks" when all tasks are assigned to a different agent', () => {
+  it('does not show backlog toggle when all tasks assigned to a different agent', () => {
     mockTasks = [makeTask({ assignee: 'shuri' }), makeTask({ assignee: 'fury' })];
     renderDetail('happy');
-    expect(screen.getByText('No active tasks')).toBeTruthy();
+    expect(screen.queryByTestId('agent-backlog-toggle')).toBeNull();
   });
 
-  it('shows "No active tasks" when all agent tasks are in done stage', () => {
+  it('does not show backlog toggle when all agent tasks are done', () => {
     mockTasks = [
       makeTask({ assignee: 'happy', stage: 'done' }),
       makeTask({ assignee: 'happy', stage: 'done' }),
     ];
     renderDetail('happy');
-    expect(screen.getByText('No active tasks')).toBeTruthy();
+    expect(screen.queryByTestId('agent-backlog-toggle')).toBeNull();
   });
 
-  // ── Backlog: task list ──────────────────────────────────────────────────────
+  // ── Backlog: toggle and task count ─────────────────────────────────────────
 
-  it('renders tasks assigned to the agent', () => {
-    mockTasks = [makeTask({ assignee: 'happy', title: 'Fix the tests' })];
-    renderDetail('happy');
-    expect(screen.getByText('Fix the tests')).toBeTruthy();
-  });
-
-  it('shows the task count in the section header', () => {
+  it('shows backlog toggle with task count when agent has active tasks', () => {
     mockTasks = [
       makeTask({ assignee: 'happy' }),
       makeTask({ assignee: 'happy' }),
     ];
     renderDetail('happy');
-    expect(screen.getByText('2')).toBeTruthy();
-  });
-
-  it('does not show the count header when no tasks', () => {
-    mockTasks = [];
-    renderDetail('happy');
-    // The number "0" should not be visible as a count badge
-    const backlogSection = screen.getByTestId('agent-backlog');
-    // Heading should say "Backlog" without a number sibling
-    expect(backlogSection.textContent).not.toContain('0');
+    const toggle = screen.getByTestId('agent-backlog-toggle');
+    expect(toggle).toBeTruthy();
+    expect(toggle.textContent).toContain('2');
   });
 
   it('excludes done tasks from the count', () => {
@@ -157,16 +156,26 @@ describe('AgentDetail', () => {
       makeTask({ assignee: 'happy', stage: 'done' }),
     ];
     renderDetail('happy');
-    // Only 1 active task → count badge should be "1"
-    const backlogSection = screen.getByTestId('agent-backlog');
-    expect(backlogSection.textContent).toContain('1');
-    expect(backlogSection.textContent).not.toContain('2');
+    const toggle = screen.getByTestId('agent-backlog-toggle');
+    expect(toggle.textContent).toContain('1');
+    expect(toggle.textContent).not.toContain('2');
+  });
+
+  // ── Backlog: task list (after toggle open) ─────────────────────────────────
+
+  it('renders task list when backlog is opened', () => {
+    mockTasks = [makeTask({ assignee: 'happy', title: 'Fix the tests' })];
+    renderDetail('happy');
+    openBacklog();
+    expect(screen.getByTestId('agent-backlog')).toBeTruthy();
+    expect(screen.getByText('Fix the tests')).toBeTruthy();
   });
 
   it('renders individual task rows with data-testid', () => {
     const task = makeTask({ assignee: 'happy', id: 'abc-123' });
     mockTasks = [task];
     renderDetail('happy');
+    openBacklog();
     expect(screen.getByTestId('agent-task-abc-123')).toBeTruthy();
   });
 
@@ -178,12 +187,10 @@ describe('AgentDetail', () => {
       makeTask({ assignee: 'happy', id: 'active-first', stage: 'in-progress', title: 'Active work' }),
     ];
     renderDetail('happy');
+    openBacklog();
     const rows = screen.getAllByRole('listitem');
-    // Active work should appear before Pending work
-    const firstRow = rows[0]?.textContent ?? '';
-    const secondRow = rows[1]?.textContent ?? '';
-    expect(firstRow).toContain('Active work');
-    expect(secondRow).toContain('Pending work');
+    expect(rows[0]?.textContent).toContain('Active work');
+    expect(rows[1]?.textContent).toContain('Pending work');
   });
 
   it('shows blocked tasks before backlog tasks but after in-progress', () => {
@@ -193,29 +200,23 @@ describe('AgentDetail', () => {
       makeTask({ assignee: 'happy', id: 'bk', stage: 'blocked',     title: 'Blocked item' }),
     ];
     renderDetail('happy');
+    openBacklog();
     const rows = screen.getAllByRole('listitem');
     expect(rows[0]?.textContent).toContain('In progress');
     expect(rows[1]?.textContent).toContain('Blocked item');
     expect(rows[2]?.textContent).toContain('Backlog item');
   });
 
-  // ── Backlog: capping & overflow ─────────────────────────────────────────────
+  // ── Backlog: all tasks shown (no cap in new layout) ────────────────────────
 
-  it('caps visible tasks at 5', () => {
+  it('shows all tasks without capping', () => {
     mockTasks = Array.from({ length: 8 }, (_, i) =>
       makeTask({ assignee: 'happy', id: `t-${i}`, title: `Task ${i}` }),
     );
     renderDetail('happy');
+    openBacklog();
     const rows = screen.getAllByRole('listitem');
-    expect(rows).toHaveLength(5);
-  });
-
-  it('shows "+N more" footer when tasks exceed 5', () => {
-    mockTasks = Array.from({ length: 7 }, (_, i) =>
-      makeTask({ assignee: 'happy', id: `t-${i}`, title: `Task ${i}` }),
-    );
-    renderDetail('happy');
-    expect(screen.getByText('+2 more — see Task Board')).toBeTruthy();
+    expect(rows).toHaveLength(8);
   });
 
   it('does not show overflow footer when tasks are 5 or fewer', () => {
@@ -223,6 +224,7 @@ describe('AgentDetail', () => {
       makeTask({ assignee: 'happy', id: `t-${i}`, title: `Task ${i}` }),
     );
     renderDetail('happy');
+    openBacklog();
     expect(screen.queryByText(/\+\d+ more/)).toBeNull();
   });
 
@@ -234,7 +236,7 @@ describe('AgentDetail', () => {
       makeTask({ assignee: 'happy', priority: 'high' }),
     ];
     renderDetail('happy');
-    // Each list item has a priority dot span
+    openBacklog();
     const rows = screen.getAllByRole('listitem');
     expect(rows).toHaveLength(2);
     rows.forEach((row) => {
@@ -245,6 +247,7 @@ describe('AgentDetail', () => {
   it('labels priority dot correctly for critical tasks', () => {
     mockTasks = [makeTask({ assignee: 'happy', priority: 'critical' })];
     renderDetail('happy');
+    openBacklog();
     const dot = screen.getByLabelText('Priority: critical');
     expect(dot).toBeTruthy();
   });
@@ -254,18 +257,21 @@ describe('AgentDetail', () => {
   it('shows "active" label for in-progress tasks', () => {
     mockTasks = [makeTask({ assignee: 'happy', stage: 'in-progress' })];
     renderDetail('happy');
+    openBacklog();
     expect(screen.getByText('active')).toBeTruthy();
   });
 
   it('shows "blocked" label for blocked tasks', () => {
     mockTasks = [makeTask({ assignee: 'happy', stage: 'blocked' })];
     renderDetail('happy');
+    openBacklog();
     expect(screen.getByText('blocked')).toBeTruthy();
   });
 
   it('shows "backlog" label for backlog tasks', () => {
     mockTasks = [makeTask({ assignee: 'happy', stage: 'backlog' })];
     renderDetail('happy');
+    openBacklog();
     expect(screen.getByText('backlog')).toBeTruthy();
   });
 

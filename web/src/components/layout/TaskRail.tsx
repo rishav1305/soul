@@ -24,11 +24,12 @@ export default function TaskRail({ tasksByStage, onExpand, onNewTask }: TaskRail
 
   return (
     <>
-      <div className="w-10 h-full bg-surface border-l border-border-subtle flex flex-col items-center py-3 gap-2 shrink-0">
+      <div data-testid="task-rail" className="w-10 h-full bg-surface border-l border-border-subtle flex flex-col items-center py-3 gap-2 shrink-0">
         {/* Expand icon */}
         <button
           type="button"
           onClick={onExpand}
+          data-testid="task-rail-expand-btn"
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-elevated text-fg-muted hover:text-fg transition-colors cursor-pointer"
           title="Expand tasks"
         >
@@ -42,6 +43,7 @@ export default function TaskRail({ tasksByStage, onExpand, onNewTask }: TaskRail
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setShowNewForm(true); }}
+          data-testid="task-rail-new-btn"
           className="w-7 h-7 rounded bg-soul/80 hover:bg-soul text-deep flex items-center justify-center transition-colors cursor-pointer font-bold text-sm"
           title="New task"
         >
@@ -56,6 +58,7 @@ export default function TaskRail({ tasksByStage, onExpand, onNewTask }: TaskRail
           return (
             <div
               key={stage}
+              data-testid={`task-rail-stage-${stage}`}
               className={`w-7 h-7 rounded-sm flex items-center justify-center ${STAGE_BG[stage]} ${count === 0 ? 'opacity-30' : ''} transition-opacity`}
               title={`${stage}: ${count}`}
             >

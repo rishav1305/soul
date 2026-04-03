@@ -3,8 +3,11 @@ import type { ConnectionState, OutboundMessageType } from '../lib/types';
 import { getWebSocketURL, fetchWSTicket } from '../lib/ws';
 import { reportError, reportWSLifecycle } from '../lib/telemetry';
 
+/** Options for the WebSocket connection hook. */
 interface UseWebSocketOptions {
+  /** Custom WS URL (defaults to auto-detected from window.location). */
   url?: string;
+  /** Callback for all inbound messages, dispatched by type and session. */
   onMessage?: (type: OutboundMessageType, data: unknown, sessionID: string, messageId?: string) => void;
 }
 
@@ -16,12 +19,16 @@ interface UseWebSocketReturn {
   authError: boolean;       // true when auth circuit breaker has fired
 }
 
-// Exponential backoff: 1s → 2s → 4s → 8s → 15s max, with ±30% jitter.
+/**
+ * Exponential backoff: 1s → 2s → 4s → 8s → 15s max, with ±30% jitter.
+ * Max 10 reconnect attempts before circuit-breaking.
+ */
 const BASE_DELAY = 1000;
 const MAX_DELAY = 15000;
 const JITTER = 0.3;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+/** Calculate backoff delay for the nth reconnect attempt. */
 function backoffDelay(attempt: number): number {
   const exponential = Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
   const jitter = exponential * JITTER * (Math.random() * 2 - 1); // ±30%
