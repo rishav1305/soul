@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
+import { authFetch } from '../../lib/api.ts';
 import { useTeamAgents } from '../../hooks/useTeamAgents.ts';
 import { useAgentPane } from '../../hooks/useAgentPane.ts';
+import { useTeamTasks } from '../../hooks/useTeamTasks.ts';
 import { StatusDot } from './StatusDot.tsx';
 import { ModelBadge } from './ModelBadge.tsx';
 import { PaneViewer } from './PaneViewer.tsx';
@@ -17,12 +19,23 @@ interface AgentDetailProps {
 export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps) {
   const { agents } = useTeamAgents();
   const { lines, loading: paneLoading } = useAgentPane(agentName);
+  const { tasks } = useTeamTasks();
   const [messageInput, setMessageInput] = useState('');
   const [sentMessages, setSentMessages] = useState<string[]>([]);
   const [showMessageInput, setShowMessageInput] = useState(false);
   const [sending, setSending] = useState(false);
 
   const agent = agents.find((a) => a.name === agentName);
+
+  /** Tasks assigned to this agent, active stages first, capped at 5 for sidebar. */
+  const agentTasks = tasks
+    .filter((t) => t.assignee === agentName && t.stage !== 'done')
+    .sort((a, b) => {
+      const stagePriority: Record<string, number> = { 'in-progress': 0, blocked: 1, backlog: 2 };
+      return (stagePriority[a.stage] ?? 3) - (stagePriority[b.stage] ?? 3);
+    });
+  const visibleTasks = agentTasks.slice(0, 5);
+  const hiddenCount = agentTasks.length - visibleTasks.length;
 
   const handleSend = useCallback(() => {
     const trimmed = messageInput.trim();
@@ -31,7 +44,7 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
     setSending(true);
 
     // Send via the real API (POST /api/team/chat with { to, body, from, priority })
-    fetch('/api/team/chat', {
+    authFetch('/api/team/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -192,10 +205,61 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
             </div>
           </section>
 
-          {/* Backlog placeholder */}
-          <section className="px-4 py-3 border-b border-border-subtle flex-1 overflow-y-auto">
-            <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">Backlog</h2>
-            <p className="text-xs text-fg-muted italic">Wiring up task backlog API...</p>
+          {/* Agent backlog — tasks assigned to this agent */}
+          <section
+            data-testid="agent-backlog"
+            className="px-4 py-3 border-b border-border-subtle flex-1 overflow-y-auto"
+            aria-label={`Task backlog for ${agentName}`}
+          >
+            <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">
+              Backlog
+              {agentTasks.length > 0 && (
+                <span className="ml-1.5 text-fg-secondary">{agentTasks.length}</span>
+              )}
+            </h2>
+
+            {visibleTasks.length === 0 ? (
+              <p className="text-xs text-fg-muted italic">No active tasks</p>
+            ) : (
+              <ul className="space-y-1.5" aria-label="Agent tasks">
+                {visibleTasks.map((task) => (
+                  <li
+                    key={task.id}
+                    data-testid={`agent-task-${task.id}`}
+                    className="flex items-start gap-2 rounded px-2 py-1.5 bg-surface/40 hover:bg-surface/70 transition-colors"
+                  >
+                    {/* Priority indicator dot */}
+                    <span
+                      aria-label={`Priority: ${task.priority}`}
+                      className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                        task.priority === 'critical' ? 'bg-red-500' :
+                        task.priority === 'high'     ? 'bg-orange-400' :
+                        task.priority === 'medium'   ? 'bg-yellow-400' :
+                        'bg-zinc-500'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-fg leading-tight line-clamp-2">{task.title}</p>
+                      <span
+                        className={`text-[10px] font-medium ${
+                          task.stage === 'in-progress' ? 'text-green-400' :
+                          task.stage === 'blocked'     ? 'text-yellow-400' :
+                          'text-fg-muted'
+                        }`}
+                      >
+                        {task.stage === 'in-progress' ? 'active' : task.stage}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {hiddenCount > 0 && (
+              <p className="text-[10px] text-fg-muted mt-2 text-right">
+                +{hiddenCount} more — see Task Board
+              </p>
+            )}
           </section>
 
           {/* Sent messages */}
@@ -204,7 +268,7 @@ export default function AgentDetail({ agentName, onNavigate }: AgentDetailProps)
               <h2 className="text-[11px] text-fg-muted font-medium uppercase tracking-wider mb-2">Sent</h2>
               <div className="space-y-1">
                 {sentMessages.map((m, i) => (
-                  <div key={i} className="text-xs text-fg-secondary bg-surface/60 rounded px-2 py-1 line-clamp-2">
+                  <div key={`sent-${i}-${m.slice(0, 16)}`} className="text-xs text-fg-secondary bg-surface/60 rounded px-2 py-1 line-clamp-2">
                     {m}
                   </div>
                 ))}
