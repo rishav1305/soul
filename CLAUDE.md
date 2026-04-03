@@ -30,6 +30,7 @@ cmd/
   sentinel/main.go            Sentinel server CLI entrypoint (:3022) — CTF challenge platform
   mesh/main.go                Mesh server CLI entrypoint (:3024) — distributed compute
   bench/main.go               Bench server CLI entrypoint (:3026) — LLM benchmarking
+  team/main.go                Team server CLI entrypoint (:3028) — Soul Control dashboard
 pkg/
   auth/                       Claude OAuth — shared by all servers
   events/                     Logger interface + Event type
@@ -87,6 +88,15 @@ internal/mesh/
   hub/                        Node registry, heartbeat aggregation
   agent/                      Heartbeat loop, command execution
   server/                     HTTP + WebSocket server
+internal/team/
+  types.go                    Shared types — AgentState, PaneDelta, ChatMessage, WSMessage
+  config.go                   Config from env vars, panes.json loader, agent-machine map
+  pane.go                     PanePoller — tmux capture-pane polling with delta diff
+  state.go                    AgentStateAggregator — heartbeat, inbox, task state
+  inbox.go                    InboxBridge — clawteam inbox read/write
+  tasks.go                    TaskBridge — backlog CLI wrapper
+  hub.go                      WebSocket hub — multiplexed pub/sub with subscriptions
+  server.go                   HTTP server — 11 REST endpoints + WS
 internal/scout/
   store/                      SQLite (scout.db) — 7 tables (leads, stage_history, sync, optimizations, agents)
   pipelines/                  7 pipeline types (job, freelance, contract, consulting, product-dev, referral, networking)
@@ -201,6 +211,16 @@ Total: 119 product tools + 8 built-in = 127 tools.
 | `SOUL_BENCH_PORT` | `3026` | Bench server port |
 | `SOUL_BENCH_URL` | `http://127.0.0.1:3026` | Bench server URL (for chat proxy) |
 | `SOUL_V2_REPO_DIR` | `(cwd)` | Project root for worktree creation |
+| `SOUL_TEAM_HOST` | `127.0.0.1` | Team server bind address |
+| `SOUL_TEAM_PORT` | `3028` | Team server port |
+| `SOUL_TEAM_URL` | `http://127.0.0.1:3028` | Team server URL (for chat proxy) |
+| `SOUL_TEAM_NAME` | `soul-team` | Clawteam team name |
+| `SOUL_TEAM_CLAWTEAM_DIR` | `~/.clawteam/teams/soul-team` | Clawteam team directory |
+| `SOUL_TEAM_HEARTBEAT_DIR` | `~/.local/share/assistant/heartbeat` | Agent heartbeat directory |
+| `SOUL_TEAM_BACKLOG_CLI` | `~/.claude/skills/pa-backlog/backlog_cli.py` | Path to backlog CLI |
+| `SOUL_TEAM_PANES_FILE` | `~/.clawteam/teams/soul-team/panes.json` | Agent pane ID mappings |
+| `SOUL_TEAM_POLL_MS` | `1000` | Pane poll interval in milliseconds |
+| `SOUL_TEAM_PANE_BUFFER` | `500` | Max lines per agent pane buffer |
 
 Auth: `~/.claude/.credentials.json` (Claude Max OAuth, read-only)
 

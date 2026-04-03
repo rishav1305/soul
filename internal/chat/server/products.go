@@ -28,6 +28,7 @@ func registeredProducts() []productInfo {
 		{Name: "devops", Label: "DevOps", Tools: 2, Running: true, Icon: "terminal"},
 		{Name: "dataeng", Label: "DataEng", Tools: 2, Running: true, Icon: "database"},
 		{Name: "docs", Label: "Docs", Tools: 2, Running: true, Icon: "file-text"},
+		{Name: "team", Label: "Team", Tools: 0, Running: true, Icon: "users"},
 	}
 }
 

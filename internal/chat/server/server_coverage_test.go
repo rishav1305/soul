@@ -211,6 +211,27 @@ func TestStatusRecorder_DefaultStatus(t *testing.T) {
 	}
 }
 
+func TestStatusRecorder_Hijack_DelegatesToUnderlying(t *testing.T) {
+	// httptest.ResponseRecorder does not implement http.Hijacker,
+	// so Hijack should return a descriptive error.
+	rec := httptest.NewRecorder()
+	sr := &statusRecorder{ResponseWriter: rec, status: 200}
+
+	conn, buf, err := sr.Hijack()
+	if err == nil {
+		t.Fatal("expected error from Hijack on non-Hijacker ResponseWriter")
+	}
+	if conn != nil {
+		t.Error("conn should be nil when Hijack fails")
+	}
+	if buf != nil {
+		t.Error("buf should be nil when Hijack fails")
+	}
+	if err.Error() != "upstream ResponseWriter does not implement http.Hijacker" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // --- handleGetMessages error paths ---
 
 func TestGetMessages_InternalError(t *testing.T) {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -56,6 +57,7 @@ type Server struct {
 	sentinelProxy *simpleProxy
 	meshProxy     *simpleProxy
 	benchProxy    *simpleProxy
+	teamProxy     *teamProxy
 	modelCache    modelCache
 	compaction    *compactionShim
 }
@@ -193,6 +195,14 @@ func WithMeshProxy() Option {
 func WithBenchProxy() Option {
 	return func(s *Server) {
 		s.benchProxy = newSimpleProxy("SOUL_BENCH_URL", "http://127.0.0.1:3026", "", "bench")
+	}
+}
+
+// WithTeamProxy enables the reverse proxy to the team (Soul Control) server.
+// This proxies both REST (/api/team/*) and WebSocket (/ws/team) to port 3028.
+func WithTeamProxy() Option {
+	return func(s *Server) {
+		s.teamProxy = newTeamProxy()
 	}
 }
 
@@ -335,6 +345,13 @@ func New(opts ...Option) *Server {
 	if s.benchProxy != nil {
 		s.mux.Handle("/api/bench/", s.benchProxy)
 		s.mux.Handle("/api/bench", s.benchProxy)
+	}
+
+	// Team (Soul Control) proxy — forward /api/team/* and /ws/team to team server.
+	if s.teamProxy != nil {
+		s.mux.Handle("/api/team/", s.teamProxy)
+		s.mux.Handle("/api/team", s.teamProxy)
+		s.mux.Handle("/ws/team", s.teamProxy) // WebSocket upgrade
 	}
 
 	// Unauthenticated health probe — used by load balancers and monitoring.
@@ -1118,6 +1135,7 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 }
 
 // statusRecorder wraps http.ResponseWriter to capture the response status code.
+// It also implements http.Hijacker so WebSocket upgrades work through this wrapper.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -1128,15 +1146,23 @@ func (sr *statusRecorder) WriteHeader(code int) {
 	sr.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack implements http.Hijacker, delegating to the underlying ResponseWriter.
+// This is required for WebSocket upgrade requests that pass through the logging middleware.
+func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := sr.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("upstream ResponseWriter does not implement http.Hijacker")
+}
+
 // requestLoggerMiddleware times every HTTP request and logs api.request events.
 // Requests exceeding 500ms also produce an api.slow event.
 // Health-check requests are passed through without logging.
 func requestLoggerMiddleware(logger *metrics.EventLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip health checks (noise) and WebSocket upgrades
-			// (statusRecorder doesn't implement http.Hijacker).
-			if r.URL.Path == "/api/health" || r.URL.Path == "/ws" {
+			// Skip health checks (noise).
+			if r.URL.Path == "/api/health" {
 				next.ServeHTTP(w, r)
 				return
 			}

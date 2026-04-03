@@ -342,3 +342,105 @@ func (sp *simpleProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sp.reverseProxy.ServeHTTP(w, r)
 }
+
+// teamProxy manages the reverse proxy to the Soul Control team server.
+// It handles both standard HTTP and WebSocket upgrades transparently.
+type teamProxy struct {
+	targetURL    *url.URL
+	reverseProxy *httputil.ReverseProxy
+}
+
+func newTeamProxy() *teamProxy {
+	teamURL := os.Getenv("SOUL_TEAM_URL")
+	if teamURL == "" {
+		teamURL = "http://127.0.0.1:3028"
+	}
+
+	target, err := url.Parse(teamURL)
+	if err != nil {
+		log.Printf("warn: invalid SOUL_TEAM_URL %q: %v", teamURL, err)
+		return nil
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(target)
+
+	// Use a transport that supports WebSocket upgrades via Hop-by-hop passthrough.
+	rp.Transport = &http.Transport{
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+
+	// Custom error handler — return 503 if team server is down.
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("team proxy error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":"team server unavailable"}`)
+	}
+
+	return &teamProxy{
+		targetURL:    target,
+		reverseProxy: rp,
+	}
+}
+
+// ServeHTTP forwards requests to the team server.
+// For WebSocket upgrade requests (/ws/team), it uses a raw TCP hijack to
+// transparently proxy the upgraded connection.
+func (tp *teamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check if this is a WebSocket upgrade request.
+	if isWebSocketUpgrade(r) {
+		tp.proxyWebSocket(w, r)
+		return
+	}
+	// Standard HTTP — pass through with no path rewriting.
+	tp.reverseProxy.ServeHTTP(w, r)
+}
+
+func isWebSocketUpgrade(r *http.Request) bool {
+	for _, v := range r.Header.Values("Connection") {
+		if strings.EqualFold(strings.TrimSpace(v), "upgrade") {
+			return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+		}
+	}
+	return false
+}
+
+// proxyWebSocket hijacks the connection and proxies WebSocket frames to the backend.
+func (tp *teamProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Build the backend URL.
+	backendURL := *tp.targetURL
+	backendURL.Path = r.URL.Path
+	backendURL.RawQuery = r.URL.RawQuery
+	if backendURL.Scheme == "https" {
+		backendURL.Scheme = "wss"
+	} else {
+		backendURL.Scheme = "ws"
+	}
+
+	// Dial the backend directly using net, then do the HTTP upgrade manually.
+	// We use the standard reverse proxy for WebSocket by ensuring the hop-by-hop
+	// headers are forwarded. Go's httputil.ReverseProxy handles WebSocket upgrades
+	// when the backend returns 101 Switching Protocols.
+	//
+	// Set FlushInterval to -1 so it flushes immediately (needed for streaming/WS).
+	tp.reverseProxy.FlushInterval = -1
+
+	// Forward the Origin header so the backend's origin check passes.
+	// The reverse proxy strips hop-by-hop headers, so we need to ensure the
+	// Upgrade and Connection headers pass through.
+	director := tp.reverseProxy.Director
+	tp.reverseProxy.Director = func(req *http.Request) {
+		director(req)
+		// Restore hop-by-hop headers that ReverseProxy strips.
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		if origin := r.Header.Get("Origin"); origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+	}
+
+	tp.reverseProxy.ServeHTTP(w, r)
+
+	// Restore original director.
+	tp.reverseProxy.Director = director
+}
